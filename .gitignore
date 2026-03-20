@@ -1,0 +1,50 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+voice-agent.exe
+whisper.cpp/main
+whisper.cpp/bench
+whisper.cpp/stream
+
+# Logs and debug
+*.log
+*.txt
+build_output.txt
+build_output_utf8.txt
+build_errors.txt
+build_err.txt
+err.txt
+crash.log
+voice-out.log
+screen_analysis.txt
+
+# Databases
+*.db
+*.db-shm
+*.db-wal
+memory.db
+audit_logs.db
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDEs
+.idea/
+.vscode/
+.claude/
+CLAUDE.md
+
+# Go
+vendor/
+go.work
+go.work.sum
+
+# Project specific
+stitch_generated_screen/
+stitch_assets/
+stitch_generated_screen/
+models/
