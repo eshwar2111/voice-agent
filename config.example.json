@@ -1,10 +1,10 @@
 {
   "llm_provider": "gemini",
-  "api_key": "AIzaSyC08isZoOeh_44BlApnClJ_omPoBfE60ao",
+  "api_key": "YOUR_GEMINI_API_KEY_HERE",
   "model": "gemini-2.5-flash",
   "base_url": "https://generativelanguage.googleapis.com/v1beta",
   "timeout_seconds": 30,
-  "porcupine_access_key": "baAxBz2cMLIoj5A4c2yFgSfQ/Cfjti/kEQgZ3Zr5XVmF21T8QOmUIQ==",
+  "porcupine_access_key": "YOUR_PORCUPINE_ACCESS_KEY_HERE",
   "whisper_path": "C:/whisper-local/build/bin/whisper-cli.exe",
   "whisper_model": "C:/whisper-local/models/ggml-base.en.bin"
 }
