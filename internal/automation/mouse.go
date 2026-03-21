@@ -2,15 +2,39 @@ package automation
 
 import (
 	"fmt"
+	"runtime"
+	"syscall"
 	"time"
 
 	"github.com/go-vgo/robotgo"
 )
 
+// getDPIScale returns the scaling factor for Windows, or 1.0 for others.
+func getDPIScale() float64 {
+	if runtime.GOOS != "windows" {
+		return 1.0
+	}
+	user32 := syscall.NewLazyDLL("user32.dll")
+	getDpiForSystem := user32.NewProc("GetDpiForSystem")
+	if err := getDpiForSystem.Find(); err == nil {
+		dpi, _, _ := getDpiForSystem.Call()
+		if dpi > 0 {
+			return float64(dpi) / 96.0
+		}
+	}
+	return 1.0
+}
+
+func scaleCoords(x, y int) (int, int) {
+	scale := getDPIScale()
+	return int(float64(x) / scale), int(float64(y) / scale)
+}
+
 // MoveMouse moves the cursor to the given screen coordinates.
 func MoveMouse(x, y int) error {
 	expectedPID := GetActivePID()
-	robotgo.Move(x, y)
+	sx, sy := scaleCoords(x, y)
+	robotgo.Move(sx, sy)
 	return VerifyFocusLock(expectedPID)
 }
 
@@ -20,7 +44,8 @@ func ClickMouse(x, y int, button string) error {
 		button = "left"
 	}
 	expectedPID := GetActivePID()
-	robotgo.Move(x, y)
+	sx, sy := scaleCoords(x, y)
+	robotgo.Move(sx, sy)
 	time.Sleep(150 * time.Millisecond) // longer settle time for target window to register hover/focus
 	if err := VerifyFocusLock(expectedPID); err != nil {
 		return err
@@ -32,7 +57,8 @@ func ClickMouse(x, y int, button string) error {
 // DoubleClick moves to (x,y) and performs a double click.
 func DoubleClick(x, y int) error {
 	expectedPID := GetActivePID()
-	robotgo.Move(x, y)
+	sx, sy := scaleCoords(x, y)
+	robotgo.Move(sx, sy)
 	time.Sleep(150 * time.Millisecond)
 	if err := VerifyFocusLock(expectedPID); err != nil {
 		return err
@@ -44,12 +70,14 @@ func DoubleClick(x, y int) error {
 // DragMouse drags from (x1,y1) to (x2,y2) with the left button held.
 func DragMouse(x1, y1, x2, y2 int) error {
 	expectedPID := GetActivePID()
-	robotgo.Move(x1, y1)
+	sx1, sy1 := scaleCoords(x1, y1)
+	robotgo.Move(sx1, sy1)
 	time.Sleep(80 * time.Millisecond)
 	if err := VerifyFocusLock(expectedPID); err != nil {
 		return err
 	}
-	robotgo.DragSmooth(x2, y2)
+	sx2, sy2 := scaleCoords(x2, y2)
+	robotgo.DragSmooth(sx2, sy2)
 	return nil
 }
 

@@ -65,6 +65,7 @@ func DefaultRegistry(provider llm.Provider) *Registry {
 	r.Register(&OpenWebsiteTool{})
 	r.Register(&CreateFileTool{})
 	r.Register(&OpenExplorerTool{})
+	r.Register(&OpenFileTool{})
 	r.Register(&ListFilesTool{})
 	r.Register(&DeleteFileTool{})
 	r.Register(&MoveFileTool{})

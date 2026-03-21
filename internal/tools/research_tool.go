@@ -54,11 +54,11 @@ func (t *ResearchTool) Execute(ctx context.Context, rawParams json.RawMessage) (
 
 	// 1. Search (using DuckDuckGo HTML/Lite for simplicity without API keys)
 	searchURL := fmt.Sprintf("https://html.duckduckgo.com/html/?q=%s", url.QueryEscape(query))
-	
+
 	client := &http.Client{Timeout: 10 * time.Second}
 	req, _ := http.NewRequest("GET", searchURL, nil)
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
-	
+
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("search failed: %w", err)
@@ -113,7 +113,7 @@ func (t *ResearchTool) Execute(ctx context.Context, rawParams json.RawMessage) (
 	// 4. Synthesize answer using LLM
 	ui.ShowNotification("Synthesizing answer...")
 	prompt := fmt.Sprintf("Based on the following web research results, provide a comprehensive and detailed answer to the question: \"%s\". Use a professional and helpful tone. Cite sources if possible.\n\n%s", query, researchContext.String())
-	
+
 	finalAnswer, err := t.Provider.Generate(ctx, prompt, nil)
 	if err != nil {
 		return "", fmt.Errorf("synthesis failed: %w", err)
@@ -145,17 +145,17 @@ func fetchPageText(urlStr string) (string, error) {
 
 	// Extremely basic HTML to text conversion (removes tags, scripts, styles)
 	text := string(body)
-	
+
 	// Remove <script> and <style> sections
 	reScript := regexp.MustCompile(`(?s)<script.*?>.*?</script>`)
 	text = reScript.ReplaceAllString(text, "")
 	reStyle := regexp.MustCompile(`(?s)<style.*?>.*?</style>`)
 	text = reStyle.ReplaceAllString(text, "")
-	
+
 	// Remove all HTML tags
 	reTags := regexp.MustCompile(`<.*?>`)
 	text = reTags.ReplaceAllString(text, " ")
-	
+
 	// Collapse whitespace
 	reSpace := regexp.MustCompile(`\s+`)
 	text = reSpace.ReplaceAllString(text, " ")

@@ -53,16 +53,35 @@ func (t *FindAndClickTool) Execute(ctx context.Context, rawParams json.RawMessag
 
 	ui.ShowAutomationStep(fmt.Sprintf("Scanning screen for: %s", elementDesc))
 
-	// 1. Capture Screen
-	screenshot, err := automation.CaptureScreen()
-	if err != nil {
-		return "", fmt.Errorf("find_and_click: failed to capture screen: %w", err)
-	}
+	var element *vision.UIElement
+	var lastErr error
+	maxRetries := 3
 
-	// 2. Detect Element via Vision Model
-	element, err := t.Detector.FindUIElement(ctx, screenshot, elementDesc)
-	if err != nil {
-		return "", fmt.Errorf("find_and_click: vision model failed: %w", err)
+	for i := 0; i < maxRetries; i++ {
+		// 1. Capture Screen
+		var screenshot []byte
+		var err error
+		screenshot, err = automation.CaptureScreen()
+		if err != nil {
+			return "", fmt.Errorf("find_and_click: failed to capture screen: %w", err)
+		}
+
+		// 2. Detect Element via Vision Model
+		element, lastErr = t.Detector.FindUIElement(ctx, screenshot, elementDesc)
+		if lastErr != nil {
+			return "", fmt.Errorf("find_and_click: vision model failed: %w", lastErr)
+		}
+
+		if element.Found {
+			break
+		}
+
+		if i < maxRetries-1 {
+			ui.ShowAutomationStep(fmt.Sprintf("Element not found yet, retrying (%d/%d)...", i+1, maxRetries))
+			if err := automation.SleepCtx(ctx, 1.0); err != nil {
+				return "", err
+			}
+		}
 	}
 
 	if !element.Found {
@@ -149,32 +168,46 @@ func (t *ScrollAndFindTool) Execute(ctx context.Context, rawParams json.RawMessa
 	for i := 0; i < maxScrolls; i++ {
 		ui.ShowAutomationStep(fmt.Sprintf("Scrolling %s (attempt %d/%d) to find: %s", dir, i+1, maxScrolls, elementDesc))
 
-		// Capture and search
-		screenshot, err := automation.CaptureScreen()
-		if err == nil {
-			element, err := t.Detector.FindUIElement(ctx, screenshot, elementDesc)
-			if err == nil && element.Found {
-				// Found it! Highlight and click.
-				ui.ShowAutomationStep(fmt.Sprintf("Found target off-screen! Clicking..."))
-				ui.FlashHighlightBox(element.Box.X, element.Box.Y, element.Box.Width, element.Box.Height, 800)
-
-				if err := automation.SleepCtx(ctx, 0.8); err != nil {
-					return "", err
+		// Capture and search with retries
+		var element *vision.UIElement
+		var found bool
+		for retry := 0; retry < 3; retry++ {
+			screenshot, err := automation.CaptureScreen()
+			if err == nil {
+				element, err = t.Detector.FindUIElement(ctx, screenshot, elementDesc)
+				if err == nil && element.Found {
+					found = true
+					break
 				}
-				ui.HideHighlightBox()
-				if err := automation.SleepCtx(ctx, 0.1); err != nil {
-					return "", err
-				}
-
-				if err := automation.ClickMouse(element.Center.X, element.Center.Y, "left"); err != nil {
-					return "", err
-				}
-				if err := automation.SleepCtx(ctx, 0.8); err != nil {
-					return "", err
-				}
-
-				return fmt.Sprintf("Scrolled and found '%s' at (%d, %d)", elementDesc, element.Center.X, element.Center.Y), nil
 			}
+			if retry < 2 {
+				if err := automation.SleepCtx(ctx, 1.0); err != nil {
+					return "", err
+				}
+			}
+		}
+
+		if found {
+			// Found it! Highlight and click.
+			ui.ShowAutomationStep(fmt.Sprintf("Found target off-screen! Clicking..."))
+			ui.FlashHighlightBox(element.Box.X, element.Box.Y, element.Box.Width, element.Box.Height, 800)
+
+			if err := automation.SleepCtx(ctx, 0.8); err != nil {
+				return "", err
+			}
+			ui.HideHighlightBox()
+			if err := automation.SleepCtx(ctx, 0.1); err != nil {
+				return "", err
+			}
+
+			if err := automation.ClickMouse(element.Center.X, element.Center.Y, "left"); err != nil {
+				return "", err
+			}
+			if err := automation.SleepCtx(ctx, 0.8); err != nil {
+				return "", err
+			}
+
+			return fmt.Sprintf("Scrolled and found '%s' at (%d, %d)", elementDesc, element.Center.X, element.Center.Y), nil
 		}
 
 		// Not found on this screen, perform the scroll

@@ -49,6 +49,7 @@ type Engine struct {
 	RateLimiter  *security.RateLimiter
 	Profile      *security.Profile
 
+	History  []string
 	Events   chan Event
 	isBusy   bool // true while processing a command pipeline
 	busyLock sync.Mutex
@@ -166,10 +167,18 @@ func (e *Engine) handleEvent(ctx context.Context, ev Event) {
 			}
 			audit.LogAction(plan.Transcript, plan.Intent, tasksJSON, "SUCCESS")
 
-			e.Events <- Event{Type: EventToolExecuted}
+			e.Events <- Event{Type: EventToolExecuted, Payload: plan}
 		}()
 
 	case EventToolExecuted:
+		if plan, ok := ev.Payload.(agent.Plan); ok {
+			summary := fmt.Sprintf("User: %s | Intent: %s", plan.Transcript, plan.Intent)
+			e.History = append(e.History, summary)
+			if len(e.History) > 5 {
+				e.History = e.History[len(e.History)-5:]
+			}
+		}
+
 		fmt.Println("✅ Done execution.")
 		if !executor.IsSpeaking() {
 			ui.SetState(ui.StateIdle)
@@ -224,6 +233,13 @@ func (e *Engine) planExecution(rootCtx context.Context, transcript string) (agen
 		memBlock := memory.FormatForPrompt(mResult.mems)
 		fmt.Printf("🧠 Recalled %d memories\n", len(mResult.mems))
 		contextStr += "\n" + memBlock
+	}
+
+	if len(e.History) > 0 {
+		contextStr += "\nRecent Conversation History:\n"
+		for _, h := range e.History {
+			contextStr += h + "\n"
+		}
 	}
 
 	// Check rate limit before expensive LLM calls
