@@ -170,6 +170,25 @@ const htmlTemplate = `<!DOCTYPE html>
   .btn-cancel { background: rgba(255,255,255,0.1); color: #fff; }
   .btn-cancel:hover { background: rgba(255,255,255,0.15); }
 
+  /* ── Settings Section ── */
+  #settings-btn {
+    display: flex; width: 20px; height: 20px;
+    align-items: center; justify-content: center;
+    border-radius: 50%; background: rgba(255,255,255,0.1);
+    color: rgba(255,255,255,0.6); cursor: pointer;
+    font-size: 12px; transition: all 0.2s;
+  }
+  #settings-btn:hover { background: rgba(255,255,255,0.2); color: #fff; }
+  
+  #settings-container { display: none; flex-direction: column; padding: 14px 16px; flex: 1; animation: slideDown 0.3s ease; }
+  .setting-group { display: flex; flex-direction: column; margin-bottom: 12px; }
+  .setting-group label { font-size: 12px; font-weight: 600; color: #94a3b8; margin-bottom: 4px; }
+  .setting-group input {
+    background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px; color: #fff; padding: 8px 10px; font-size: 13px; font-family: inherit; outline: none;
+  }
+  .setting-group input:focus { border-color: #38bdf8; }
+
   @keyframes slideDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
 </style>
 
@@ -234,6 +253,22 @@ const htmlTemplate = `<!DOCTYPE html>
     document.getElementById('cmd-container').style.display = 'none';
     document.getElementById('card-content').style.display = 'none';
     document.getElementById('confirm-container').style.display = 'none';
+    document.getElementById('settings-container').style.display = 'none';
+  }
+
+  function showSettings() {
+    isExpanded = true;
+    hideAllContainers();
+    document.getElementById('settings-container').style.display = 'flex';
+    document.getElementById('close-btn').style.display = 'flex';
+    window.callResize(320, 260, 20);
+  }
+
+  function saveSettingsUI() {
+    const provider = document.getElementById('setting-provider').value;
+    const apiKey = document.getElementById('setting-apikey').value;
+    window.saveSettings(provider, apiKey);
+    resetUI();
   }
 
   function resetUI() {
@@ -273,6 +308,7 @@ const htmlTemplate = `<!DOCTYPE html>
     <div id="header-actions">
       <div id="visualizer"><div class="bar"></div><div class="bar"></div><div class="bar"></div></div>
       <div class="loader"></div>
+      <div id="settings-btn" onclick="event.stopPropagation(); showSettings();">⚙</div>
       <div id="close-btn" onclick="event.stopPropagation(); resetUI();">✕</div>
     </div>
   </div>
@@ -290,6 +326,17 @@ const htmlTemplate = `<!DOCTYPE html>
       <button class="btn btn-approve" onclick="approve()">Approve</button>
       <button class="btn btn-cancel" onclick="cancel()">Cancel</button>
     </div>
+  </div>
+  <div id="settings-container">
+    <div class="setting-group">
+      <label>LLM Provider</label>
+      <input type="text" id="setting-provider" placeholder="e.g. gemini">
+    </div>
+    <div class="setting-group">
+      <label>API Key</label>
+      <input type="password" id="setting-apikey" placeholder="Enter API Key">
+    </div>
+    <button class="btn btn-approve" onclick="saveSettingsUI()" style="margin-top: 8px;">Save</button>
   </div>
 </body>
 <script>
@@ -412,6 +459,25 @@ func StartOverlay() {
 	w.Bind("callResize", func(width, height, radius int) {
 		w.Dispatch(func() { resizeWindow(width, height, radius) })
 	})
+	w.Bind("saveSettings", func(provider, apiKey string) {
+		configPath := "config.json"
+		data, err := os.ReadFile(configPath)
+		if err == nil {
+			var configMap map[string]interface{}
+			if err := json.Unmarshal(data, &configMap); err == nil {
+				if provider != "" {
+					configMap["llm_provider"] = provider
+				}
+				if apiKey != "" {
+					configMap["api_key"] = apiKey
+				}
+				newData, err := json.MarshalIndent(configMap, "", "  ")
+				if err == nil {
+					os.WriteFile(configPath, newData, 0644)
+				}
+			}
+		}
+	})
 
 	w.SetHtml(htmlTemplate)
 
@@ -425,9 +491,9 @@ func StartOverlay() {
 			style := win.GetWindowLong(hwnd, win.GWL_STYLE)
 			win.SetWindowLong(hwnd, win.GWL_STYLE, style&^(win.WS_CAPTION|win.WS_THICKFRAME))
 
-			// Add Topmost and Toolwindow (no taskbar icon)
+			// Add Topmost, Toolwindow (no taskbar icon), and NoActivate (don't steal focus on click)
 			exStyle := win.GetWindowLong(hwnd, win.GWL_EXSTYLE)
-			win.SetWindowLong(hwnd, win.GWL_EXSTYLE, exStyle|win.WS_EX_TOPMOST|win.WS_EX_TOOLWINDOW)
+			win.SetWindowLong(hwnd, win.GWL_EXSTYLE, exStyle|win.WS_EX_TOPMOST|win.WS_EX_TOOLWINDOW|win.WS_EX_NOACTIVATE)
 
 			// Initial Pill Clip
 			resizeWindow(defaultW, defaultH, 22)
