@@ -81,6 +81,7 @@ func DefaultRegistry(provider llm.Provider) *Registry {
 	r.Register(&ScreenshotAnalysisTool{Provider: provider})
 
 	// Automation Tools
+	r.Register(&NativeClickTool{})
 	r.Register(&MouseMoveTool{})
 	r.Register(&MouseClickTool{})
 	r.Register(&MouseDragTool{})
@@ -95,6 +96,12 @@ func DefaultRegistry(provider llm.Provider) *Registry {
 	r.Register(&FindAndClickTool{Detector: uiDetector})
 	r.Register(&ScrollAndFindTool{Detector: uiDetector})
 	r.Register(&VerifyScreenStateTool{Provider: provider})
+
+	r.Register(&RunPythonTool{})
+
+	// Browser Tools
+	r.Register(&BrowserReadPageTool{})
+	r.Register(&BrowserNavigateTool{})
 
 	return r
 }
