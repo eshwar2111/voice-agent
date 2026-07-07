@@ -1,5 +1,7 @@
 package llm
 
+// DORMANT — ProxyProvider + Fallback* config planned for a later reliability slice. Not wired.
+
 import (
 	"context"
 	"errors"

@@ -1,5 +1,7 @@
 package alerts
 
+// DORMANT — planned for SP3 (Ambient Trigger Engine). Not wired into main.go yet.
+
 import (
 	"context"
 	"encoding/json"

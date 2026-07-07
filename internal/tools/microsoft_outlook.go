@@ -1,5 +1,7 @@
 package tools
 
+// DORMANT — Microsoft suite planned for SP4 (Trustworthy One-Shot Automation). Not registered yet.
+
 import (
 	"context"
 	"encoding/json"
