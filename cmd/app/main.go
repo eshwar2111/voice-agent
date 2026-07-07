@@ -99,7 +99,7 @@ func main() {
 		}
 	}()
 
-	registry := tools.DefaultRegistry(provider)
+	registry := tools.DefaultRegistryWithConfig(provider, cfg)
 	registry.Register(&tools.SaveMemoryTool{Store: memStore})
 	registry.Register(&tools.RememberTool{Store: memStore})
 	registry.Register(&tools.RecallTool{Retriever: memRetriever})
@@ -109,7 +109,7 @@ func main() {
 	profile := security.DeveloperProfile()
 	rateLimiter := security.NewRateLimiter(5) // 5 seconds cooldown
 
-	command.InitRouter(registry, provider)
+	command.InitRouter(registry, provider, &profile)
 	command.SetCancelFunc(cancel)
 	ui.OnCommand = command.ProcessCommand
 	ui.OnHistoryUp = command.GetPreviousHistory
@@ -139,7 +139,7 @@ func main() {
 
 	// The WebView UI Engine *must* run on the main OS thread to avoid crashes.
 	// When the WebView closes, we trigger shutdown
-	ui.StartOverlay()
+	ui.StartOverlay(rootCtx, cfg)
 
 	// WebView closed — trigger graceful shutdown
 	log.Println("WebView closed, starting graceful shutdown...")

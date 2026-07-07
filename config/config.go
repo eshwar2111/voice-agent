@@ -12,10 +12,30 @@ type Config struct {
 	APIKey             string `json:"api_key"`
 	Model              string `json:"model"`
 	BaseURL            string `json:"base_url"`
+	FallbackProvider   string `json:"fallback_provider"`
+	FallbackAPIKey     string `json:"fallback_api_key"`
+	FallbackModel      string `json:"fallback_model"`
 	TimeoutSeconds     int    `json:"timeout_seconds"`
 	PorcupineAccessKey string `json:"porcupine_access_key"`
 	WhisperPath        string `json:"whisper_path"`
 	WhisperModel       string `json:"whisper_model"`
+
+	// UX Toggles
+	EnableVoice bool `json:"enable_voice"`
+	PrivacyMode bool `json:"privacy_mode"`
+
+	// OAuth Credentials
+	GoogleClientID        string `json:"google_client_id"`
+	GoogleClientSecret    string `json:"google_client_secret"`
+	MicrosoftClientID     string `json:"microsoft_client_id"`
+	MicrosoftClientSecret string `json:"microsoft_client_secret"`
+	SpotifyClientID       string `json:"spotify_client_id"`
+	SpotifyClientSecret   string `json:"spotify_client_secret"`
+
+	// OAuth Tokens (Encrypted)
+	GoogleToken    string `json:"google_token"`
+	MicrosoftToken string `json:"microsoft_token"`
+	SpotifyToken   string `json:"spotify_token"`
 }
 
 // defaults applied when fields are missing or invalid.

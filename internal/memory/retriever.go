@@ -3,6 +3,7 @@ package memory
 import (
 	"database/sql"
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -30,14 +31,20 @@ func (r *Retriever) Search(query string, limit int) ([]Memory, error) {
 		return nil, nil
 	}
 
-	// Build WHERE clause: content LIKE '%token1%' OR content LIKE '%token2%' ...
-	clauses := make([]string, len(tokens))
-	args := make([]interface{}, len(tokens)+1)
-	for i, tok := range tokens {
-		clauses[i] = "content LIKE ?"
-		args[i] = "%" + tok + "%"
+	// Prefer exact phrase matches first, then token matches ranked by importance/recency.
+	clauses := make([]string, 0, len(tokens)+1)
+	args := make([]interface{}, 0, len(tokens)+2)
+	normalizedQuery := strings.TrimSpace(query)
+	if normalizedQuery != "" {
+		clauses = append(clauses, "content LIKE ?")
+		args = append(args, "%"+normalizedQuery+"%")
 	}
-	args[len(tokens)] = limit
+	for i, tok := range tokens {
+		_ = i
+		clauses = append(clauses, "content LIKE ?")
+		args = append(args, "%"+tok+"%")
+	}
+	args = append(args, limit)
 
 	query_sql := fmt.Sprintf(`
 		SELECT id, type, content, importance, timestamp
@@ -94,7 +101,7 @@ func extractTokens(query string) []string {
 	}
 
 	words := strings.Fields(strings.ToLower(query))
-	tokens := make([]string, 0, len(words))
+	tokenSet := make(map[string]struct{}, len(words))
 	for _, w := range words {
 		// Strip punctuation
 		clean := strings.Map(func(r rune) rune {
@@ -104,8 +111,13 @@ func extractTokens(query string) []string {
 			return -1
 		}, w)
 		if len(clean) >= 3 && !stopWords[clean] {
-			tokens = append(tokens, clean)
+			tokenSet[clean] = struct{}{}
 		}
 	}
+	tokens := make([]string, 0, len(tokenSet))
+	for token := range tokenSet {
+		tokens = append(tokens, token)
+	}
+	sort.Strings(tokens)
 	return tokens
 }

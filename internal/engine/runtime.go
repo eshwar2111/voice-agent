@@ -2,7 +2,6 @@ package engine
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"sync"
@@ -141,33 +140,28 @@ func (e *Engine) handleEvent(ctx context.Context, ev Event) {
 		transcript := ev.Payload.(string)
 		fmt.Printf("📝 Transcript: %s\n", transcript)
 
+		// Phase 4: Route voice transcripts through the Orchestrator so they get
+		// the same multi-agent decomposition + Phase 3 approval as typed commands.
 		go func() {
-			plan, err := e.planExecution(ctx, transcript)
-			if err != nil {
-				e.Events <- Event{Type: EventError, Err: fmt.Errorf("planning failed: %w", err)}
-				return
-			}
-			e.Events <- Event{Type: EventPlanReady, Payload: plan}
-		}()
+			ui.SetState(ui.StateReasoning)
 
-	case EventPlanReady:
-		plan := ev.Payload.(agent.Plan)
-		ui.SetState(ui.StateExecuting)
-
-		go func() {
-			fmt.Println("🚀 Executing...")
 			executorApp := agent.NewExecutor(e.Registry)
-			err := executorApp.ExecutePlan(ctx, plan)
+			orch := agent.NewOrchestrator(e.Provider, executorApp)
 
-			tasksJSON, _ := json.Marshal(plan.Tasks)
-			if err != nil {
-				e.Events <- Event{Type: EventError, Err: fmt.Errorf("execution failed: %w", err)}
-				audit.LogAction(plan.Transcript, plan.Intent, tasksJSON, "FAILED: "+err.Error())
+			ui.SetState(ui.StateExecuting)
+			fmt.Println("🚀 Orchestrating voice command…")
+
+			if err := orch.Run(ctx, transcript); err != nil {
+				e.Events <- Event{Type: EventError, Err: fmt.Errorf("orchestration failed: %w", err)}
+				audit.LogAction(transcript, "voice_orchestration", nil, "FAILED: "+err.Error())
 				return
 			}
-			audit.LogAction(plan.Transcript, plan.Intent, tasksJSON, "SUCCESS")
 
-			e.Events <- Event{Type: EventToolExecuted, Payload: plan}
+			audit.LogAction(transcript, "voice_orchestration", nil, "SUCCESS")
+			e.Events <- Event{Type: EventToolExecuted, Payload: agent.Plan{
+				Transcript: transcript,
+				Intent:     "voice_orchestration",
+			}}
 		}()
 
 	case EventToolExecuted:
@@ -247,9 +241,13 @@ func (e *Engine) planExecution(rootCtx context.Context, transcript string) (agen
 		return agent.Plan{}, fmt.Errorf("rate limit exceeded — please wait before sending another command")
 	}
 
+	allowedToolSchemas := e.Registry.DumpSchemasFiltered(func(name string, _ tools.Tool) bool {
+		return e.Profile.IsAllowed(name)
+	})
+
 	fmt.Println("⚡ [FAST PATH] Classifying command without screenshot...")
 	classifyCtx, classifyCancel := context.WithTimeout(rootCtx, 15*time.Second)
-	classify, err := e.Provider.ClassifyAndPlan(classifyCtx, transcript, e.Registry.DumpSchemas(), contextStr)
+	classify, err := e.Provider.ClassifyAndPlan(classifyCtx, transcript, allowedToolSchemas, contextStr)
 	classifyCancel()
 
 	var rawJSON string
@@ -291,7 +289,7 @@ func (e *Engine) planExecution(rootCtx context.Context, transcript string) (agen
 		resp, err := e.Provider.StreamGenerateIntent(reqCtx, llm.IntentRequest{
 			UserText:      transcript,
 			SystemContext: contextStr,
-			ToolSchemas:   e.Registry.DumpSchemas(),
+			ToolSchemas:   allowedToolSchemas,
 			Image:         imgBytes,
 		}, textDeltaChan)
 		reqCancel()

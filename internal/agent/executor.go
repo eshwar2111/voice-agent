@@ -63,20 +63,57 @@ func (e *GraphExecutor) ExecutePlan(ctx gocontext.Context, plan Plan) error {
 			return err
 		}
 
+		// Phase 3: Handle Interactive Approval Handshake
+		tr := tools.ParseToolResult(result)
+		if tr.Artifacts["type"] == "workflow_approval" {
+			log.Printf("    ⏸️ Approval required for workflow: %s\n", tr.Summary)
+			
+			// Show confirmation card in UI
+			cardJSON, _ := json.Marshal(tr.Artifacts)
+			approved := ui.RequestConfirmationCard(string(cardJSON))
+			
+			if !approved {
+				log.Printf("    🚫 User rejected workflow. Aborting plan.\n")
+				return fmt.Errorf("workflow execution cancelled by user")
+			}
+
+			// Approved! Re-execute the same tool with the 'approved_plan' injected
+			log.Printf("    ✅ Workflow approved. Re-executing with plan context...\n")
+			
+			rawPlan, _ := json.Marshal(tr.Artifacts["raw"])
+			var paramsMap map[string]interface{}
+			json.Unmarshal(injectedParams, &paramsMap)
+			paramsMap["approved_plan"] = string(rawPlan)
+			
+			finalParams, _ := json.Marshal(paramsMap)
+			result, err = tool.Execute(ctx, finalParams)
+			if err != nil {
+				log.Printf("    ❌ Tool '%s' execution failed after approval: %v\n", task.Tool, err)
+				return err
+			}
+		}
+
 		// Save output to short-term memory to flow to the next node
 		memory.Set(task.Tool, result)
 		lastOutput = result
 
+		// Parse structured output — only use Summary for display/logging
+		parsed := tools.ParseToolResult(result)
+		displayText := parsed.Summary
+		if displayText == "" {
+			displayText = result
+		}
+
 		log.Printf("    ✅ Tool success. Output length: %d chars\n", len(result))
-		if len(result) > 0 {
-			if len(result) < 200 {
-				fmt.Printf("    ↳ %s\n", result)
+		if len(displayText) > 0 {
+			if len(displayText) < 200 {
+				fmt.Printf("    ↳ %s\n", displayText)
 			}
 			// Let the final node output persist on the screen overlay
 			if i == len(plan.Tasks)-1 {
-				go func() {
-					importUIAndShowOutput(result)
-				}()
+				go func(text string) {
+					importUIAndShowOutput(text)
+				}(displayText)
 			}
 		}
 	}
@@ -89,3 +126,4 @@ func (e *GraphExecutor) ExecutePlan(ctx gocontext.Context, plan Plan) error {
 func importUIAndShowOutput(text string) {
 	ui.ShowOutputOverlay(text)
 }
+

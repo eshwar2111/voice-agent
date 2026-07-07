@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#4d8bff",
+                        "background-light": "#f5f6f8",
+                        "background-dark": "#0f1623",
+                    },
+                    fontFamily: {
+                        "display": ["Inter"]
+                    },
+                    borderRadius: {"DEFAULT": "0.5rem", "lg": "1rem", "xl": "1.5rem", "full": "9999px"},
+                },
+            },
+        }
+    </script>
+<style>
+        .glass {
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .sidebar-glass {
+            background: rgba(15, 22, 35, 0.7);
+            backdrop-filter: blur(20px);
+        }
+    </style>
+</head>
+<body class="bg-background-light dark:bg-background-dark font-display text-slate-900 dark:text-slate-100 antialiased h-screen overflow-hidden">
+<div class="flex h-full w-full">
+<!-- Sidebar -->
+<aside class="w-64 sidebar-glass border-r border-slate-200 dark:border-slate-800 flex flex-col justify-between py-6 px-4">
+<div class="space-y-6">
+<!-- App Identity -->
+<div class="flex items-center gap-3 px-2 mb-8">
+<div class="size-10 rounded-lg bg-primary flex items-center justify-center text-white shadow-lg shadow-primary/20">
+<span class="material-symbols-outlined">smart_toy</span>
+</div>
+<div>
+<h1 class="text-sm font-semibold text-slate-900 dark:text-slate-100">AI Assistant</h1>
+<p class="text-[10px] uppercase tracking-wider text-slate-500 font-bold">Premium v2.4</p>
+</div>
+</div>
+<!-- Navigation -->
+<nav class="space-y-1">
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-white/5 transition-colors" href="#">
+<span class="material-symbols-outlined text-[20px]">settings</span>
+<span class="text-sm font-medium">General</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg bg-primary/10 text-primary transition-colors border border-primary/20" href="#">
+<span class="material-symbols-outlined text-[20px]">keyboard</span>
+<span class="text-sm font-medium">Hotkeys</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-white/5 transition-colors" href="#">
+<span class="material-symbols-outlined text-[20px]">mic</span>
+<span class="text-sm font-medium">Voice</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-white/5 transition-colors" href="#">
+<span class="material-symbols-outlined text-[20px]">memory</span>
+<span class="text-sm font-medium">AI Providers</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-white/5 transition-colors" href="#">
+<span class="material-symbols-outlined text-[20px]">shield</span>
+<span class="text-sm font-medium">Privacy</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-white/5 transition-colors" href="#">
+<span class="material-symbols-outlined text-[20px]">extension</span>
+<span class="text-sm font-medium">Plugins</span>
+</a>
+</nav>
+</div>
+<!-- Bottom Nav -->
+<div class="space-y-1">
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-500 hover:text-slate-900 dark:hover:text-slate-100 transition-colors" href="#">
+<span class="material-symbols-outlined text-[20px]">help</span>
+<span class="text-sm font-medium">Help &amp; Support</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-red-500 hover:bg-red-500/10 transition-colors" href="#">
+<span class="material-symbols-outlined text-[20px]">logout</span>
+<span class="text-sm font-medium">Sign Out</span>
+</a>
+</div>
+</aside>
+<!-- Main Content -->
+<main class="flex-1 overflow-y-auto bg-background-light dark:bg-[#0b101a]">
+<div class="max-w-4xl mx-auto px-10 py-12">
+<!-- Header -->
+<header class="mb-10">
+<h2 class="text-3xl font-bold text-slate-900 dark:text-slate-100 tracking-tight">System Preferences</h2>
+<p class="text-slate-500 dark:text-slate-400 mt-1">Manage your shortcuts and model configurations.</p>
+</header>
+<div class="space-y-8">
+<!-- Hotkey Bindings Section -->
+<section>
+<h3 class="text-xs font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-4 px-1">Global Shortcuts</h3>
+<div class="glass rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800">
+<!-- Shortcut Row 1 -->
+<div class="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-800">
+<div class="flex items-center gap-4">
+<div class="size-10 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-600 dark:text-slate-400">
+<span class="material-symbols-outlined">bolt</span>
+</div>
+<div>
+<p class="text-sm font-semibold">Activate Assistant</p>
+<p class="text-xs text-slate-500">Summon the overlay from any application</p>
+</div>
+</div>
+<div class="flex items-center gap-2">
+<kbd class="px-2 py-1 bg-slate-200 dark:bg-slate-700 rounded text-xs font-mono shadow-sm">⌘</kbd>
+<kbd class="px-2 py-1 bg-slate-200 dark:bg-slate-700 rounded text-xs font-mono shadow-sm">Space</kbd>
+<button class="ml-2 text-primary hover:text-primary/80">
+<span class="material-symbols-outlined text-[18px]">edit</span>
+</button>
+</div>
+</div>
+<!-- Shortcut Row 2 -->
+<div class="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-800">
+<div class="flex items-center gap-4">
+<div class="size-10 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-600 dark:text-slate-400">
+<span class="material-symbols-outlined">mic</span>
+</div>
+<div>
+<p class="text-sm font-semibold">Voice Input</p>
+<p class="text-xs text-slate-500">Hold to start recording dictation</p>
+</div>
+</div>
+<div class="flex items-center gap-2">
+<kbd class="px-2 py-1 bg-slate-200 dark:bg-slate-700 rounded text-xs font-mono shadow-sm">⌥</kbd>
+<kbd class="px-2 py-1 bg-slate-200 dark:bg-slate-700 rounded text-xs font-mono shadow-sm">V</kbd>
+<button class="ml-2 text-primary hover:text-primary/80">
+<span class="material-symbols-outlined text-[18px]">edit</span>
+</button>
+</div>
+</div>
+<!-- Shortcut Row 3 -->
+<div class="flex items-center justify-between p-4">
+<div class="flex items-center gap-4">
+<div class="size-10 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-600 dark:text-slate-400">
+<span class="material-symbols-outlined">content_paste</span>
+</div>
+<div>
+<p class="text-sm font-semibold">Paste and Summarize</p>
+<p class="text-xs text-slate-500">Automatically summarize clipboard contents</p>
+</div>
+</div>
+<div class="flex items-center gap-2">
+<kbd class="px-2 py-1 bg-slate-200 dark:bg-slate-700 rounded text-xs font-mono shadow-sm">⇧</kbd>
+<kbd class="px-2 py-1 bg-slate-200 dark:bg-slate-700 rounded text-xs font-mono shadow-sm">⌘</kbd>
+<kbd class="px-2 py-1 bg-slate-200 dark:bg-slate-700 rounded text-xs font-mono shadow-sm">S</kbd>
+<button class="ml-2 text-primary hover:text-primary/80">
+<span class="material-symbols-outlined text-[18px]">edit</span>
+</button>
+</div>
+</div>
+</div>
+</section>
+<!-- AI Providers Section -->
+<section>
+<h3 class="text-xs font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-4 px-1">AI Providers</h3>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+<!-- OpenAI -->
+<label class="relative group cursor-pointer">
+<input checked="" class="peer sr-only" name="provider" type="radio" value="openai"/>
+<div class="glass p-6 rounded-xl border-2 border-transparent peer-checked:border-primary peer-checked:bg-primary/5 transition-all h-full">
+<div class="flex flex-col items-center text-center space-y-4">
+<div class="size-12 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-900 dark:text-white">
+<span class="material-symbols-outlined text-3xl">api</span>
+</div>
+<div>
+<h4 class="font-bold text-sm">OpenAI</h4>
+<p class="text-xs text-slate-500 mt-1">GPT-4o, GPT-3.5</p>
+</div>
+<div class="flex items-center gap-1.5 text-[10px] font-bold text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-full">
+<span class="size-1.5 rounded-full bg-emerald-500"></span>
+                                            CONNECTED
+                                        </div>
+</div>
+</div>
+</label>
+<!-- Gemini -->
+<label class="relative group cursor-pointer">
+<input class="peer sr-only" name="provider" type="radio" value="gemini"/>
+<div class="glass p-6 rounded-xl border-2 border-transparent peer-checked:border-primary peer-checked:bg-primary/5 transition-all h-full">
+<div class="flex flex-col items-center text-center space-y-4">
+<div class="size-12 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-900 dark:text-white">
+<span class="material-symbols-outlined text-3xl">auto_awesome</span>
+</div>
+<div>
+<h4 class="font-bold text-sm">Google Gemini</h4>
+<p class="text-xs text-slate-500 mt-1">Gemini 1.5 Pro</p>
+</div>
+<div class="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 bg-slate-400/10 px-2 py-0.5 rounded-full">
+<span class="size-1.5 rounded-full bg-slate-400"></span>
+                                            NOT LINKED
+                                        </div>
+</div>
+</div>
+</label>
+<!-- Local (Ollama) -->
+<label class="relative group cursor-pointer">
+<input class="peer sr-only" name="provider" type="radio" value="ollama"/>
+<div class="glass p-6 rounded-xl border-2 border-transparent peer-checked:border-primary peer-checked:bg-primary/5 transition-all h-full">
+<div class="flex flex-col items-center text-center space-y-4">
+<div class="size-12 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-900 dark:text-white">
+<span class="material-symbols-outlined text-3xl">dns</span>
+</div>
+<div>
+<h4 class="font-bold text-sm">Local (Ollama)</h4>
+<p class="text-xs text-slate-500 mt-1">Private, No API Key</p>
+</div>
+<div class="flex items-center gap-1.5 text-[10px] font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-full">
+<span class="size-1.5 rounded-full bg-primary animate-pulse"></span>
+                                            IDLE
+                                        </div>
+</div>
+</div>
+</label>
+</div>
+
+<!-- Custom Provider -->
+<div class="mt-4 pt-4 border-t border-slate-200 dark:border-slate-800">
+<label class="relative group cursor-pointer block mb-4">
+<input class="peer sr-only" name="provider" type="radio" value="custom"/>
+<div class="glass p-4 rounded-xl border-2 border-transparent peer-checked:border-primary peer-checked:bg-primary/5 transition-all flex items-center justify-between">
+<div class="flex items-center gap-4">
+<div class="size-10 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-900 dark:text-white">
+<span class="material-symbols-outlined text-2xl">extension</span>
+</div>
+<div>
+<h4 class="font-bold text-sm">Custom Provider (BYOK)</h4>
+<p class="text-xs text-slate-500 mt-1">Groq, Together AI, LM Studio, Anthropic</p>
+</div>
+</div>
+<span class="material-symbols-outlined text-slate-400 group-hover:text-primary transition-colors">add_circle</span>
+</div>
+</label>
+
+<!-- Custom Provider Configuration (Hidden by default, shown when Custom is selected) -->
+<div class="glass p-6 rounded-xl border border-slate-200 dark:border-slate-800 hidden peer-checked:block space-y-4" id="custom-provider-config">
+<h4 class="font-semibold text-sm mb-2">Custom Connection Details</h4>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+<div class="space-y-2">
+<label class="text-xs font-medium text-slate-500">Base URL</label>
+<input class="w-full bg-slate-100 dark:bg-slate-800 border-none rounded-lg text-sm px-4 py-2.5 focus:ring-2 focus:ring-primary" placeholder="https://api.groq.com/openai/v1" type="text" id="custom-base-url"/>
+</div>
+<div class="space-y-2">
+<label class="text-xs font-medium text-slate-500">Model Name</label>
+<input class="w-full bg-slate-100 dark:bg-slate-800 border-none rounded-lg text-sm px-4 py-2.5 focus:ring-2 focus:ring-primary" placeholder="llama3-8b-8192" type="text" id="custom-model"/>
+</div>
+</div>
+<div class="space-y-2 mt-4">
+<label class="text-xs font-medium text-slate-500">API Key</label>
+<input class="w-full bg-slate-100 dark:bg-slate-800 border-none rounded-lg text-sm px-4 py-2.5 focus:ring-2 focus:ring-primary" placeholder="sk-..." type="password" id="custom-api-key"/>
+<p class="text-[10px] text-slate-500 mt-1">Leave blank for local providers like LM Studio.</p>
+</div>
+<div class="space-y-2 mt-4">
+<label class="text-xs font-medium text-slate-500">Provider Type (Format)</label>
+<select class="w-full bg-slate-100 dark:bg-slate-800 border-none rounded-lg text-sm px-4 py-2.5 focus:ring-2 focus:ring-primary" id="custom-format">
+<option value="openai">OpenAI Compatible (Groq, Together, LM Studio)</option>
+<option value="anthropic">Anthropic (Claude)</option>
+</select>
+</div>
+</div>
+</div>
+</section>
+<!-- Advanced Configuration -->
+<section class="glass p-6 rounded-xl border border-slate-200 dark:border-slate-800">
+<div class="flex items-center justify-between mb-6">
+<div>
+<h4 class="font-semibold">Model Parameters</h4>
+<p class="text-xs text-slate-500">Fine-tune the output behavior of the selected provider.</p>
+</div>
+<button class="text-xs font-bold text-primary hover:underline">RESET TO DEFAULT</button>
+</div>
+<div class="space-y-6">
+<div class="space-y-3">
+<div class="flex justify-between items-center">
+<label class="text-sm font-medium">Temperature</label>
+<span class="text-xs font-mono bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded">0.7</span>
+</div>
+<input class="w-full h-1.5 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-primary" type="range"/>
+<p class="text-[10px] text-slate-500">Higher values make the output more creative, lower values more deterministic.</p>
+</div>
+<div class="flex items-center justify-between py-4 border-t border-slate-200 dark:border-slate-800">
+<div>
+<p class="text-sm font-medium">Stream Responses</p>
+<p class="text-xs text-slate-500">Show text as it is being generated</p>
+</div>
+<div class="relative inline-flex items-center cursor-pointer">
+<input checked="" class="sr-only peer" type="checkbox" value=""/>
+<div class="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-primary"></div>
+</div>
+</div>
+</div>
+</section>
+</div>
+<!-- Footer Actions -->
+<div class="mt-12 flex justify-end gap-4 pb-12">
+<button class="px-6 py-2.5 rounded-lg text-sm font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-white/5 transition-all">
+                        Cancel
+                    </button>
+<button class="px-8 py-2.5 rounded-lg text-sm font-semibold bg-primary text-white shadow-lg shadow-primary/20 hover:bg-primary/90 transition-all">
+                        Save Changes
+                    </button>
+</div>
+</div>
+</main>
+</div>
+</body></html>

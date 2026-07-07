@@ -3,7 +3,9 @@ package tools
 import (
 	"encoding/json"
 	"log"
+	"sort"
 
+	"github.com/yourname/voice-agent/config"
 	"github.com/yourname/voice-agent/internal/llm"
 	"github.com/yourname/voice-agent/internal/vision"
 )
@@ -29,14 +31,35 @@ func (r *Registry) Get(name string) (Tool, bool) {
 	return t, ok
 }
 
+func (r *Registry) ToolNames() []string {
+	names := make([]string, 0, len(r.tools))
+	for name := range r.tools {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
 // DumpSchemas returns a JSON string representing all registered tools and their parameters.
 // The result is cached and invalidated when new tools are registered.
 func (r *Registry) DumpSchemas() string {
-	if r.cachedSchemas != "" {
-		return r.cachedSchemas
+	if r.cachedSchemas == "" {
+		r.cachedSchemas = r.dumpSchemas(nil)
 	}
-	schemas := make(map[string]map[string]interface{})
+	return r.cachedSchemas
+}
+
+// DumpSchemasFiltered returns a JSON string representing only the tools that match the predicate.
+func (r *Registry) DumpSchemasFiltered(allow func(name string, tool Tool) bool) string {
+	return r.dumpSchemas(allow)
+}
+
+func (r *Registry) dumpSchemas(allow func(name string, tool Tool) bool) string {
+	schemas := make(map[string]map[string]interface{}, len(r.tools))
 	for name, tool := range r.tools {
+		if allow != nil && !allow(name, tool) {
+			continue
+		}
 		var params map[string]interface{}
 		if err := json.Unmarshal([]byte(tool.Parameters()), &params); err != nil {
 			log.Printf("Warning: tool %q has invalid parameter schema: %v", name, err)
@@ -52,12 +75,15 @@ func (r *Registry) DumpSchemas() string {
 		log.Printf("Error marshaling tool schemas: %v", err)
 		return "{}"
 	}
-	r.cachedSchemas = string(b)
-	return r.cachedSchemas
+	return string(b)
 }
 
 // DefaultRegistry returns a standard registry with all core tools
 func DefaultRegistry(provider llm.Provider) *Registry {
+	return DefaultRegistryWithConfig(provider, nil)
+}
+
+func DefaultRegistryWithConfig(provider llm.Provider, cfg *config.Config) *Registry {
 	r := NewRegistry()
 	r.Register(&OpenAppTool{})
 	r.Register(&WebSearchTool{})
@@ -98,10 +124,54 @@ func DefaultRegistry(provider llm.Provider) *Registry {
 	r.Register(&VerifyScreenStateTool{Provider: provider})
 
 	r.Register(&RunPythonTool{})
+	r.Register(&SystemStatusTool{})
+	r.Register(&TimerTool{})
 
 	// Browser Tools
 	r.Register(&BrowserReadPageTool{})
 	r.Register(&BrowserNavigateTool{})
+
+	if cfg != nil {
+		r.Register(&GoogleCalendarListTool{Cfg: cfg})
+		r.Register(&GoogleCalendarAddEventTool{Cfg: cfg})
+		r.Register(&GoogleCalendarSearchTool{Cfg: cfg})
+		r.Register(&GoogleDriveListTool{Cfg: cfg})
+		r.Register(&GoogleDocsReadTool{Cfg: cfg})
+		r.Register(&GoogleDocsCreateTool{Cfg: cfg})
+		r.Register(&GoogleDocsSearchTool{Cfg: cfg})
+		r.Register(&GoogleSheetsReadTool{Cfg: cfg})
+		r.Register(&GoogleSheetsWriteTool{Cfg: cfg})
+		r.Register(&GoogleSheetsSearchTool{Cfg: cfg})
+		r.Register(&GoogleSlidesReadTool{Cfg: cfg})
+		r.Register(&GoogleSlidesCreateTool{Cfg: cfg})
+		r.Register(&GoogleSlidesSearchTool{Cfg: cfg})
+		r.Register(&GoogleGmailListTool{Cfg: cfg})
+		r.Register(&GoogleGmailSendTool{Cfg: cfg})
+		r.Register(&GoogleGmailSearchTool{Cfg: cfg})
+		r.Register(&GoogleGmailGetEmailTool{Cfg: cfg})
+		r.Register(&GoogleAIAssistantTool{Cfg: cfg, Provider: provider})
+		r.Register(&GoogleWorkspaceAssistantTool{Cfg: cfg, Provider: provider})
+
+		r.Register(&SpotifyNowPlayingTool{Cfg: cfg})
+		r.Register(&SpotifyPlayTool{Cfg: cfg})
+		r.Register(&SpotifyPauseTool{Cfg: cfg})
+		r.Register(&SpotifyNextTool{Cfg: cfg})
+		r.Register(&SpotifyPreviousTool{Cfg: cfg})
+		r.Register(&SpotifyVolumeTool{Cfg: cfg})
+		r.Register(&SpotifySearchTool{Cfg: cfg})
+		r.Register(&SpotifyPlaylistsTool{Cfg: cfg})
+		r.Register(&SpotifyDeviceTool{Cfg: cfg})
+		r.Register(&SpotifyQueueTool{Cfg: cfg})
+		r.Register(&SpotifyAccountTool{Cfg: cfg})
+		r.Register(&SpotifyAICuratTool{Cfg: cfg, Provider: provider})
+		r.Register(&SpotifySmartRecommendTool{Cfg: cfg, Provider: provider})
+		r.Register(&SpotifyAssistantTool{Cfg: cfg, Provider: provider})
+		r.Register(&SpotifyWorkflowAgentTool{Cfg: cfg, Provider: provider})
+		r.Register(&SpotifyContextualMoodTool{Cfg: cfg, Provider: provider})
+
+		r.Register(&GoogleWorkflowAgentTool{Cfg: cfg, Provider: provider})
+		r.Register(&GoogleWorkspaceBriefTool{Cfg: cfg, Provider: provider})
+	}
 
 	return r
 }
