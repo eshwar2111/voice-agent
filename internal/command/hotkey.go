@@ -3,13 +3,39 @@ package command
 import (
 	"context"
 	"log"
+	"sync"
 
 	"github.com/moutend/go-hook/pkg/keyboard"
 	"github.com/moutend/go-hook/pkg/types"
+	agentctx "github.com/yourname/voice-agent/internal/context"
 	"github.com/yourname/voice-agent/internal/ui"
 )
 
 var cancelFunc context.CancelFunc
+
+var (
+	pendingMu      sync.Mutex
+	pendingCapture *agentctx.Capture
+)
+
+func setPendingCapture(c agentctx.Capture) {
+	pendingMu.Lock()
+	pendingCapture = &c
+	pendingMu.Unlock()
+}
+
+// takePendingCapture returns the capture stashed at the last hotkey press (and clears it),
+// or a fresh cheap capture (no selection) if none is pending.
+func takePendingCapture() agentctx.Capture {
+	pendingMu.Lock()
+	c := pendingCapture
+	pendingCapture = nil
+	pendingMu.Unlock()
+	if c != nil {
+		return *c
+	}
+	return agentctx.CaptureAmbient(false)
+}
 
 // SetCancelFunc sets the function to call when Ctrl+Esc is pressed
 func SetCancelFunc(cf context.CancelFunc) {
@@ -42,6 +68,7 @@ func ListenHotkey() {
 		// Check for Ctrl + Space (Command Palette)
 		if event.Message == types.WM_KEYDOWN && event.VKCode == types.VK_SPACE && ctrlDown {
 			log.Println("Command palette triggered via hotkey!")
+			setPendingCapture(agentctx.CaptureAmbient(true)) // target app still has focus here
 			ui.ShowCommandBar()
 		}
 

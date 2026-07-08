@@ -54,12 +54,8 @@ func ProcessCommand(input string) {
 		return
 	}
 
-	sysCtx := agentctx.BuildContext()
-	activeApp := ""
-	if sysCtx.Window != nil {
-		activeApp = sysCtx.Window.ProcessName
-	}
-	if err := globalDispatch.Handle(globalCtx, input, agentctx.Capture{AppName: activeApp}); err != nil {
+	cap := takePendingCapture()
+	if err := globalDispatch.Handle(globalCtx, input, cap); err != nil {
 		log.Printf("dispatch failed: %v", err)
 	}
 }
