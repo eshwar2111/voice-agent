@@ -119,6 +119,9 @@ func DefaultRegistryWithConfig(provider llm.Provider, cfg *config.Config) *Regis
 	r.Register(&MediaControlTool{})
 	r.Register(&WindowControlTool{})
 
+	// System Control
+	r.Register(&SystemControlTool{})
+
 	// Vision Automation Tools (Phase 8)
 	uiDetector := &vision.UIDetector{Provider: provider}
 	r.Register(&FindAndClickTool{Detector: uiDetector})
