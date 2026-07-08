@@ -1,6 +1,10 @@
 package resolver
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/yourname/voice-agent/internal/agent"
+)
 
 // NormalizedInput is the pre-processed command handed to every Matcher.
 type NormalizedInput struct {
@@ -20,4 +24,41 @@ func Normalize(raw, activeApp string) NormalizedInput {
 		Tokens:    tokens,
 		ActiveApp: activeApp,
 	}
+}
+
+// DefaultThreshold is the minimum confidence for a local (Tier 0) match.
+const DefaultThreshold = 0.7
+
+// Match is a resolved local plan with a confidence score.
+type Match struct {
+	Tasks      []agent.Task
+	Confidence float64
+	Reason     string
+}
+
+// Matcher recognizes one intent domain deterministically.
+type Matcher interface {
+	Name() string
+	Match(in NormalizedInput) (*Match, bool)
+}
+
+// Resolver runs matchers in priority order and returns the first qualifying match.
+type Resolver struct {
+	Matchers  []Matcher
+	Threshold float64
+}
+
+// NewResolver creates a Resolver with the given matchers and default threshold.
+func NewResolver(matchers ...Matcher) *Resolver {
+	return &Resolver{Matchers: matchers, Threshold: DefaultThreshold}
+}
+
+// Resolve returns the first match whose confidence >= Threshold, else (nil,false).
+func (r *Resolver) Resolve(in NormalizedInput) (*Match, bool) {
+	for _, m := range r.Matchers {
+		if match, ok := m.Match(in); ok && match != nil && match.Confidence >= r.Threshold {
+			return match, true
+		}
+	}
+	return nil, false
 }
