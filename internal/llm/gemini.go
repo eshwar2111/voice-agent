@@ -362,7 +362,7 @@ func (g *GeminiProvider) ClassifyAndPlan(ctx context.Context, transcript, toolSc
 		return ClassifyResponse{}, errors.New("gemini API key is missing")
 	}
 
-	systemPrompt := fmt.Sprintf(classifySystemPrompt, toolSchemas, systemContext)
+	systemPrompt := buildClassifyPrompt(toolSchemas, systemContext)
 
 	payload := map[string]interface{}{
 		"contents": []map[string]interface{}{
