@@ -1,8 +1,13 @@
 package resolver
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/yourname/voice-agent/internal/search"
 )
 
 func TestDateTimeMatcher(t *testing.T) {
@@ -168,6 +173,45 @@ func TestWindowMatcher(t *testing.T) {
 	}
 	if _, ok := m.Match(Normalize("open notepad", "")); ok {
 		t.Error("window must not match app launch")
+	}
+}
+
+func TestDefaultResolverFileVsWeb(t *testing.T) {
+	// Seed a real file index so FileMatcher (backed by search.SearchFiles) has
+	// something to find for "resume.ai".
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "resume.ai"), []byte("x"), 0o644); err != nil {
+		t.Fatalf("failed to seed test file: %v", err)
+	}
+	search.InitIndexer(dir)
+	deadline := time.Now().Add(5 * time.Second)
+	for !search.IsReady && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !search.IsReady {
+		t.Fatal("file indexer did not become ready in time")
+	}
+
+	r := Default()
+	// TLD-like filename must go to FileMatcher (open_file), not WebMatcher (open_website).
+	m, ok := r.Resolve(Normalize("open file resume.ai", ""))
+	if !ok {
+		t.Fatalf("'open file resume.ai' should resolve")
+	}
+	if m.Tasks[0].Tool == "open_website" {
+		t.Errorf("'open file resume.ai' wrongly resolved to open_website, params=%s", m.Tasks[0].Params)
+	}
+	if m.Tasks[0].Tool != "open_file" {
+		t.Errorf("'open file resume.ai' should resolve to open_file, got %s", m.Tasks[0].Tool)
+	}
+	if !strings.Contains(string(m.Tasks[0].Params), "resume.ai") {
+		t.Errorf("params should contain resume.ai, got %s", m.Tasks[0].Params)
+	}
+
+	// Guard must not over-fire: a real domain with no file cue still resolves to open_website.
+	m2, ok := r.Resolve(Normalize("open notion.io", ""))
+	if !ok || m2.Tasks[0].Tool != "open_website" {
+		t.Errorf("'open notion.io' should still resolve to open_website, ok=%v", ok)
 	}
 }
 

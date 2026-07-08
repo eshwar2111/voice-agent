@@ -61,3 +61,31 @@ func FindApp(query string) (StartApp, bool) {
 
 	return StartApp{}, false
 }
+
+// FindAppMatches returns the best-matching app display name and how many apps
+// matched the query. An exact (case-insensitive) name match is unambiguous
+// (count 1). Otherwise it counts all fuzzy substring matches so callers can
+// detect ambiguity. Returns ("", 0) when nothing matches.
+func FindAppMatches(query string) (string, int) {
+	apps, err := getAppsList()
+	if err != nil || len(apps) == 0 {
+		return "", 0
+	}
+	query = strings.ToLower(strings.TrimSpace(query))
+	for _, app := range apps {
+		if strings.ToLower(app.Name) == query {
+			return app.Name, 1
+		}
+	}
+	first := ""
+	count := 0
+	for _, app := range apps {
+		if strings.Contains(strings.ToLower(app.Name), query) {
+			if count == 0 {
+				first = app.Name
+			}
+			count++
+		}
+	}
+	return first, count
+}

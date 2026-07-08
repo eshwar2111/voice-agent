@@ -49,6 +49,10 @@ type WebMatcher struct{}
 
 func (WebMatcher) Name() string { return "web" }
 func (WebMatcher) Match(in NormalizedInput) (*Match, bool) {
+	// file commands take precedence over domain-looking substrings (e.g. "resume.ai")
+	if strings.HasPrefix(in.Lower, "open file ") || strings.HasPrefix(in.Lower, "find file ") {
+		return nil, false
+	}
 	// 1) explicit URL/domain anywhere in the input -> open_website
 	if loc := domainRe.FindString(in.Lower); loc != "" {
 		url := loc
@@ -224,13 +228,7 @@ func (WindowMatcher) Match(in NormalizedInput) (*Match, bool) {
 // Default wires all seven matchers backed by real OS/index lookups, in priority order.
 func Default() *Resolver {
 	appLookup := func(q string) (string, int) {
-		app, found := executor.FindApp(q)
-		if !found {
-			return "", 0
-		}
-		// executor.FindApp returns a single best match; treat as unambiguous.
-		// (A future refinement can return a real candidate count.)
-		return app.Name, 1
+		return executor.FindAppMatches(q)
 	}
 	fileSearch := func(q string) []string {
 		recs := search.SearchFiles(q)
