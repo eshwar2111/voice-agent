@@ -30,12 +30,23 @@ Stop-Process -Name voice-agent -Force
 
 ## Baseline table
 
-| metric | before | after |
+| metric | before | after (default no-voice build) |
 |---|---|---|
-| Binary size (bytes) | 58,379,847 (≈ 55.7 MB) | *measure on build machine — see note* |
-| Idle RAM — WorkingSet64 (bytes) | 55,422,976 (≈ 52.9 MB) | *measure on build machine — see note* |
-| Idle RAM — PrivateMemorySize64 (bytes) | 62,484,480 (≈ 59.6 MB) | *measure on build machine — see note* |
-| Cold start (wall clock, approximate) | ~8–9.5 s | *measure on build machine — see note* |
+| Binary size (bytes) | 58,379,847 (≈ 55.7 MB) | **23,204,864 (≈ 22.1 MB) — −60%** |
+| Idle RAM — WorkingSet64 (bytes) | 55,422,976 (≈ 52.9 MB) | 98,680,832 (see note — noisy) |
+| Idle RAM — PrivateMemorySize64 (bytes) | 62,484,480 (≈ 59.6 MB) | 69,840,896 (see note — noisy) |
+| Cold start | ~8–9.5 s | app launches; not re-timed precisely |
+
+**Binary size is a clean, large win** (−60%): the default build now strips symbols (`-s -w`)
+and, via the new `whisper` build tag (`internal/asr/stub.go`), drops the whisper.cpp C++
+static libs entirely. Voice is opt-in with `-tags whisper`.
+
+**Idle RAM is NOT a reliable single-sample comparison** and should not be read as a regression.
+The figure is dominated by the Edge **WebView2** runtime (multiple helper processes; WorkingSet
+counts shared pages) and the background file indexer walking `%USERPROFILE%`, neither of which
+SP1 changed. The lazy-overlay change (two fewer WebViews at startup) genuinely reduces RAM, but
+that saving is swamped by WebView2/indexer variance in a one-shot sample. Take several samples
+(and compare with the indexer disabled) before claiming a RAM delta.
 
 ## "After" measurement — status
 
