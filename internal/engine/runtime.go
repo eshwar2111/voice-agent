@@ -55,10 +55,11 @@ type Engine struct {
 	Profile      *security.Profile
 	Dispatch     *dispatch.Deps
 
-	History  []string
-	Events   chan Event
-	isBusy   bool // true while processing a command pipeline
-	busyLock sync.Mutex
+	History     []string
+	Events      chan Event
+	isBusy      bool // true while processing a command pipeline
+	busyLock    sync.Mutex
+	commandDone chan struct{}
 }
 
 func NewEngine(cfg *config.Config, provider llm.Provider, registry *tools.Registry, store *memory.Store, retriever *memory.Retriever, rateLimiter *security.RateLimiter, profile *security.Profile) *Engine {
@@ -76,7 +77,8 @@ func NewEngine(cfg *config.Config, provider llm.Provider, registry *tools.Regist
 			Profile:  profile,
 			Resolver: resolver.Default(),
 		},
-		Events: make(chan Event, 100),
+		Events:      make(chan Event, 100),
+		commandDone: make(chan struct{}, 1),
 	}
 }
 
@@ -183,6 +185,10 @@ func (e *Engine) handleEvent(ctx context.Context, ev Event) {
 		e.busyLock.Lock()
 		e.isBusy = false
 		e.busyLock.Unlock()
+		select {
+		case e.commandDone <- struct{}{}:
+		default:
+		}
 
 	case EventError:
 		log.Printf("Engine Error Event: %v", ev.Err)
@@ -190,6 +196,30 @@ func (e *Engine) handleEvent(ctx context.Context, ev Event) {
 		e.busyLock.Lock()
 		e.isBusy = false
 		e.busyLock.Unlock()
+		select {
+		case e.commandDone <- struct{}{}:
+		default:
+		}
+	}
+}
+
+// TriggerAndWait fires a voice capture (as if the pill were clicked) and blocks until the
+// command finishes or timeout elapses. Used by the wake-word loop to hand the mic back only
+// after the command is done.
+func (e *Engine) TriggerAndWait(timeout time.Duration) {
+	// drain any stale completion signal
+	select {
+	case <-e.commandDone:
+	default:
+	}
+	select {
+	case ui.ListenTrigger <- struct{}{}:
+	case <-time.After(2 * time.Second):
+		return // engine not consuming triggers; give up
+	}
+	select {
+	case <-e.commandDone:
+	case <-time.After(timeout):
 	}
 }
 
