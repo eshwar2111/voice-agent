@@ -114,7 +114,7 @@ func (p *OpenAICompatibleProvider) makeRequest(ctx context.Context, payload open
 }
 
 func (p *OpenAICompatibleProvider) ClassifyAndPlan(ctx context.Context, transcript, toolSchemas, systemContext string) (ClassifyResponse, error) {
-	prompt := buildPlanningPrompt(toolSchemas, systemContext, false)
+	prompt := buildClassifyPrompt(toolSchemas, systemContext)
 	req := openaiRequest{
 		Model: p.model,
 		Messages: []openaiMessage{
@@ -146,11 +146,16 @@ func (p *OpenAICompatibleProvider) ClassifyAndPlan(ctx context.Context, transcri
 
 	content := stripMarkdownCodeBlock(result.Choices[0].Message.Content)
 
-	// Quick check if screen is needed
-	if strings.Contains(content, `"needs_screen": true`) || strings.Contains(content, `"needs_screen":true`) {
+	var probe struct {
+		NeedsScreen bool `json:"needs_screen"`
+	}
+	if err := json.Unmarshal([]byte(content), &probe); err != nil {
+		// Safe fallback: if we cannot tell, take the screen path.
 		return ClassifyResponse{NeedsScreen: true}, nil
 	}
-
+	if probe.NeedsScreen {
+		return ClassifyResponse{NeedsScreen: true}, nil
+	}
 	return ClassifyResponse{NeedsScreen: false, RawJSON: content}, nil
 }
 

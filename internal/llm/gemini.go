@@ -167,6 +167,12 @@ func buildPlanningPrompt(toolSchemas, systemContext string, withAutomation bool)
 	return fmt.Sprintf(baseSystemPrompt, automation, toolSchemas, systemContext)
 }
 
+// buildClassifyPrompt renders the fast-path classification prompt (needs_screen decision).
+// Shared by all providers so the classify path never accidentally uses the planning prompt.
+func buildClassifyPrompt(toolSchemas, systemContext string) string {
+	return fmt.Sprintf(classifySystemPrompt, toolSchemas, systemContext)
+}
+
 // makeGeminiRequest is a shared helper for making Gemini API calls.
 func (g *GeminiProvider) makeGeminiRequest(ctx context.Context, payload map[string]interface{}, streaming bool) (*http.Response, error) {
 	jsonData, err := json.Marshal(payload)
