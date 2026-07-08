@@ -2,6 +2,7 @@ package resolver
 
 import (
 	"encoding/json"
+	"regexp"
 	"strings"
 
 	"github.com/yourname/voice-agent/internal/agent"
@@ -35,6 +36,40 @@ func (DateTimeMatcher) Name() string { return "datetime" }
 func (DateTimeMatcher) Match(in NormalizedInput) (*Match, bool) {
 	if containsAny(in.Lower, "what time", "current time", "the time", "what's the date", "what is the date", "today's date") {
 		return &Match{Tasks: []agent.Task{taskJSON("get_datetime", nil)}, Confidence: 0.95, Reason: "datetime phrase"}, true
+	}
+	return nil, false
+}
+
+// domainRe matches a bare domain or URL like "youtube.com" or "https://x.io/y".
+var domainRe = regexp.MustCompile(`\b([a-z0-9-]+\.(com|org|net|io|dev|ai|co|gov|edu))(/\S*)?\b`)
+
+type WebMatcher struct{}
+
+func (WebMatcher) Name() string { return "web" }
+func (WebMatcher) Match(in NormalizedInput) (*Match, bool) {
+	// 1) explicit URL/domain anywhere in the input -> open_website
+	if loc := domainRe.FindString(in.Lower); loc != "" {
+		url := loc
+		if !strings.HasPrefix(url, "http") {
+			url = "https://" + url
+		}
+		return &Match{
+			Tasks:      []agent.Task{taskJSON("open_website", map[string]string{"url": url})},
+			Confidence: 0.9, Reason: "domain detected",
+		}, true
+	}
+	// 2) "search X" / "google X" -> web_search
+	for _, verb := range []string{"search ", "google ", "look up "} {
+		if strings.HasPrefix(in.Lower, verb) {
+			q := strings.TrimSpace(strings.TrimPrefix(in.Lower, verb))
+			if q == "" {
+				return nil, false
+			}
+			return &Match{
+				Tasks:      []agent.Task{taskJSON("web_search", map[string]string{"query": q})},
+				Confidence: 0.85, Reason: "search verb",
+			}, true
+		}
 	}
 	return nil, false
 }
