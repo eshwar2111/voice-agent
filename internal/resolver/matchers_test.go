@@ -149,3 +149,24 @@ func TestSystemMatcher(t *testing.T) {
 		t.Error("system must not match app launch")
 	}
 }
+
+func TestWindowMatcher(t *testing.T) {
+	m := WindowMatcher{}
+	cases := map[string]string{
+		"minimize window":  "minimize",
+		"maximize window":  "maximize",
+		"snap left":        "snap_left",
+		"snap right":       "snap_right",
+		"close window":     "close",
+		"switch window":    "switch",
+	}
+	for phrase, want := range cases {
+		match, ok := m.Match(Normalize(phrase, ""))
+		if !ok || !strings.Contains(string(match.Tasks[0].Params), want) {
+			t.Errorf("%q -> want %q, ok=%v", phrase, want, ok)
+		}
+	}
+	if _, ok := m.Match(Normalize("open notepad", "")); ok {
+		t.Error("window must not match app launch")
+	}
+}

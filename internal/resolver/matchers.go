@@ -190,3 +190,31 @@ func (SystemMatcher) Match(in NormalizedInput) (*Match, bool) {
 		Confidence: 0.9, Reason: "system phrase",
 	}, true
 }
+
+type WindowMatcher struct{}
+
+func (WindowMatcher) Name() string { return "window" }
+func (WindowMatcher) Match(in NormalizedInput) (*Match, bool) {
+	l := in.Lower
+	var action string
+	switch {
+	case containsAny(l, "snap left", "dock left"):
+		action = "snap_left"
+	case containsAny(l, "snap right", "dock right"):
+		action = "snap_right"
+	case containsAny(l, "minimize", "minimise"):
+		action = "minimize"
+	case containsAny(l, "maximize", "maximise", "full screen this"):
+		action = "maximize"
+	case containsAny(l, "close window", "close this window"):
+		action = "close"
+	case containsAny(l, "switch window", "switch app", "alt tab"):
+		action = "switch"
+	default:
+		return nil, false
+	}
+	return &Match{
+		Tasks:      []agent.Task{taskJSON("window_control", map[string]string{"action": action})},
+		Confidence: 0.9, Reason: "window phrase",
+	}, true
+}
