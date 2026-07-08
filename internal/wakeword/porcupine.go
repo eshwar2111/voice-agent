@@ -1,59 +1,45 @@
+//go:build whisper
+
 package wakeword
 
 import (
+	"context"
 	"fmt"
-	"log"
 
 	porcupine "github.com/Picovoice/porcupine/binding/go/v3"
 	pvrecorder "github.com/Picovoice/pvrecorder/binding/go"
 )
 
-// ListenForWakeWord blocks until the wakeword "Porcupine" is detected.
-func ListenForWakeWord(accessKey string) error {
-	porcupineInstance := porcupine.Porcupine{
+type pvSource struct{ rec *pvrecorder.PvRecorder }
+
+func (s *pvSource) Read() ([]int16, error) { return s.rec.Read() }
+func (s *pvSource) Start() error           { return s.rec.Start() }
+func (s *pvSource) Stop() error            { s.rec.Stop(); return nil }
+
+type ppDetector struct{ p *porcupine.Porcupine }
+
+func (d *ppDetector) Process(f []int16) (int, error) { return d.p.Process(f) }
+
+// StartWakeWordLoop listens for the built-in "Porcupine" keyword until ctx is cancelled.
+func StartWakeWordLoop(ctx context.Context, accessKey string, onDetect func()) error {
+	p := porcupine.Porcupine{
 		AccessKey:       accessKey,
 		BuiltInKeywords: []porcupine.BuiltInKeyword{porcupine.PORCUPINE},
 	}
-	err := porcupineInstance.Init()
-	if err != nil {
-		return fmt.Errorf("failed to init Porcupine: %v", err)
+	if err := p.Init(); err != nil {
+		return fmt.Errorf("porcupine init: %w", err)
 	}
-	defer porcupineInstance.Delete()
+	defer p.Delete()
 
-	recorder := pvrecorder.NewPvRecorder(porcupine.FrameLength)
-	recorder.DeviceIndex = -1
-
-	if err := recorder.Init(); err != nil {
-		return fmt.Errorf("failed to init pvrecorder: %v", err)
+	rec := pvrecorder.NewPvRecorder(porcupine.FrameLength)
+	rec.DeviceIndex = -1
+	if err := rec.Init(); err != nil {
+		return fmt.Errorf("pvrecorder init: %w", err)
 	}
-	defer recorder.Delete()
-
-	if err := recorder.Start(); err != nil {
-		return fmt.Errorf("failed to start audio recording: %v", err)
+	defer rec.Delete()
+	if err := rec.Start(); err != nil {
+		return fmt.Errorf("pvrecorder start: %w", err)
 	}
-
-	fmt.Println("\n🎙️  Listening for Wake Word ('Porcupine') ...")
-
-	for {
-		pcm, err := recorder.Read()
-		if err != nil {
-			log.Printf("audio buffer read error: %v", err)
-			continue
-		}
-
-		keywordIndex, err := porcupineInstance.Process(pcm)
-		if err != nil {
-			log.Printf("porcupine processing error: %v", err)
-			continue
-		}
-
-		if keywordIndex >= 0 {
-			fmt.Println("🌟 WAKE WORD DETECTED!")
-
-			// For this MVP step 1, we just return nil.
-			// Next, we will integrate ASR to capture the actual speech command AFTER the wake word.
-			recorder.Stop()
-			return nil
-		}
-	}
+	fmt.Println("🎙️  Wake word active — say 'Porcupine'")
+	return runWakeLoop(ctx, &pvSource{&rec}, &ppDetector{&p}, onDetect)
 }
