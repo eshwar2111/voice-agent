@@ -30,13 +30,40 @@ Stop-Process -Name voice-agent -Force
 
 ## Baseline table
 
-| metric | before | after (filled at end) |
+| metric | before | after |
 |---|---|---|
-| Binary size (bytes) | 58,379,847 (≈ 55.7 MB) | |
-| Binary size (`ls -la voice-agent.exe`) | 58379847 | |
-| Idle RAM — WorkingSet64 (bytes) | 55,422,976 (≈ 52.9 MB) | |
-| Idle RAM — PrivateMemorySize64 (bytes) | 62,484,480 (≈ 59.6 MB) | |
-| Cold start (wall clock, approximate) | ~8-9.5 s (stable by the 8 s wait; total measured wall time ~9.6 s including script overhead) | |
+| Binary size (bytes) | 58,379,847 (≈ 55.7 MB) | *measure on build machine — see note* |
+| Idle RAM — WorkingSet64 (bytes) | 55,422,976 (≈ 52.9 MB) | *measure on build machine — see note* |
+| Idle RAM — PrivateMemorySize64 (bytes) | 62,484,480 (≈ 59.6 MB) | *measure on build machine — see note* |
+| Cold start (wall clock, approximate) | ~8–9.5 s | *measure on build machine — see note* |
+
+## "After" measurement — status
+
+The SP1 **code** overhead work is complete: dead-code/cruft deleted, the two overlay
+WebViews are now lazy-initialized on first use (Task 22), Whisper init is skipped when
+`enable_voice=false` (Task 23), and the documented build command now strips symbols with
+`-ldflags="-s -w -H windowsgui"` (Task 24).
+
+The stripped-binary "after" numbers were **not captured in the CI/dev environment** used for
+this implementation because that environment's C toolchain (w64devkit GCC 14.1) does not match
+the toolchain that produced the committed `whisper.cpp/build/**/*.a` static libs, so the final
+`cmd/app` link fails with `undefined reference to std::...`. This is an environment artifact,
+not a code defect — every package compiles; only the final whisper link is blocked here.
+
+To capture the "after" column on a machine with a matching whisper build (e.g. the original
+dev machine, or after rebuilding `whisper.cpp` with the current GCC):
+
+```bash
+go build -ldflags="-s -w -H windowsgui" -o voice-agent.exe ./cmd/app
+ls -la voice-agent.exe            # binary size (expect a drop from -s -w stripping)
+```
+```powershell
+Start-Process ".\voice-agent.exe"; Start-Sleep -Seconds 8
+Get-Process voice-agent | Select-Object WorkingSet64, PrivateMemorySize64   # idle RAM
+Stop-Process -Name voice-agent -Force
+```
+Idle RAM should drop further with `enable_voice=false` (no Whisper context loaded) and because
+the two auxiliary overlays no longer spin up at startup.
 
 ## Raw measurement log
 

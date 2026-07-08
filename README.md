@@ -50,9 +50,28 @@ Rename `config.example.json` to `config.json` and add your API keys:
 # Format the code
 go fmt ./...
 
-# Build the executable with Windows GUI flags (hides the background terminal)
-go build -ldflags="-H windowsgui" -o voice-agent.exe ./cmd/app
+# Build the executable. -s -w strips the symbol/debug tables to shrink the binary;
+# -H windowsgui hides the background terminal.
+go build -ldflags="-s -w -H windowsgui" -o voice-agent.exe ./cmd/app
 ```
+
+> **CGO note:** the build links C dependencies (SQLite, WebView2, robotgo, whisper.cpp),
+> so a matching MinGW-w64 GCC toolchain must be on `PATH` and pointed to by `go env CC`.
+> The prebuilt `whisper.cpp/build/**/*.a` static libs must have been compiled with the
+> *same* GCC as the Go build; a toolchain mismatch surfaces as `undefined reference to
+> std::...` at link time — rebuild `whisper.cpp` with your current GCC to resolve it.
+
+### Architecture: tiered dispatch (SP1)
+
+Commands (voice transcripts and typed input alike) flow through a single dispatcher
+(`internal/dispatch`):
+
+- **Tier 0 — local resolver** (`internal/resolver`): a prioritized chain of deterministic
+  matchers (app launch, file open, web, media, system, window, datetime) resolves the common
+  cases **instantly, offline, with zero LLM tokens**, then runs the tasks via the
+  `GraphExecutor`.
+- **Tier 1 — cloud LLM**: anything the resolver can't confidently handle (confidence < 0.7)
+  falls back to the existing multi-agent Orchestrator.
 
 ## 🧰 Built-in Tools
 
