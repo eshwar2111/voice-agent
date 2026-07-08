@@ -1,3 +1,9 @@
+//go:build whisper
+
+// Package asr provides local speech-to-text. The real whisper.cpp-backed engine
+// only compiles under the `whisper` build tag (it links the whisper.cpp C++ libs).
+// The default build uses the stub in stub.go so the app links without a matching
+// whisper toolchain and runs with voice disabled.
 package asr
 
 import (
