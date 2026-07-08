@@ -8,8 +8,10 @@ import (
 
 	"github.com/yourname/voice-agent/internal/agent"
 	agentctx "github.com/yourname/voice-agent/internal/context"
+	"github.com/yourname/voice-agent/internal/dispatch"
 	"github.com/yourname/voice-agent/internal/intent"
 	"github.com/yourname/voice-agent/internal/llm"
+	"github.com/yourname/voice-agent/internal/resolver"
 	"github.com/yourname/voice-agent/internal/security"
 	"github.com/yourname/voice-agent/internal/tools"
 )
@@ -20,6 +22,7 @@ var (
 	globalProfile  *security.Profile
 	globalCtx      gocontext.Context
 	globalCancel   gocontext.CancelFunc
+	globalDispatch *dispatch.Deps
 )
 
 func InitRouter(registry *tools.Registry, provider llm.Provider, profile *security.Profile) {
@@ -27,6 +30,13 @@ func InitRouter(registry *tools.Registry, provider llm.Provider, profile *securi
 	globalProvider = provider
 	globalProfile = profile
 	globalCtx, globalCancel = gocontext.WithCancel(gocontext.Background())
+
+	globalDispatch = &dispatch.Deps{
+		Registry: registry,
+		Provider: provider,
+		Profile:  profile,
+		Resolver: resolver.Default(),
+	}
 }
 
 // Shutdown cancels the router's context, stopping in-flight commands.
@@ -44,23 +54,13 @@ func ProcessCommand(input string) {
 		return
 	}
 
-	intent := Parse(input)
-	if intent.Intent == "unknown" {
-		log.Printf("Unknown command layout: %s", input)
-		return
+	sysCtx := agentctx.BuildContext()
+	activeApp := ""
+	if sysCtx.Window != nil {
+		activeApp = sysCtx.Window.ProcessName
 	}
-
-	// New Phase 4: Translate Intent -> Automation Plan (Task Graph)
-	plan := agent.CreatePlan(intent.Intent, intent.Params)
-	if err := validatePlan(plan); err != nil {
-		log.Printf("Plan blocked: %v", err)
-		return
-	}
-
-	// Use the global context so commands can be cancelled on shutdown
-	executor := agent.NewExecutor(globalRegistry)
-	if err := executor.ExecutePlan(globalCtx, plan); err != nil {
-		log.Printf("Plan execution failed: %v", err)
+	if err := globalDispatch.Handle(globalCtx, input, activeApp); err != nil {
+		log.Printf("dispatch failed: %v", err)
 	}
 }
 
