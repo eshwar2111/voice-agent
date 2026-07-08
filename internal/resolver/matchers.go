@@ -136,3 +136,33 @@ func (f FileMatcher) Match(in NormalizedInput) (*Match, bool) {
 		Confidence: conf, Reason: "file cue + index hit",
 	}, true
 }
+
+type MediaMatcher struct{}
+
+func (MediaMatcher) Name() string { return "media" }
+func (MediaMatcher) Match(in NormalizedInput) (*Match, bool) {
+	l := in.Lower
+	var action string
+	switch {
+	case containsAny(l, "volume up", "louder", "turn it up"):
+		action = "volume_up"
+	case containsAny(l, "volume down", "quieter", "turn it down"):
+		action = "volume_down"
+	case containsAny(l, "mute", "unmute"):
+		action = "mute"
+	case containsAny(l, "next track", "next song", "skip"):
+		action = "next"
+	case containsAny(l, "previous track", "previous song", "go back a track"):
+		action = "previous"
+	case containsAny(l, "pause"):
+		action = "pause"
+	case l == "play" || containsAny(l, "play music", "resume music", "resume playback"):
+		action = "play"
+	default:
+		return nil, false
+	}
+	return &Match{
+		Tasks:      []agent.Task{taskJSON("media_control", map[string]string{"action": action})},
+		Confidence: 0.9, Reason: "media phrase",
+	}, true
+}

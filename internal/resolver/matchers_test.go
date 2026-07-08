@@ -102,3 +102,30 @@ func TestFileMatcher(t *testing.T) {
 		t.Error("no hits -> no match")
 	}
 }
+
+func TestMediaMatcher(t *testing.T) {
+	m := MediaMatcher{}
+	cases := map[string]string{
+		"pause":          "pause",
+		"pause music":    "pause",
+		"play":           "play",
+		"next track":     "next",
+		"previous song":  "previous",
+		"volume up":      "volume_up",
+		"volume down":    "volume_down",
+		"mute":           "mute",
+	}
+	for phrase, want := range cases {
+		match, ok := m.Match(Normalize(phrase, ""))
+		if !ok {
+			t.Errorf("%q should match media", phrase)
+			continue
+		}
+		if !strings.Contains(string(match.Tasks[0].Params), want) {
+			t.Errorf("%q -> want action %q, params=%s", phrase, want, match.Tasks[0].Params)
+		}
+	}
+	if _, ok := m.Match(Normalize("open notepad", "")); ok {
+		t.Error("media must not match app launch")
+	}
+}
