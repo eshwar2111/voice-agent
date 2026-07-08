@@ -1,0 +1,40 @@
+package resolver
+
+import (
+	"encoding/json"
+	"strings"
+
+	"github.com/yourname/voice-agent/internal/agent"
+)
+
+// taskJSON builds an agent.Task, marshaling params to JSON (empty object on nil/err).
+func taskJSON(tool string, params any) agent.Task {
+	if params == nil {
+		return agent.Task{Tool: tool, Params: json.RawMessage(`{}`)}
+	}
+	b, err := json.Marshal(params)
+	if err != nil {
+		b = []byte(`{}`)
+	}
+	return agent.Task{Tool: tool, Params: b}
+}
+
+// containsAny reports whether s contains any of subs.
+func containsAny(s string, subs ...string) bool {
+	for _, sub := range subs {
+		if strings.Contains(s, sub) {
+			return true
+		}
+	}
+	return false
+}
+
+type DateTimeMatcher struct{}
+
+func (DateTimeMatcher) Name() string { return "datetime" }
+func (DateTimeMatcher) Match(in NormalizedInput) (*Match, bool) {
+	if containsAny(in.Lower, "what time", "current time", "the time", "what's the date", "what is the date", "today's date") {
+		return &Match{Tasks: []agent.Task{taskJSON("get_datetime", nil)}, Confidence: 0.95, Reason: "datetime phrase"}, true
+	}
+	return nil, false
+}
