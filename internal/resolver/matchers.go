@@ -106,3 +106,33 @@ func (a AppMatcher) Match(in NormalizedInput) (*Match, bool) {
 		Confidence: conf, Reason: "app launch verb",
 	}, true
 }
+
+type FileMatcher struct {
+	Search func(query string) []string // returns candidate absolute paths
+}
+
+func (f FileMatcher) Name() string { return "file" }
+func (f FileMatcher) Match(in NormalizedInput) (*Match, bool) {
+	// require an explicit "file" cue to avoid stealing app launches
+	if !strings.HasPrefix(in.Lower, "open file ") && !strings.HasPrefix(in.Lower, "find file ") {
+		return nil, false
+	}
+	query := strings.TrimSpace(in.Lower)
+	query = strings.TrimPrefix(query, "open file ")
+	query = strings.TrimPrefix(query, "find file ")
+	if query == "" || f.Search == nil {
+		return nil, false
+	}
+	hits := f.Search(query)
+	if len(hits) == 0 {
+		return nil, false
+	}
+	conf := 0.85
+	if len(hits) > 1 {
+		conf = 0.5
+	}
+	return &Match{
+		Tasks:      []agent.Task{taskJSON("open_file", map[string]string{"file_path": hits[0]})},
+		Confidence: conf, Reason: "file cue + index hit",
+	}, true
+}

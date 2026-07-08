@@ -73,3 +73,32 @@ func TestAppMatcher(t *testing.T) {
 		t.Error("app matcher requires a launch verb")
 	}
 }
+
+func TestFileMatcher(t *testing.T) {
+	m := FileMatcher{Search: func(q string) []string {
+		if q == "resume.pdf" {
+			return []string{`C:\Users\me\resume.pdf`}
+		}
+		if q == "report" {
+			return []string{`C:\a\report.docx`, `C:\b\report.xlsx`}
+		}
+		return nil
+	}}
+
+	match, ok := m.Match(Normalize("open file resume.pdf", ""))
+	if !ok || match.Tasks[0].Tool != "open_file" {
+		t.Fatalf("expected open_file, ok=%v", ok)
+	}
+	if !strings.Contains(string(match.Tasks[0].Params), "resume.pdf") {
+		t.Errorf("file_path missing: %s", match.Tasks[0].Params)
+	}
+
+	amb, ok := m.Match(Normalize("open file report", ""))
+	if ok && amb.Confidence >= DefaultThreshold {
+		t.Errorf("multiple file hits should be < threshold, got %v", amb.Confidence)
+	}
+
+	if _, ok := m.Match(Normalize("open file nothinghere", "")); ok {
+		t.Error("no hits -> no match")
+	}
+}
