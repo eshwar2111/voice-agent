@@ -15,7 +15,11 @@ import (
 )
 
 // recordingProvider fails the test if any provider method is called.
-type recordingProvider struct{ called bool }
+type recordingProvider struct {
+	called     bool
+	lastPrompt string
+	lastImages [][]byte
+}
 
 func (p *recordingProvider) GenerateIntent(context.Context, llm.IntentRequest) (llm.IntentResponse, error) {
 	p.called = true
@@ -29,8 +33,10 @@ func (p *recordingProvider) ClassifyAndPlan(context.Context, string, string, str
 	p.called = true
 	return llm.ClassifyResponse{}, nil
 }
-func (p *recordingProvider) Generate(context.Context, string, [][]byte) (string, error) {
+func (p *recordingProvider) Generate(ctx context.Context, prompt string, images [][]byte) (string, error) {
 	p.called = true
+	p.lastPrompt = prompt
+	p.lastImages = images
 	return "[]", nil
 }
 
@@ -179,5 +185,25 @@ func TestHandleTier1PassesContextToProvider(t *testing.T) {
 	_ = d.Handle(context.Background(), "reply to this", cap)
 	if !prov.called {
 		t.Fatal("Tier 1 must call the provider")
+	}
+	if !strings.Contains(prov.lastPrompt, "hello world") {
+		t.Errorf("expected captured selection to reach the decompose prompt; got: %s", prov.lastPrompt)
+	}
+}
+
+// TestHandleTier1VisualPath exercises the Tier-1 visual sub-path, which
+// captures a screenshot and calls Provider.Generate with a non-nil image
+// slice — distinguishing it from the text path, which passes nil images.
+func TestHandleTier1VisualPath(t *testing.T) {
+	prov := &recordingProvider{}
+	reg := tools.DefaultRegistry(prov)
+	profile := security.DeveloperProfile()
+	d := &Deps{Registry: reg, Provider: prov, Profile: &profile, Resolver: resolver.NewResolver()} // no matchers -> Tier 1
+	_ = d.Handle(context.Background(), "what's on my screen", agentctx.Capture{})
+	if !prov.called {
+		t.Fatal("Tier 1 visual path must call the provider")
+	}
+	if len(prov.lastImages) < 1 {
+		t.Errorf("expected the visual path to pass at least one screenshot image, got %d", len(prov.lastImages))
 	}
 }
