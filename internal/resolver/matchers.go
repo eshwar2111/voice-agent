@@ -73,3 +73,36 @@ func (WebMatcher) Match(in NormalizedInput) (*Match, bool) {
 	}
 	return nil, false
 }
+
+type AppMatcher struct {
+	// Lookup returns the best-matching app display name and the number of apps matched.
+	Lookup func(query string) (name string, count int)
+}
+
+var appLaunchVerbs = []string{"open ", "launch ", "start ", "run "}
+
+func (a AppMatcher) Name() string { return "app" }
+func (a AppMatcher) Match(in NormalizedInput) (*Match, bool) {
+	var query string
+	for _, v := range appLaunchVerbs {
+		if strings.HasPrefix(in.Lower, v) {
+			query = strings.TrimSpace(strings.TrimPrefix(in.Lower, v))
+			break
+		}
+	}
+	if query == "" || a.Lookup == nil {
+		return nil, false
+	}
+	name, count := a.Lookup(query)
+	if count == 0 || name == "" {
+		return nil, false
+	}
+	conf := 0.9
+	if count > 1 {
+		conf = 0.5 // ambiguous -> below threshold, falls to Tier 1 / disambiguation
+	}
+	return &Match{
+		Tasks:      []agent.Task{taskJSON("open_app", map[string]string{"app_name": name})},
+		Confidence: conf, Reason: "app launch verb",
+	}, true
+}

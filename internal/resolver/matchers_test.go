@@ -42,3 +42,34 @@ func TestWebMatcher(t *testing.T) {
 		t.Error("web matcher must not claim a bare app name")
 	}
 }
+
+func TestAppMatcher(t *testing.T) {
+	m := AppMatcher{Lookup: func(q string) (string, int) {
+		if q == "notepad" {
+			return "Notepad", 1
+		}
+		if q == "word" {
+			return "Word", 3 // ambiguous
+		}
+		return "", 0
+	}}
+
+	match, ok := m.Match(Normalize("open notepad", ""))
+	if !ok || match.Tasks[0].Tool != "open_app" {
+		t.Fatalf("expected open_app, ok=%v", ok)
+	}
+	if match.Confidence < DefaultThreshold {
+		t.Errorf("single strong match should be >= threshold, got %v", match.Confidence)
+	}
+
+	// ambiguous -> confidence must drop below threshold so it falls to Tier 1
+	amb, ok := m.Match(Normalize("open word", ""))
+	if ok && amb.Confidence >= DefaultThreshold {
+		t.Errorf("ambiguous app match should be < threshold, got %v", amb.Confidence)
+	}
+
+	// no launch verb -> no match
+	if _, ok := m.Match(Normalize("what time is it", "")); ok {
+		t.Error("app matcher requires a launch verb")
+	}
+}
