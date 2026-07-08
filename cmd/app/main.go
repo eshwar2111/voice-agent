@@ -32,7 +32,11 @@ func main() {
 	}
 
 	// Apply whisper paths from config
-	asr.SetPaths(cfg.WhisperPath, cfg.WhisperModel)
+	if cfg.EnableVoice {
+		asr.SetPaths(cfg.WhisperPath, cfg.WhisperModel)
+	} else {
+		log.Println("Voice disabled (enable_voice=false); skipping Whisper init.")
+	}
 
 	provider, err := llm.NewProvider(cfg)
 	if err != nil {
