@@ -3,6 +3,7 @@ package dispatch
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/yourname/voice-agent/internal/agent"
@@ -61,5 +62,93 @@ func TestHandleTier0MakesNoProviderCall(t *testing.T) {
 	}
 	if LocalCount() < 1 {
 		t.Error("LocalCount should have incremented")
+	}
+}
+
+// noMatchMatcher never matches, forcing the resolver into a Tier 1 (cloud) miss.
+type noMatchMatcher struct{}
+
+func (noMatchMatcher) Name() string { return "no_match" }
+func (noMatchMatcher) Match(in resolver.NormalizedInput) (*resolver.Match, bool) {
+	return nil, false
+}
+
+// disallowedToolMatcher returns a task for a tool that is deliberately left
+// out of the profile's allow-list.
+type disallowedToolMatcher struct{}
+
+func (disallowedToolMatcher) Name() string { return "disallowed" }
+func (disallowedToolMatcher) Match(in resolver.NormalizedInput) (*resolver.Match, bool) {
+	return &resolver.Match{
+		Tasks:      []agent.Task{{Tool: "get_datetime", Params: json.RawMessage(`{}`)}},
+		Confidence: 1.0,
+	}, true
+}
+
+// unregisteredToolMatcher returns a task for a tool name that exists nowhere
+// in the registry, regardless of the profile's allow-list.
+type unregisteredToolMatcher struct{}
+
+func (unregisteredToolMatcher) Name() string { return "unregistered" }
+func (unregisteredToolMatcher) Match(in resolver.NormalizedInput) (*resolver.Match, bool) {
+	return &resolver.Match{
+		Tasks:      []agent.Task{{Tool: "no_such_tool", Params: json.RawMessage(`{}`)}},
+		Confidence: 1.0,
+	}, true
+}
+
+func TestHandleRejectsDisallowedTool(t *testing.T) {
+	prov := &recordingProvider{}
+	reg := tools.DefaultRegistry(prov) // includes get_datetime
+	restricted := security.Profile{Name: "restricted", AllowedTools: map[string]bool{}}
+	d := &Deps{
+		Registry: reg,
+		Provider: prov,
+		Profile:  &restricted,
+		Resolver: resolver.NewResolver(disallowedToolMatcher{}),
+	}
+	if err := d.Handle(context.Background(), "what time is it", ""); err == nil {
+		t.Fatal("expected Handle to reject a tool not in the profile's allow-list")
+	}
+	if prov.called {
+		t.Fatal("provider must not be called when the security check rejects the tool")
+	}
+}
+
+func TestHandleRejectsUnregisteredTool(t *testing.T) {
+	prov := &recordingProvider{}
+	reg := tools.DefaultRegistry(prov)
+	profile := security.DeveloperProfile()
+	profile.AllowedTools["no_such_tool"] = true // allowed by profile, but not registered
+	d := &Deps{
+		Registry: reg,
+		Provider: prov,
+		Profile:  &profile,
+		Resolver: resolver.NewResolver(unregisteredToolMatcher{}),
+	}
+	err := d.Handle(context.Background(), "do the thing", "")
+	if err == nil {
+		t.Fatal("expected Handle to reject an unregistered tool")
+	}
+	if !strings.Contains(err.Error(), "not registered") {
+		t.Errorf("expected error to mention 'not registered', got: %v", err)
+	}
+}
+
+func TestHandleTier1IncrementsCloudCount(t *testing.T) {
+	prov := &recordingProvider{}
+	reg := tools.DefaultRegistry(prov)
+	profile := security.DeveloperProfile()
+	d := &Deps{
+		Registry: reg,
+		Provider: prov,
+		Profile:  &profile,
+		Resolver: resolver.NewResolver(noMatchMatcher{}),
+	}
+	before := CloudCount()
+	_ = d.Handle(context.Background(), "some unmatched free-form request", "")
+	after := CloudCount()
+	if after != before+1 {
+		t.Errorf("expected CloudCount to increment by 1, got before=%d after=%d", before, after)
 	}
 }

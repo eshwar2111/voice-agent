@@ -21,6 +21,9 @@ type Deps struct {
 	Resolver *resolver.Resolver
 }
 
+// localHits/cloudHits count ROUTING DECISIONS (which tier handled the
+// input), not successful executions — a tier can still fail downstream
+// (security rejection, tool error, orchestrator failure) after being counted.
 var localHits, cloudHits int64
 
 func LocalCount() int64 { return atomic.LoadInt64(&localHits) }
@@ -29,6 +32,9 @@ func CloudCount() int64 { return atomic.LoadInt64(&cloudHits) }
 // Handle routes one command through Tier 0 (local) or Tier 1 (cloud).
 // activeApp is the foreground process name (may be "").
 func (d *Deps) Handle(ctx context.Context, input, activeApp string) error {
+	if d.Resolver == nil || d.Registry == nil {
+		return fmt.Errorf("dispatch: Deps not fully configured")
+	}
 	norm := resolver.Normalize(input, activeApp)
 	if match, ok := d.Resolver.Resolve(norm); ok {
 		atomic.AddInt64(&localHits, 1)
