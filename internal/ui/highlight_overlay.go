@@ -19,7 +19,14 @@ var (
 	hlMutex     sync.Mutex
 	hlVisible   bool
 	hlHideTimer *time.Timer
+	hlOnce      sync.Once
 )
+
+// ensureHighlightOverlay lazily starts the highlight overlay WebView on
+// first use, replacing the old eager startup goroutine in main.go.
+func ensureHighlightOverlay() {
+	hlOnce.Do(func() { go RunHighlightOverlay() })
+}
 
 const hlHTML = `<!DOCTYPE html>
 <html>
@@ -105,6 +112,7 @@ func applyHighlightOverlayStyle() {
 
 // FlashHighlightBox moves the window to (x,y,w,h), makes it visible, flashes, and hides it after `durationMs`.
 func FlashHighlightBox(x, y, w, h int, durationMs int) {
+	ensureHighlightOverlay()
 	if hlView == nil || hlHWND == 0 {
 		return
 	}

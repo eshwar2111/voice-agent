@@ -129,9 +129,8 @@ func main() {
 	// Start Global Hotkey Listener
 	go command.ListenHotkey()
 
-	// Start Automation Overlay UI (transparent, topmost, isolated window)
-	go ui.RunAutomationOverlay()
-	go ui.RunHighlightOverlay()
+	// Automation & highlight overlays now lazy-init on first use
+	// (ShowAutomationStep / FlashHighlightBox), instead of launching here.
 
 	// Initialize and run the Event-Driven Engine
 	engineApp := engine.NewEngine(cfg, provider, registry, memStore, memRetriever, rateLimiter, &profile)

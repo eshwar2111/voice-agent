@@ -27,7 +27,14 @@ var (
 	autoSteps     []string
 	autoVisible   bool
 	autoHideTimer *time.Timer
+	autoOnce      sync.Once
 )
+
+// ensureAutomationOverlay lazily starts the automation overlay WebView on
+// first use, replacing the old eager startup goroutine in main.go.
+func ensureAutomationOverlay() {
+	autoOnce.Do(func() { go RunAutomationOverlay() })
+}
 
 const autoHTML = `<!DOCTYPE html>
 <html>
@@ -202,6 +209,7 @@ func applyAutoOverlayStyle() {
 // ShowAutomationStep displays a step message in the automation overlay.
 // Safe to call from any goroutine.
 func ShowAutomationStep(step string) {
+	ensureAutomationOverlay()
 	fmt.Printf("🤖 [AUTO] %s\n", step)
 	if autoView == nil {
 		return
