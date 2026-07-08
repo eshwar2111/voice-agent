@@ -252,7 +252,7 @@ func (t *SpotifySmartRecommendTool) Parameters() string {
 	return `{
 		"type": "object",
 		"properties": {
-			"action": {"type": "string", "description": "'recommend' (just show suggestions), 'play' (recommendations and play)'"}
+			"action": {"type": "string", "description": "'recommend' (just show suggestions), 'play' (recommendations and play)'"},
 			"seed": {"type": "string", "description": "Optional: a song/artist to base recommendations on. If empty, uses currently playing track."}
 		},
 		"required": ["action"]
