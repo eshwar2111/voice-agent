@@ -166,3 +166,27 @@ func (MediaMatcher) Match(in NormalizedInput) (*Match, bool) {
 		Confidence: 0.9, Reason: "media phrase",
 	}, true
 }
+
+type SystemMatcher struct{}
+
+func (SystemMatcher) Name() string { return "system" }
+func (SystemMatcher) Match(in NormalizedInput) (*Match, bool) {
+	l := in.Lower
+	var action string
+	switch {
+	case containsAny(l, "lock the pc", "lock computer", "lock screen", "lock my"):
+		action = "lock"
+	case containsAny(l, "go to sleep", "sleep the pc", "put to sleep", "suspend"):
+		action = "sleep"
+	case containsAny(l, "brightness up", "brighter", "increase brightness"):
+		action = "brightness_up"
+	case containsAny(l, "brightness down", "dimmer", "decrease brightness", "lower brightness"):
+		action = "brightness_down"
+	default:
+		return nil, false
+	}
+	return &Match{
+		Tasks:      []agent.Task{taskJSON("system_control", map[string]string{"action": action})},
+		Confidence: 0.9, Reason: "system phrase",
+	}, true
+}

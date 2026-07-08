@@ -129,3 +129,23 @@ func TestMediaMatcher(t *testing.T) {
 		t.Error("media must not match app launch")
 	}
 }
+
+func TestSystemMatcher(t *testing.T) {
+	m := SystemMatcher{}
+	cases := map[string]string{
+		"lock the pc":     "lock",
+		"lock computer":   "lock",
+		"go to sleep":     "sleep",
+		"brightness up":   "brightness_up",
+		"brightness down": "brightness_down",
+	}
+	for phrase, want := range cases {
+		match, ok := m.Match(Normalize(phrase, ""))
+		if !ok || !strings.Contains(string(match.Tasks[0].Params), want) {
+			t.Errorf("%q -> want %q, ok=%v", phrase, want, ok)
+		}
+	}
+	if _, ok := m.Match(Normalize("open notepad", "")); ok {
+		t.Error("system must not match app launch")
+	}
+}
