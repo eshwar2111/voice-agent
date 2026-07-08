@@ -40,6 +40,11 @@ type Event struct {
 	Err     error
 }
 
+type transcribedPayload struct {
+	Transcript string
+	Cap        agentctx.Capture
+}
+
 type Engine struct {
 	Config       *config.Config
 	Provider     llm.Provider
@@ -123,6 +128,7 @@ func (e *Engine) handleEvent(ctx context.Context, ev Event) {
 		ui.SetState(ui.StateListening)
 
 		go func() {
+			cap := agentctx.CaptureAmbient(true) // app still focused (pill never steals focus)
 			audioData, err := audio.RecordDynamic(10*time.Second, 0.01, 32000)
 			if err != nil {
 				e.Events <- Event{Type: EventError, Err: fmt.Errorf("record missing: %w", err)}
@@ -141,28 +147,24 @@ func (e *Engine) handleEvent(ctx context.Context, ev Event) {
 				e.Events <- Event{Type: EventError, Err: fmt.Errorf("transcription failed: %w", err)}
 				return
 			}
-			e.Events <- Event{Type: EventTranscribed, Payload: transcript}
+			e.Events <- Event{Type: EventTranscribed, Payload: transcribedPayload{Transcript: transcript, Cap: cap}}
 		}()
 
 	case EventTranscribed:
-		transcript := ev.Payload.(string)
-		fmt.Printf("📝 Transcript: %s\n", transcript)
+		p := ev.Payload.(transcribedPayload)
+		fmt.Printf("📝 Transcript: %s\n", p.Transcript)
 
 		// Route voice transcripts through the tiered dispatcher (Tier 0 local
 		// resolver first, falling back to Tier 1 cloud orchestration).
 		go func() {
 			ui.SetState(ui.StateExecuting)
-			activeApp := ""
-			if c := agentctx.BuildContext(); c != nil && c.Window != nil {
-				activeApp = c.Window.ProcessName
-			}
-			if err := e.Dispatch.Handle(ctx, transcript, agentctx.Capture{AppName: activeApp}); err != nil {
+			if err := e.Dispatch.Handle(ctx, p.Transcript, p.Cap); err != nil {
 				e.Events <- Event{Type: EventError, Err: fmt.Errorf("dispatch failed: %w", err)}
-				audit.LogAction(transcript, "dispatch", nil, "FAILED: "+err.Error())
+				audit.LogAction(p.Transcript, "dispatch", nil, "FAILED: "+err.Error())
 				return
 			}
-			audit.LogAction(transcript, "dispatch", nil, "SUCCESS")
-			e.Events <- Event{Type: EventToolExecuted, Payload: agent.Plan{Transcript: transcript, Intent: "dispatch"}}
+			audit.LogAction(p.Transcript, "dispatch", nil, "SUCCESS")
+			e.Events <- Event{Type: EventToolExecuted, Payload: agent.Plan{Transcript: p.Transcript, Intent: "dispatch"}}
 		}()
 
 	case EventToolExecuted:
