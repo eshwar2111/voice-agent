@@ -42,6 +42,7 @@ func DeveloperProfile() Profile {
 			"analyze_screen":      true,
 			"read_file":           true,
 			"write_file":          true,
+			"open_file":           true,
 			"get_datetime":        true,
 			"system_status":       true,
 			"start_timer":         true,

@@ -156,7 +156,7 @@ func (MediaMatcher) Match(in NormalizedInput) (*Match, bool) {
 		action = "volume_down"
 	case containsAny(l, "mute", "unmute"):
 		action = "mute"
-	case containsAny(l, "next track", "next song", "skip"):
+	case containsAny(l, "next track", "next song", "skip track", "skip song"):
 		action = "next"
 	case containsAny(l, "previous track", "previous song", "go back a track"):
 		action = "previous"

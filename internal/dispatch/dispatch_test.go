@@ -135,6 +135,22 @@ func TestHandleRejectsUnregisteredTool(t *testing.T) {
 	}
 }
 
+func TestResolverToolsAllowedByDeveloperProfile(t *testing.T) {
+	p := security.DeveloperProfile()
+	// The set of tools the Tier-0 resolver (resolver.Default) can emit. Keep in sync
+	// with internal/resolver/matchers.go — a Tier-0 match to a tool the active profile
+	// disallows hard-fails with no cloud fallback.
+	resolverTools := []string{
+		"open_app", "open_website", "web_search", "open_file",
+		"get_datetime", "media_control", "window_control", "system_control",
+	}
+	for _, tool := range resolverTools {
+		if !p.IsAllowed(tool) {
+			t.Errorf("resolver can emit %q but DeveloperProfile disallows it (Tier-0 hard-fail)", tool)
+		}
+	}
+}
+
 func TestHandleTier1IncrementsCloudCount(t *testing.T) {
 	prov := &recordingProvider{}
 	reg := tools.DefaultRegistry(prov)
