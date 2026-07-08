@@ -170,3 +170,19 @@ func TestWindowMatcher(t *testing.T) {
 		t.Error("window must not match app launch")
 	}
 }
+
+func TestDefaultResolverPriority(t *testing.T) {
+	r := Default()
+	// "pause" must resolve to media, not fall through
+	if m, ok := r.Resolve(Normalize("pause", "")); !ok || m.Tasks[0].Tool != "media_control" {
+		t.Errorf("'pause' should resolve to media_control")
+	}
+	// a domain resolves to open_website
+	if m, ok := r.Resolve(Normalize("open github.com", "")); !ok || m.Tasks[0].Tool != "open_website" {
+		t.Errorf("'open github.com' should resolve to open_website")
+	}
+	// gibberish falls through (no local match)
+	if _, ok := r.Resolve(Normalize("ponder the meaning of life", "")); ok {
+		t.Errorf("open-ended request must fall through to Tier 1")
+	}
+}

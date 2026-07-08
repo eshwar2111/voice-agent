@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"github.com/yourname/voice-agent/internal/agent"
+	"github.com/yourname/voice-agent/internal/executor"
+	"github.com/yourname/voice-agent/internal/search"
 )
 
 // taskJSON builds an agent.Task, marshaling params to JSON (empty object on nil/err).
@@ -217,4 +219,34 @@ func (WindowMatcher) Match(in NormalizedInput) (*Match, bool) {
 		Tasks:      []agent.Task{taskJSON("window_control", map[string]string{"action": action})},
 		Confidence: 0.9, Reason: "window phrase",
 	}, true
+}
+
+// Default wires all seven matchers backed by real OS/index lookups, in priority order.
+func Default() *Resolver {
+	appLookup := func(q string) (string, int) {
+		app, found := executor.FindApp(q)
+		if !found {
+			return "", 0
+		}
+		// executor.FindApp returns a single best match; treat as unambiguous.
+		// (A future refinement can return a real candidate count.)
+		return app.Name, 1
+	}
+	fileSearch := func(q string) []string {
+		recs := search.SearchFiles(q)
+		paths := make([]string, 0, len(recs))
+		for _, r := range recs {
+			paths = append(paths, r.Path)
+		}
+		return paths
+	}
+	return NewResolver(
+		DateTimeMatcher{},
+		MediaMatcher{},
+		SystemMatcher{},
+		WindowMatcher{},
+		WebMatcher{},
+		FileMatcher{Search: fileSearch},
+		AppMatcher{Lookup: appLookup},
+	)
 }
