@@ -12,9 +12,12 @@ import (
 	"github.com/yourname/voice-agent/internal/asr"
 	"github.com/yourname/voice-agent/internal/audio"
 	"github.com/yourname/voice-agent/internal/audit"
+	agentctx "github.com/yourname/voice-agent/internal/context"
+	"github.com/yourname/voice-agent/internal/dispatch"
 	"github.com/yourname/voice-agent/internal/executor"
 	"github.com/yourname/voice-agent/internal/llm"
 	"github.com/yourname/voice-agent/internal/memory"
+	"github.com/yourname/voice-agent/internal/resolver"
 	"github.com/yourname/voice-agent/internal/security"
 	"github.com/yourname/voice-agent/internal/tools"
 	"github.com/yourname/voice-agent/internal/ui"
@@ -45,6 +48,7 @@ type Engine struct {
 	MemRetriever *memory.Retriever
 	RateLimiter  *security.RateLimiter
 	Profile      *security.Profile
+	Dispatch     *dispatch.Deps
 
 	History  []string
 	Events   chan Event
@@ -61,7 +65,13 @@ func NewEngine(cfg *config.Config, provider llm.Provider, registry *tools.Regist
 		MemRetriever: retriever,
 		RateLimiter:  rateLimiter,
 		Profile:      profile,
-		Events:       make(chan Event, 100),
+		Dispatch: &dispatch.Deps{
+			Registry: registry,
+			Provider: provider,
+			Profile:  profile,
+			Resolver: resolver.Default(),
+		},
+		Events: make(chan Event, 100),
 	}
 }
 
@@ -138,28 +148,21 @@ func (e *Engine) handleEvent(ctx context.Context, ev Event) {
 		transcript := ev.Payload.(string)
 		fmt.Printf("📝 Transcript: %s\n", transcript)
 
-		// Phase 4: Route voice transcripts through the Orchestrator so they get
-		// the same multi-agent decomposition + Phase 3 approval as typed commands.
+		// Route voice transcripts through the tiered dispatcher (Tier 0 local
+		// resolver first, falling back to Tier 1 cloud orchestration).
 		go func() {
-			ui.SetState(ui.StateReasoning)
-
-			executorApp := agent.NewExecutor(e.Registry)
-			orch := agent.NewOrchestrator(e.Provider, executorApp)
-
 			ui.SetState(ui.StateExecuting)
-			fmt.Println("🚀 Orchestrating voice command…")
-
-			if err := orch.Run(ctx, transcript); err != nil {
-				e.Events <- Event{Type: EventError, Err: fmt.Errorf("orchestration failed: %w", err)}
-				audit.LogAction(transcript, "voice_orchestration", nil, "FAILED: "+err.Error())
+			activeApp := ""
+			if c := agentctx.BuildContext(); c != nil && c.Window != nil {
+				activeApp = c.Window.ProcessName
+			}
+			if err := e.Dispatch.Handle(ctx, transcript, activeApp); err != nil {
+				e.Events <- Event{Type: EventError, Err: fmt.Errorf("dispatch failed: %w", err)}
+				audit.LogAction(transcript, "dispatch", nil, "FAILED: "+err.Error())
 				return
 			}
-
-			audit.LogAction(transcript, "voice_orchestration", nil, "SUCCESS")
-			e.Events <- Event{Type: EventToolExecuted, Payload: agent.Plan{
-				Transcript: transcript,
-				Intent:     "voice_orchestration",
-			}}
+			audit.LogAction(transcript, "dispatch", nil, "SUCCESS")
+			e.Events <- Event{Type: EventToolExecuted, Payload: agent.Plan{Transcript: transcript, Intent: "dispatch"}}
 		}()
 
 	case EventToolExecuted:
