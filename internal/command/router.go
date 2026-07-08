@@ -59,7 +59,7 @@ func ProcessCommand(input string) {
 	if sysCtx.Window != nil {
 		activeApp = sysCtx.Window.ProcessName
 	}
-	if err := globalDispatch.Handle(globalCtx, input, activeApp); err != nil {
+	if err := globalDispatch.Handle(globalCtx, input, agentctx.Capture{AppName: activeApp}); err != nil {
 		log.Printf("dispatch failed: %v", err)
 	}
 }

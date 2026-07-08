@@ -156,7 +156,7 @@ func (e *Engine) handleEvent(ctx context.Context, ev Event) {
 			if c := agentctx.BuildContext(); c != nil && c.Window != nil {
 				activeApp = c.Window.ProcessName
 			}
-			if err := e.Dispatch.Handle(ctx, transcript, activeApp); err != nil {
+			if err := e.Dispatch.Handle(ctx, transcript, agentctx.Capture{AppName: activeApp}); err != nil {
 				e.Events <- Event{Type: EventError, Err: fmt.Errorf("dispatch failed: %w", err)}
 				audit.LogAction(transcript, "dispatch", nil, "FAILED: "+err.Error())
 				return

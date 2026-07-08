@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/yourname/voice-agent/internal/agent"
+	agentctx "github.com/yourname/voice-agent/internal/context"
 	"github.com/yourname/voice-agent/internal/llm"
 	"github.com/yourname/voice-agent/internal/resolver"
 	"github.com/yourname/voice-agent/internal/security"
@@ -54,7 +55,7 @@ func TestHandleTier0MakesNoProviderCall(t *testing.T) {
 		Profile:  &profile,
 		Resolver: resolver.NewResolver(staticMatcher{}),
 	}
-	if err := d.Handle(context.Background(), "what time is it", ""); err != nil {
+	if err := d.Handle(context.Background(), "what time is it", agentctx.Capture{}); err != nil {
 		t.Fatalf("Handle returned error: %v", err)
 	}
 	if prov.called {
@@ -107,7 +108,7 @@ func TestHandleRejectsDisallowedTool(t *testing.T) {
 		Profile:  &restricted,
 		Resolver: resolver.NewResolver(disallowedToolMatcher{}),
 	}
-	if err := d.Handle(context.Background(), "what time is it", ""); err == nil {
+	if err := d.Handle(context.Background(), "what time is it", agentctx.Capture{}); err == nil {
 		t.Fatal("expected Handle to reject a tool not in the profile's allow-list")
 	}
 	if prov.called {
@@ -126,7 +127,7 @@ func TestHandleRejectsUnregisteredTool(t *testing.T) {
 		Profile:  &profile,
 		Resolver: resolver.NewResolver(unregisteredToolMatcher{}),
 	}
-	err := d.Handle(context.Background(), "do the thing", "")
+	err := d.Handle(context.Background(), "do the thing", agentctx.Capture{})
 	if err == nil {
 		t.Fatal("expected Handle to reject an unregistered tool")
 	}
@@ -162,9 +163,21 @@ func TestHandleTier1IncrementsCloudCount(t *testing.T) {
 		Resolver: resolver.NewResolver(noMatchMatcher{}),
 	}
 	before := CloudCount()
-	_ = d.Handle(context.Background(), "some unmatched free-form request", "")
+	_ = d.Handle(context.Background(), "some unmatched free-form request", agentctx.Capture{})
 	after := CloudCount()
 	if after != before+1 {
 		t.Errorf("expected CloudCount to increment by 1, got before=%d after=%d", before, after)
+	}
+}
+
+func TestHandleTier1PassesContextToProvider(t *testing.T) {
+	prov := &recordingProvider{}
+	reg := tools.DefaultRegistry(prov)
+	profile := security.DeveloperProfile()
+	d := &Deps{Registry: reg, Provider: prov, Profile: &profile, Resolver: resolver.NewResolver()} // no matchers -> Tier 1
+	cap := agentctx.Capture{AppName: "chrome.exe", Selection: "hello world"}
+	_ = d.Handle(context.Background(), "reply to this", cap)
+	if !prov.called {
+		t.Fatal("Tier 1 must call the provider")
 	}
 }
