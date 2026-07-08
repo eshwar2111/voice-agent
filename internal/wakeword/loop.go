@@ -1,6 +1,9 @@
 package wakeword
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // FrameSource yields audio frames and controls mic capture.
 type FrameSource interface {
@@ -26,10 +29,12 @@ func runWakeLoop(ctx context.Context, src FrameSource, det Detector, onDetect fu
 		}
 		frame, err := src.Read()
 		if err != nil {
+			time.Sleep(10 * time.Millisecond) // avoid busy-spin on persistent mic failure
 			continue // transient read error; keep listening
 		}
 		idx, err := det.Process(frame)
 		if err != nil {
+			time.Sleep(10 * time.Millisecond) // avoid busy-spin on persistent processing failure
 			continue
 		}
 		if idx >= 0 {
