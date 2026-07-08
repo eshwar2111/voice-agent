@@ -22,6 +22,7 @@ import (
 	"github.com/yourname/voice-agent/internal/security"
 	"github.com/yourname/voice-agent/internal/tools"
 	"github.com/yourname/voice-agent/internal/ui"
+	"github.com/yourname/voice-agent/internal/wakeword"
 )
 
 func main() {
@@ -139,6 +140,16 @@ func main() {
 	// Initialize and run the Event-Driven Engine
 	engineApp := engine.NewEngine(cfg, provider, registry, memStore, memRetriever, rateLimiter, &profile)
 	go engineApp.Start(rootCtx)
+
+	// Start wake-word loop when voice is enabled and a Porcupine key is configured.
+	if cfg.EnableVoice && cfg.PorcupineAccessKey != "" {
+		go func() {
+			onDetect := func() { engineApp.TriggerAndWait(60 * time.Second) }
+			if err := wakeword.StartWakeWordLoop(rootCtx, cfg.PorcupineAccessKey, onDetect); err != nil {
+				log.Printf("wake word stopped: %v", err)
+			}
+		}()
+	}
 
 	// The WebView UI Engine *must* run on the main OS thread to avoid crashes.
 	// When the WebView closes, we trigger shutdown
