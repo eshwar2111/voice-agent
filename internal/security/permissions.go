@@ -61,6 +61,7 @@ func DeveloperProfile() Profile {
 			"keyboard_combo":     true,
 			"wait":               true,
 			"media_control":      true,
+			"window_control":     true,
 			"run_python":         true,
 			"browser_read_page":  true,
 			"browser_navigate":   true,
