@@ -49,7 +49,7 @@ func (d *Deps) Handle(ctx context.Context, input, activeApp string) error {
 	log.Printf("[dispatch] TIER1 (cloud) %q", input)
 	exec := agent.NewExecutor(d.Registry)
 	orch := agent.NewOrchestrator(d.Provider, exec)
-	return orch.Run(ctx, input)
+	return orch.Run(ctx, input, "")
 }
 
 // enforceSecurity applies the profile allow-list and per-tool confirmation once.

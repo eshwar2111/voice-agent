@@ -40,11 +40,11 @@ func NewOrchestrator(provider llm.Provider, executor *GraphExecutor) *Orchestrat
 // Run is the primary entry-point.  It decomposes the user's request, executes
 // each sub-goal in order (with per-agent approval check), and streams a brief
 // status notification for each step.
-func (o *Orchestrator) Run(ctx gocontext.Context, userText string) error {
+func (o *Orchestrator) Run(ctx gocontext.Context, userText, sysContext string) error {
 	ui.ShowNotification("Planning your request…")
 	log.Printf("[Orchestrator] Decomposing: %q\n", userText)
 
-	subGoals, err := o.decompose(ctx, userText)
+	subGoals, err := o.decompose(ctx, userText, sysContext)
 	if err != nil || len(subGoals) == 0 {
 		// Fallback: treat the entire text as a single google_workflow_agent call
 		log.Printf("[Orchestrator] Decompose failed or empty, falling back to single-agent: %v", err)
@@ -53,6 +53,9 @@ func (o *Orchestrator) Run(ctx gocontext.Context, userText string) error {
 
 	// Fast path: single sub-goal with no orchestration overhead
 	if len(subGoals) == 1 {
+		if subGoals[0].Context == "" {
+			subGoals[0].Context = sysContext
+		}
 		return o.execSubGoal(ctx, subGoals[0])
 	}
 
@@ -60,6 +63,9 @@ func (o *Orchestrator) Run(ctx gocontext.Context, userText string) error {
 
 	var results []string
 	for i, sg := range subGoals {
+		if sg.Context == "" {
+			sg.Context = sysContext
+		}
 		ui.ShowNotification(fmt.Sprintf("Step %d/%d: %s…", i+1, len(subGoals), sg.Goal))
 		log.Printf("[Orchestrator] Sub-goal %d: agent=%s, goal=%q\n", i+1, sg.Agent, sg.Goal)
 
@@ -124,12 +130,15 @@ Rules:
 4. If the entire request maps to a single agent/tool, return exactly one element.
 5. Preserve the user's original intent in "goal" — do not rephrase into commands.
 
+Desktop context (may be empty):
+%s
+
 User request: %s
 
 Return ONLY the JSON array.`
 
-func (o *Orchestrator) decompose(ctx gocontext.Context, userText string) ([]SubGoal, error) {
-	prompt := fmt.Sprintf(decompositionPrompt, userText)
+func (o *Orchestrator) decompose(ctx gocontext.Context, userText, sysContext string) ([]SubGoal, error) {
+	prompt := fmt.Sprintf(decompositionPrompt, sysContext, userText)
 	raw, err := o.Provider.Generate(ctx, prompt, nil)
 	if err != nil {
 		return nil, fmt.Errorf("LLM decomposition failed: %w", err)
