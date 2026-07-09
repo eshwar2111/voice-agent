@@ -115,6 +115,7 @@ func (e *Engine) handleEvent(ctx context.Context, ev Event) {
 	case EventVoiceInput:
 		if executor.IsSpeaking() {
 			fmt.Println("⚠️  TTS is active — ignoring trigger to prevent feedback loop.")
+			e.signalCommandDone()
 			return
 		}
 
@@ -122,6 +123,7 @@ func (e *Engine) handleEvent(ctx context.Context, ev Event) {
 		if e.isBusy {
 			e.busyLock.Unlock()
 			fmt.Println("⚠️  Already processing a command — ignoring trigger.")
+			e.signalCommandDone()
 			return
 		}
 		e.isBusy = true
@@ -185,10 +187,7 @@ func (e *Engine) handleEvent(ctx context.Context, ev Event) {
 		e.busyLock.Lock()
 		e.isBusy = false
 		e.busyLock.Unlock()
-		select {
-		case e.commandDone <- struct{}{}:
-		default:
-		}
+		e.signalCommandDone()
 
 	case EventError:
 		log.Printf("Engine Error Event: %v", ev.Err)
@@ -196,10 +195,15 @@ func (e *Engine) handleEvent(ctx context.Context, ev Event) {
 		e.busyLock.Lock()
 		e.isBusy = false
 		e.busyLock.Unlock()
-		select {
-		case e.commandDone <- struct{}{}:
-		default:
-		}
+		e.signalCommandDone()
+	}
+}
+
+// signalCommandDone releases any waiter in TriggerAndWait (non-blocking).
+func (e *Engine) signalCommandDone() {
+	select {
+	case e.commandDone <- struct{}{}:
+	default:
 	}
 }
 

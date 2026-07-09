@@ -40,7 +40,9 @@ var (
 		robotgo.KeyTap("c", "ctrl")
 		time.Sleep(80 * time.Millisecond) // short settle; keep the bar snappy
 		sel, _ := clipboard.ReadAll()
-		_ = clipboard.WriteAll(saved) // restore, best-effort
+		if saved != "" {
+			_ = clipboard.WriteAll(saved) // restore, best-effort (skip empty to avoid wiping non-text clipboards)
+		}
 		if sel == saved {
 			return "" // nothing newly selected
 		}
