@@ -1,0 +1,309 @@
+<style>
+  /* ─── Voice Agent overlay — sleek minimalist system ───────────────────────
+     A committed dark-glass widget world (the pill floats over the desktop),
+     so this showcase deliberately stays a single dark scene. Native system
+     type (matches Windows/macOS), one cool accent, soft glass, quiet motion. */
+
+  :root {
+    --bg-0: #0a0c10;                 /* deepest scene */
+    --bg-1: #10131a;
+    --glass: rgba(20, 23, 31, 0.66); /* pill body */
+    --glass-hi: rgba(255,255,255,0.06);
+    --hairline: rgba(255,255,255,0.09);
+    --ink: #eceef4;                  /* primary text (cool white) */
+    --ink-mut: #9198a6;              /* muted */
+    --ink-faint: #626a78;
+    --accent: #8ea2ff;               /* soft periwinkle */
+    --accent-2: #67e8d4;             /* cyan, used only in the active gradient */
+    --danger: #f0817e;
+    --good: #7fd6a2;
+    --shadow: 0 14px 40px -12px rgba(0,0,0,0.62), 0 2px 8px -2px rgba(0,0,0,0.5);
+    --r-pill: 999px;
+    --r-card: 18px;
+    --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --ease: cubic-bezier(.22,.61,.36,1);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    font-family: var(--font);
+    color: var(--ink);
+    background:
+      radial-gradient(1200px 700px at 78% -8%, #1b2233 0%, transparent 60%),
+      radial-gradient(900px 600px at 8% 108%, #191428 0%, transparent 55%),
+      linear-gradient(160deg, var(--bg-1), var(--bg-0));
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  .wrap { max-width: 760px; margin: 0 auto; padding: 56px 28px 88px; }
+
+  .masthead { margin-bottom: 40px; }
+  .eyebrow {
+    font-size: 11px; letter-spacing: .18em; text-transform: uppercase;
+    color: var(--accent); font-weight: 600; margin: 0 0 10px;
+  }
+  h1 {
+    font-size: clamp(26px, 4vw, 34px); font-weight: 620; letter-spacing: -0.02em;
+    margin: 0 0 10px; text-wrap: balance; line-height: 1.1;
+  }
+  .lede { color: var(--ink-mut); font-size: 15px; line-height: 1.6; max-width: 56ch; margin: 0; }
+
+  .group { margin-top: 46px; }
+  .group > h2 {
+    font-size: 12px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--ink-faint); font-weight: 600; margin: 0 0 18px;
+    padding-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+
+  .spec { display: flex; align-items: center; gap: 18px; padding: 14px 0; }
+  .spec .tag {
+    flex: 0 0 96px; font-size: 12px; color: var(--ink-faint);
+    letter-spacing: .02em; text-align: right; padding-top: 2px;
+  }
+  .stage { flex: 1; display: flex; justify-content: center; min-width: 0; }
+
+  /* ─── The pill ─────────────────────────────────────────────────────────── */
+  .pill {
+    display: inline-flex; align-items: center; gap: 10px;
+    background: var(--glass);
+    border: 1px solid var(--hairline);
+    border-radius: var(--r-pill);
+    box-shadow: var(--shadow), inset 0 1px 0 var(--glass-hi);
+    -webkit-backdrop-filter: blur(22px) saturate(1.35);
+    backdrop-filter: blur(22px) saturate(1.35);
+    padding: 10px 16px; height: 44px;
+    color: var(--ink); font-size: 14px; line-height: 1;
+    max-width: 100%;
+  }
+  .pill.slim { padding: 0 14px; gap: 9px; }
+
+  /* orb: the status indicator */
+  .orb { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto;
+         background: var(--ink-faint); box-shadow: none; }
+  .orb.idle { background: #59616f; }
+  .orb.on {
+    background: radial-gradient(circle at 35% 30%, #cdd7ff, var(--accent));
+    box-shadow: 0 0 0 4px rgba(142,162,255,0.14), 0 0 14px 2px rgba(142,162,255,0.5);
+  }
+  .orb.on.pulse { animation: pulse 1.7s var(--ease) infinite; }
+  @keyframes pulse {
+    0%,100% { box-shadow: 0 0 0 3px rgba(142,162,255,0.16), 0 0 10px 1px rgba(142,162,255,0.4); }
+    50%     { box-shadow: 0 0 0 7px rgba(142,162,255,0.05), 0 0 18px 4px rgba(142,162,255,0.6); }
+  }
+
+  .label { color: var(--ink); font-weight: 500; }
+  .label .mut { color: var(--ink-mut); font-weight: 400; }
+  .hint { color: var(--ink-faint); font-size: 12.5px; }
+  kbd {
+    font: 500 11px var(--font); color: var(--ink-mut);
+    background: rgba(255,255,255,0.06); border: 1px solid var(--hairline);
+    border-radius: 6px; padding: 2px 6px; letter-spacing: .02em;
+  }
+
+  /* equalizer for listening/speaking */
+  .eq { display: inline-flex; align-items: center; gap: 3px; height: 16px; }
+  .eq i { width: 3px; height: 6px; border-radius: 2px; background: var(--accent);
+          animation: bounce 1s var(--ease) infinite; }
+  .eq i:nth-child(2){ animation-delay:.15s } .eq i:nth-child(3){ animation-delay:.3s }
+  .eq i:nth-child(4){ animation-delay:.45s } .eq i:nth-child(5){ animation-delay:.1s }
+  @keyframes bounce { 0%,100%{height:5px;opacity:.55} 50%{height:15px;opacity:1} }
+
+  /* thinking shimmer */
+  .shimmer { width: 62px; height: 6px; border-radius: 3px; overflow: hidden;
+             background: rgba(255,255,255,0.07); position: relative; }
+  .shimmer::after { content:""; position:absolute; inset:0; transform: translateX(-100%);
+    background: linear-gradient(90deg, transparent, rgba(142,162,255,0.8), transparent);
+    animation: sweep 1.3s var(--ease) infinite; }
+  @keyframes sweep { to { transform: translateX(100%); } }
+
+  /* command bar */
+  .pill.bar { width: 420px; max-width: 100%; padding: 0 8px 0 16px; }
+  .pill.bar input {
+    flex: 1; background: transparent; border: 0; outline: 0; min-width: 0;
+    color: var(--ink); font: 400 14px var(--font); padding: 12px 0;
+  }
+  .pill.bar input::placeholder { color: var(--ink-faint); }
+  .iconbtn {
+    width: 30px; height: 30px; border-radius: 50%; border: 0; cursor: pointer;
+    display: grid; place-items: center; background: rgba(255,255,255,0.05);
+    color: var(--ink-mut); transition: background .18s, color .18s;
+  }
+  .iconbtn:hover { background: rgba(142,162,255,0.16); color: var(--accent); }
+  .iconbtn svg { width: 15px; height: 15px; }
+
+  /* ─── Cards ────────────────────────────────────────────────────────────── */
+  .card {
+    width: 380px; max-width: 100%;
+    background: var(--glass); border: 1px solid var(--hairline);
+    border-radius: var(--r-card); box-shadow: var(--shadow), inset 0 1px 0 var(--glass-hi);
+    -webkit-backdrop-filter: blur(22px) saturate(1.35);
+    backdrop-filter: blur(22px) saturate(1.35);
+    padding: 16px 18px; text-align: left;
+  }
+  .card .row { display: flex; align-items: center; gap: 12px; }
+  .badge {
+    flex: 0 0 34px; height: 34px; border-radius: 10px; display: grid; place-items: center;
+    background: rgba(142,162,255,0.14); color: var(--accent);
+  }
+  .badge svg { width: 17px; height: 17px; }
+  .badge.good { background: rgba(127,214,162,0.14); color: var(--good); }
+  .badge.warn { background: rgba(240,129,126,0.14); color: var(--danger); }
+  .card .ttl { font-size: 14px; font-weight: 560; letter-spacing: -0.01em; margin: 0 0 2px; }
+  .card .sub { font-size: 12.5px; color: var(--ink-mut); margin: 0; line-height: 1.45; }
+  .card .body { font-size: 13.5px; color: #d7dbe4; line-height: 1.62; margin: 12px 2px 0; }
+  .card .meta { font-size: 11px; color: var(--ink-faint); letter-spacing: .04em;
+                text-transform: uppercase; margin-top: 12px; }
+  .time { font-variant-numeric: tabular-nums; color: var(--accent); font-weight: 600; }
+
+  .actions { display: flex; gap: 8px; margin-top: 14px; }
+  .actions.right { justify-content: flex-end; }
+  .btn {
+    border: 1px solid transparent; border-radius: 10px; cursor: pointer;
+    font: 550 13px var(--font); padding: 8px 15px; letter-spacing: .01em;
+    transition: transform .12s var(--ease), background .16s, border-color .16s;
+  }
+  .btn:active { transform: translateY(1px); }
+  .btn.primary { background: var(--accent); color: #0b0e17; }
+  .btn.primary:hover { background: #a4b4ff; }
+  .btn.ghost { background: transparent; color: var(--ink-mut); border-color: var(--hairline); }
+  .btn.ghost:hover { color: var(--ink); background: rgba(255,255,255,0.05); }
+  .btn.danger { background: var(--danger); color: #1a0e0e; }
+  .btn.danger:hover { background: #f59a97; }
+
+  .foot { margin-top: 60px; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.06);
+          color: var(--ink-faint); font-size: 12.5px; line-height: 1.6; }
+  .foot b { color: var(--ink-mut); font-weight: 600; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .orb.pulse, .eq i, .shimmer::after { animation: none !important; }
+  }
+  @media (max-width: 560px) {
+    .spec { flex-direction: column; align-items: stretch; gap: 8px; }
+    .spec .tag { text-align: left; flex-basis: auto; }
+  }
+</style>
+
+<div class="wrap">
+  <header class="masthead">
+    <p class="eyebrow">Voice Agent · Overlay System</p>
+    <h1>One quiet pill, five calm states, three cards.</h1>
+    <p class="lede">A dark-glass widget that floats over the desktop and never steals focus.
+      Native system type, a single periwinkle accent, and motion only where it means something —
+      a pulse while it listens, a sweep while it thinks. Everything else holds still.</p>
+  </header>
+
+  <section class="group">
+    <h2>Pill states</h2>
+
+    <div class="spec"><div class="tag">Idle</div><div class="stage">
+      <div class="pill slim"><span class="orb idle"></span><span class="hint">Ask anything &nbsp;<kbd>Ctrl</kbd> <kbd>Space</kbd></span></div>
+    </div></div>
+
+    <div class="spec"><div class="tag">Listening</div><div class="stage">
+      <div class="pill"><span class="orb on pulse"></span><span class="label">Listening<span class="mut">…</span></span>
+        <span class="eq"><i></i><i></i><i></i><i></i><i></i></span></div>
+    </div></div>
+
+    <div class="spec"><div class="tag">Thinking</div><div class="stage">
+      <div class="pill"><span class="orb on"></span><span class="label">Thinking</span><span class="shimmer"></span></div>
+    </div></div>
+
+    <div class="spec"><div class="tag">Acting</div><div class="stage">
+      <div class="pill"><span class="orb on"></span><span class="label">Opening <span class="mut">Notepad</span></span></div>
+    </div></div>
+
+    <div class="spec"><div class="tag">Speaking</div><div class="stage">
+      <div class="pill"><span class="eq"><i></i><i></i><i></i><i></i><i></i></span>
+        <span class="label mut">It’s 4:20 PM.</span></div>
+    </div></div>
+  </section>
+
+  <section class="group">
+    <h2>Command bar</h2>
+    <div class="spec"><div class="tag">Typing</div><div class="stage">
+      <div class="pill bar">
+        <span class="orb idle"></span>
+        <input value="summarize this" placeholder="Ask or command…" aria-label="Command input" />
+        <button class="iconbtn" aria-label="Speak">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+        </button>
+      </div>
+    </div></div>
+  </section>
+
+  <section class="group">
+    <h2>Cards &amp; pop-ups</h2>
+
+    <div class="spec"><div class="tag">Suggestion</div><div class="stage">
+      <div class="card">
+        <div class="row">
+          <span class="badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v13H3V8"/><path d="M1 3h22v5H1zM10 12h4"/></svg></span>
+          <div><p class="ttl">Download finished</p><p class="sub">report.zip · 14.2 MB — unzip it here?</p></div>
+        </div>
+        <div class="actions right">
+          <button class="btn ghost">Dismiss</button>
+          <button class="btn primary">Unzip</button>
+        </div>
+      </div>
+    </div></div>
+
+    <div class="spec"><div class="tag">Meeting</div><div class="stage">
+      <div class="card">
+        <div class="row">
+          <span class="badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg></span>
+          <div><p class="ttl">Standup <span class="time">in 10 min</span></p><p class="sub">Daily Sync · Google Meet</p></div>
+        </div>
+        <div class="actions right">
+          <button class="btn ghost">Later</button>
+          <button class="btn primary">Join</button>
+        </div>
+      </div>
+    </div></div>
+
+    <div class="spec"><div class="tag">Clipboard</div><div class="stage">
+      <div class="card">
+        <div class="row">
+          <span class="badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg></span>
+          <div><p class="ttl">Link copied</p><p class="sub">github.com/…/voice-agent — open it?</p></div>
+        </div>
+        <div class="actions right">
+          <button class="btn ghost">Dismiss</button>
+          <button class="btn primary">Open</button>
+        </div>
+      </div>
+    </div></div>
+
+    <div class="spec"><div class="tag">Answer</div><div class="stage">
+      <div class="card">
+        <p class="body" style="margin-top:0">The selected paragraph argues that latency, not accuracy,
+          is what makes an assistant feel “present.” It’s three claims: perceived speed builds trust,
+          local-first keeps it private, and the cloud is a fallback — not the default.</p>
+        <p class="meta">From your selection · Chrome</p>
+      </div>
+    </div></div>
+
+    <div class="spec"><div class="tag">Confirm</div><div class="stage">
+      <div class="card">
+        <div class="row">
+          <span class="badge warn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg></span>
+          <div><p class="ttl">Delete old_report.txt?</p><p class="sub">This can’t be undone.</p></div>
+        </div>
+        <div class="actions right">
+          <button class="btn ghost">Cancel</button>
+          <button class="btn danger">Delete</button>
+        </div>
+      </div>
+    </div></div>
+
+    <div class="spec"><div class="tag">Toast</div><div class="stage">
+      <div class="pill"><span class="orb on" style="background:radial-gradient(circle at 35% 30%,#c9f3e2,var(--good));box-shadow:0 0 10px 1px rgba(127,214,162,.5)"></span><span class="label mut">Saved to memory</span></div>
+    </div></div>
+  </section>
+
+  <p class="foot"><b>The system in one line.</b> Glass body, hairline border, soft shadow — identical on the
+    pill and every card. One accent (periwinkle) for anything live or primary; green for “done,” a warm red only
+    for destructive confirms. Actions read left‑to‑right, safe→bold, with the primary always rightmost.</p>
+</div>
