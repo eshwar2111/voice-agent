@@ -5,10 +5,12 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"sync"
 	"syscall"
 	"time"
+	"unsafe"
 
 	"github.com/lxn/win"
 	webview "github.com/webview/webview_go"
@@ -24,7 +26,24 @@ var (
 	procSetWindowPos       = moduser32.NewProc("SetWindowPos")
 	procSetWindowRgn       = moduser32.NewProc("SetWindowRgn")
 	procCreateRoundRectRgn = modgdi32.NewProc("CreateRoundRectRgn")
+	procGetWindowRect      = moduser32.NewProc("GetWindowRect")
+	procGetDpiForWindow    = moduser32.NewProc("GetDpiForWindow")
+
+	modkernel32          = syscall.NewLazyDLL("kernel32.dll")
+	procGetCurrentThread = modkernel32.NewProc("GetCurrentThreadId")
 )
+
+// dpiScale returns the window's DPI scale factor (1.0 at 96 DPI / 100%).
+func dpiScale() float64 {
+	if hwndGlobal == 0 || procGetDpiForWindow.Find() != nil {
+		return 1
+	}
+	dpi, _, _ := procGetDpiForWindow.Call(uintptr(hwndGlobal))
+	if dpi == 0 {
+		return 1
+	}
+	return float64(dpi) / 96.0
+}
 
 type AgentState int
 
@@ -39,8 +58,8 @@ const (
 
 const (
 	// Default Pill Dimensions
-	defaultW = 240
-	defaultH = 44
+	defaultW = 300
+	defaultH = 52
 )
 
 var (
@@ -191,8 +210,10 @@ func RestoreTopmost() {
 
 func resizeWindow(width, height, radius int) {
 	if hwndGlobal == 0 {
+		log.Printf("[ui/resize] SKIP: hwnd not ready (req %dx%d)", width, height)
 		return
 	}
+	scale := dpiScale()
 	sw := win.GetSystemMetrics(win.SM_CXSCREEN)
 	x := (int(sw) - width) / 2
 
@@ -200,8 +221,14 @@ func resizeWindow(width, height, radius int) {
 	win.SetWindowPos(hwndGlobal, win.HWND_TOPMOST, int32(x), 10, int32(width), int32(height), win.SWP_NOACTIVATE)
 
 	// 2. Create a rounded rectangle region and APPLY it to the window
-	hrgn, _, _ := procCreateRoundRectRgn.Call(0, 0, uintptr(width), uintptr(height), uintptr(radius*2), uintptr(radius*2))
+	hrgn, _, _ := procCreateRoundRectRgn.Call(0, 0, uintptr(width+1), uintptr(height+1), uintptr(radius*2), uintptr(radius*2))
 	procSetWindowRgn.Call(uintptr(hwndGlobal), hrgn, 1)
+
+	// diagnostics — actual window rect after the resize
+	var rc struct{ L, T, R, B int32 }
+	procGetWindowRect.Call(uintptr(hwndGlobal), uintptr(unsafe.Pointer(&rc)))
+	log.Printf("[ui/resize] req=%dx%d rad=%d dpiScale=%.2f -> actual window rect=%dx%d at (%d,%d)",
+		width, height, radius, scale, rc.R-rc.L, rc.B-rc.T, rc.L, rc.T)
 }
 
 // SetInputActive toggles whether the overlay can take keyboard focus. The pill is
@@ -215,10 +242,22 @@ func SetInputActive(active bool) {
 	exStyle := win.GetWindowLong(hwndGlobal, win.GWL_EXSTYLE)
 	if active {
 		win.SetWindowLong(hwndGlobal, win.GWL_EXSTYLE, exStyle&^win.WS_EX_NOACTIVATE)
+		// Windows blocks SetForegroundWindow from a background/no-activate process.
+		// Attach to the current foreground thread's input queue so the call is honored,
+		// then set foreground + keyboard focus, then detach.
+		fg := win.GetForegroundWindow()
+		fgThread := win.GetWindowThreadProcessId(fg, nil)
+		myThread, _, _ := procGetCurrentThread.Call()
+		win.AttachThreadInput(int32(fgThread), int32(myThread), true)
+		win.BringWindowToTop(hwndGlobal)
 		win.SetForegroundWindow(hwndGlobal)
 		win.SetFocus(hwndGlobal)
+		win.AttachThreadInput(int32(fgThread), int32(myThread), false)
+		got := win.GetForegroundWindow() == hwndGlobal
+		log.Printf("[ui] input ACTIVE — overlay is now foreground=%v", got)
 	} else {
 		win.SetWindowLong(hwndGlobal, win.GWL_EXSTYLE, exStyle|win.WS_EX_NOACTIVATE)
+		log.Println("[ui] input inactive (no-activate restored)")
 	}
 }
 
@@ -268,8 +307,10 @@ func StartOverlay(ctx context.Context, cfg *config.Config) {
 		w.Dispatch(func() { SetInputActive(active) })
 	})
 	w.Bind("quitApp", func() {
+		log.Println("[ui] quit requested from UI")
 		w.Dispatch(func() { w.Terminate() })
 	})
+	w.Bind("jslog", func(msg string) { log.Printf("%s", msg) })
 	w.Bind("getSettings", func() map[string]interface{} {
 		return map[string]interface{}{
 			"llm_provider": cfg.LLMProvider,
@@ -310,7 +351,7 @@ func StartOverlay(ctx context.Context, cfg *config.Config) {
 			exStyle := win.GetWindowLong(hwnd, win.GWL_EXSTYLE)
 			win.SetWindowLong(hwnd, win.GWL_EXSTYLE, exStyle|win.WS_EX_TOPMOST|win.WS_EX_TOOLWINDOW|win.WS_EX_NOACTIVATE)
 
-			resizeWindow(defaultW, defaultH, 22)
+			resizeWindow(defaultW, defaultH, 26)
 		})
 	}()
 

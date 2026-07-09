@@ -28,6 +28,16 @@ import (
 )
 
 func main() {
+	// Debug log to a file next to the exe — the -H windowsgui build has no console,
+	// so this is the only way to see logs. Tail voice-agent.log while testing.
+	if lf, lerr := os.OpenFile("voice-agent.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644); lerr == nil {
+		// File only — the -H windowsgui build has no valid os.Stderr, and writing to a
+		// bad stderr handle via MultiWriter aborts the whole log line.
+		log.SetOutput(lf)
+	}
+	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
+	log.Println("========== voice-agent starting ==========")
+
 	configPath := filepath.Join("config.json")
 	cfg, err := config.LoadConfig(configPath)
 	if err != nil {
