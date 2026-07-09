@@ -28,6 +28,7 @@ var (
 	procCreateRoundRectRgn = modgdi32.NewProc("CreateRoundRectRgn")
 	procGetWindowRect      = moduser32.NewProc("GetWindowRect")
 	procGetDpiForWindow    = moduser32.NewProc("GetDpiForWindow")
+	procRedrawWindow       = moduser32.NewProc("RedrawWindow")
 
 	modkernel32          = syscall.NewLazyDLL("kernel32.dll")
 	procGetCurrentThread = modkernel32.NewProc("GetCurrentThreadId")
@@ -213,16 +214,30 @@ func resizeWindow(width, height, radius int) {
 		log.Printf("[ui/resize] SKIP: hwnd not ready (req %dx%d)", width, height)
 		return
 	}
+	// The width/height/radius passed in are CSS pixels (the design's logical
+	// units, matching the VIEW map in overlay_v2.html). WebView2 renders CSS at
+	// the system DPI scale, so the physical window must be scaled by the same
+	// factor — otherwise at 125% the whole UI renders ~20% too small and the
+	// content viewport won't match the authored layout.
 	scale := dpiScale()
+	pw := int(float64(width) * scale)
+	ph := int(float64(height) * scale)
+	pr := int(float64(radius) * scale)
 	sw := win.GetSystemMetrics(win.SM_CXSCREEN)
-	x := (int(sw) - width) / 2
+	x := (int(sw) - pw) / 2
 
-	// 1. Physically resize and reposition the window
-	win.SetWindowPos(hwndGlobal, win.HWND_TOPMOST, int32(x), 10, int32(width), int32(height), win.SWP_NOACTIVATE)
+	// 1. Physically resize and reposition the window (physical pixels)
+	win.SetWindowPos(hwndGlobal, win.HWND_TOPMOST, int32(x), int32(10*scale), int32(pw), int32(ph), win.SWP_NOACTIVATE)
 
 	// 2. Create a rounded rectangle region and APPLY it to the window
-	hrgn, _, _ := procCreateRoundRectRgn.Call(0, 0, uintptr(width+1), uintptr(height+1), uintptr(radius*2), uintptr(radius*2))
+	hrgn, _, _ := procCreateRoundRectRgn.Call(0, 0, uintptr(pw+1), uintptr(ph+1), uintptr(pr*2), uintptr(pr*2))
 	procSetWindowRgn.Call(uintptr(hwndGlobal), hrgn, 1)
+
+	// 3. Force a full repaint (frame + all children). WebView2 hosts its browser
+	// in a child HWND and leaves stale pixels behind when the window shrinks —
+	// that's the "grey ghost" at the old size. RDW_INVALIDATE|ERASE|ALLCHILDREN|
+	// UPDATENOW|FRAME (0x0585) clears it immediately.
+	procRedrawWindow.Call(uintptr(hwndGlobal), 0, 0, 0x0585)
 
 	// diagnostics — actual window rect after the resize
 	var rc struct{ L, T, R, B int32 }
@@ -270,8 +285,13 @@ func StartOverlay(ctx context.Context, cfg *config.Config) {
 
 	w.Bind("triggerListen", func() { ListenTrigger <- struct{}{} })
 	w.Bind("submitCommand", func(input string) {
+		// Run the dispatch OFF the WebView thread. OnCommand blocks on the
+		// LLM/tool pipeline; if it ran here it would freeze the WebView main
+		// loop, so every w.Dispatch'd resize (e.g. shrink-back-to-pill after
+		// submit) would queue behind it — leaving the pill stuck at command
+		// size showing "Dispatching…". A goroutine frees the loop immediately.
 		if OnCommand != nil {
-			OnCommand(input)
+			go OnCommand(input)
 		}
 	})
 	w.Bind("getPrevCommand", func() string {
