@@ -11,7 +11,7 @@ import (
 
 // openPath opens a file/folder with its default handler.
 func openPath(path string) error {
-	return exec.Command("cmd.exe", "/c", "start", "", path).Start()
+	return exec.Command("rundll32", "url.dll,FileProtocolHandler", path).Start()
 }
 
 // openURL opens a URL in the default browser.
