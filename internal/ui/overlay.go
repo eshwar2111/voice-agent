@@ -233,6 +233,16 @@ func StartOverlay(ctx context.Context, cfg *config.Config) {
 	setupAuthBindings(ctx, cfg, w)
 
 	w.Bind("confirmCallback", func(approved bool) { confirmChan <- approved })
+	w.Bind("suggestionAccept", func(id string) {
+		if OnSuggestionAccept != nil {
+			OnSuggestionAccept(id)
+		}
+	})
+	w.Bind("suggestionDismiss", func(id string) {
+		if OnSuggestionDismiss != nil {
+			OnSuggestionDismiss(id)
+		}
+	})
 	w.Bind("callResize", func(width, height, radius int) {
 		w.Dispatch(func() { resizeWindow(width, height, radius) })
 	})
