@@ -85,3 +85,16 @@ The agent comes with a massive registry of tools (`internal/tools/registry.go`):
 
 ## 🔒 Security
 The agent operates with permission profiles. Destructive actions (like `delete_file`) require explicit UI confirmation before the agent is allowed to execute them.
+
+## 🔔 Proactive suggestions (SP3)
+
+The agent can proactively surface one-tap suggestions — "ZIP downloaded, unzip it?",
+"meeting in 10 min, join?", "link copied, open it?" — as small dark-glass cards on the pill.
+
+- **Opt-in:** set `"enable_proactive": true` in `config.json` (off by default). Suppressed when
+  `"privacy_mode": true`.
+- **Sources:** Downloads (filesystem watcher), Calendar (Google/Microsoft, needs linked OAuth),
+  Clipboard (URL / tracking number / error).
+- **Never noisy:** one card at a time, deduped, rate-limited, and suppressed while the assistant
+  is busy or speaking. No LLM runs just because a trigger fired — only an accepted action that
+  needs it (e.g. "explain this error") reaches the cloud.
