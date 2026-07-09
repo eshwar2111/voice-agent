@@ -79,3 +79,19 @@ Set `"enable_voice": true` in `config.json`. On startup you should see
 Click the pill overlay (or wire a wake word) to start listening. Speech is transcribed locally
 by Whisper, then routed through the same tiered dispatch as typed commands (Tier 0 local resolver
 → Tier 1 cloud fallback).
+
+## Wake word (Porcupine)
+
+The wake word ("Porcupine" built-in keyword) is included in the `-tags whisper` voice build and
+starts automatically when `enable_voice: true` **and** `porcupine_access_key` is set in
+`config.json`. Get a free access key at https://console.picovoice.ai. Without a valid key,
+Porcupine init fails with `ACTIVATION_REFUSED` — this is logged (`wake word stopped: …`) and the
+app keeps running; voice via the pill still works, just not hands-free activation.
+
+### pvrecorder patch (already applied)
+
+The upstream `pvrecorder` v1.2.4 Go binding has a copy-paste bug: it tries to load
+`libpv_cheetah.dll` (from Picovoice's Cheetah engine) instead of its own `libpv_recorder.dll`,
+and `log.Fatal`s at package init — crashing the app when the wake-word loop starts. This repo
+vendors a corrected copy under `third_party/pvrecorder/` (DLL name fixed) wired via a `go.mod`
+`replace` directive. No action needed; just don't remove the replace.
