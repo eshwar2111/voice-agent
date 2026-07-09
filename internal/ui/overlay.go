@@ -204,6 +204,24 @@ func resizeWindow(width, height, radius int) {
 	procSetWindowRgn.Call(uintptr(hwndGlobal), hrgn, 1)
 }
 
+// SetInputActive toggles whether the overlay can take keyboard focus. The pill is
+// created WS_EX_NOACTIVATE so it never steals focus; but typing panels (command bar,
+// settings) need real keyboard focus, so we clear that flag and foreground the window
+// while they're open, then restore no-activate when they close.
+func SetInputActive(active bool) {
+	if hwndGlobal == 0 {
+		return
+	}
+	exStyle := win.GetWindowLong(hwndGlobal, win.GWL_EXSTYLE)
+	if active {
+		win.SetWindowLong(hwndGlobal, win.GWL_EXSTYLE, exStyle&^win.WS_EX_NOACTIVATE)
+		win.SetForegroundWindow(hwndGlobal)
+		win.SetFocus(hwndGlobal)
+	} else {
+		win.SetWindowLong(hwndGlobal, win.GWL_EXSTYLE, exStyle|win.WS_EX_NOACTIVATE)
+	}
+}
+
 func StartOverlay(ctx context.Context, cfg *config.Config) {
 	w = webview.NewWindow(false, nil)
 	defer w.Destroy()
@@ -245,6 +263,12 @@ func StartOverlay(ctx context.Context, cfg *config.Config) {
 	})
 	w.Bind("callResize", func(width, height, radius int) {
 		w.Dispatch(func() { resizeWindow(width, height, radius) })
+	})
+	w.Bind("setInputActive", func(active bool) {
+		w.Dispatch(func() { SetInputActive(active) })
+	})
+	w.Bind("quitApp", func() {
+		w.Dispatch(func() { w.Terminate() })
 	})
 	w.Bind("getSettings", func() map[string]interface{} {
 		return map[string]interface{}{
