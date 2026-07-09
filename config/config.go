@@ -21,8 +21,9 @@ type Config struct {
 	WhisperModel       string `json:"whisper_model"`
 
 	// UX Toggles
-	EnableVoice bool `json:"enable_voice"`
-	PrivacyMode bool `json:"privacy_mode"`
+	EnableVoice     bool `json:"enable_voice"`
+	PrivacyMode     bool `json:"privacy_mode"`
+	EnableProactive bool `json:"enable_proactive"`
 
 	// OAuth Credentials
 	GoogleClientID        string `json:"google_client_id"`

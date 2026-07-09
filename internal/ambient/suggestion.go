@@ -23,3 +23,10 @@ type Source interface {
 type Deliverer interface {
 	ShowSuggestion(id string, s Suggestion)
 }
+
+// DelivererFunc adapts a function to the Deliverer interface.
+type DelivererFunc func(id, icon, title, message, action string)
+
+func (f DelivererFunc) ShowSuggestion(id string, s Suggestion) {
+	f(id, s.Icon, s.Title, s.Message, s.Action)
+}

@@ -12,9 +12,11 @@ import (
 	"time"
 
 	"github.com/yourname/voice-agent/config"
+	"github.com/yourname/voice-agent/internal/ambient"
 	"github.com/yourname/voice-agent/internal/asr"
 	"github.com/yourname/voice-agent/internal/audit"
 	"github.com/yourname/voice-agent/internal/command"
+	agentctx "github.com/yourname/voice-agent/internal/context"
 	"github.com/yourname/voice-agent/internal/engine"
 	"github.com/yourname/voice-agent/internal/llm"
 	"github.com/yourname/voice-agent/internal/memory"
@@ -140,6 +142,26 @@ func main() {
 	// Initialize and run the Event-Driven Engine
 	engineApp := engine.NewEngine(cfg, provider, registry, memStore, memRetriever, rateLimiter, &profile)
 	go engineApp.Start(rootCtx)
+
+	// Start the ambient (proactive suggestions) engine, gated by config + privacy mode.
+	if cfg.EnableProactive && !cfg.PrivacyMode {
+		amb := &ambient.Engine{
+			Sources: []ambient.Source{
+				ambient.NewDownloadsSource(),
+				&ambient.CalendarSource{Cfg: cfg},
+				&ambient.ClipboardSource{OnExplain: func(ctx context.Context, text string) error {
+					return engineApp.Dispatch.Handle(ctx, "explain this error: "+text, agentctx.Capture{})
+				}},
+			},
+			Policy:  ambient.NewPolicy(90 * time.Second),
+			UI:      ambient.DelivererFunc(ui.ShowSuggestion),
+			Busy:    engineApp.IsBusy,
+			Enabled: func() bool { return cfg.EnableProactive && !cfg.PrivacyMode },
+		}
+		ui.OnSuggestionAccept = amb.Accept
+		ui.OnSuggestionDismiss = amb.Dismiss
+		go amb.Run(rootCtx)
+	}
 
 	// Start wake-word loop when voice is enabled and a Porcupine key is configured.
 	if cfg.EnableVoice && cfg.PorcupineAccessKey != "" {
