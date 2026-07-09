@@ -21,7 +21,7 @@ type ppDetector struct{ p *porcupine.Porcupine }
 func (d *ppDetector) Process(f []int16) (int, error) { return d.p.Process(f) }
 
 // StartWakeWordLoop listens for the built-in "Porcupine" keyword until ctx is cancelled.
-func StartWakeWordLoop(ctx context.Context, accessKey string, onDetect func()) error {
+func StartWakeWordLoop(ctx context.Context, accessKey string, onDetect func(), isBusy func() bool) error {
 	p := porcupine.Porcupine{
 		AccessKey:       accessKey,
 		BuiltInKeywords: []porcupine.BuiltInKeyword{porcupine.PORCUPINE},
@@ -41,5 +41,5 @@ func StartWakeWordLoop(ctx context.Context, accessKey string, onDetect func()) e
 		return fmt.Errorf("pvrecorder start: %w", err)
 	}
 	fmt.Println("🎙️  Wake word active — say 'Porcupine'")
-	return runWakeLoop(ctx, &pvSource{&rec}, &ppDetector{&p}, onDetect)
+	return runWakeLoop(ctx, &pvSource{&rec}, &ppDetector{&p}, onDetect, isBusy)
 }

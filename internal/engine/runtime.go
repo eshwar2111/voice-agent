@@ -199,6 +199,15 @@ func (e *Engine) handleEvent(ctx context.Context, ev Event) {
 	}
 }
 
+// IsBusy reports whether the engine is currently processing a command pipeline
+// (pill- or wake-word-initiated). Used by the wake-word loop to pause its own
+// recorder while another capture is in flight.
+func (e *Engine) IsBusy() bool {
+	e.busyLock.Lock()
+	defer e.busyLock.Unlock()
+	return e.isBusy
+}
+
 // signalCommandDone releases any waiter in TriggerAndWait (non-blocking).
 func (e *Engine) signalCommandDone() {
 	select {

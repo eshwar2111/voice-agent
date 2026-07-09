@@ -145,7 +145,7 @@ func main() {
 	if cfg.EnableVoice && cfg.PorcupineAccessKey != "" {
 		go func() {
 			onDetect := func() { engineApp.TriggerAndWait(60 * time.Second) }
-			if err := wakeword.StartWakeWordLoop(rootCtx, cfg.PorcupineAccessKey, onDetect); err != nil {
+			if err := wakeword.StartWakeWordLoop(rootCtx, cfg.PorcupineAccessKey, onDetect, engineApp.IsBusy); err != nil {
 				log.Printf("wake word stopped: %v", err)
 			}
 		}()
