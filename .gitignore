@@ -58,3 +58,6 @@ go.work.sum
 stitch_generated_screen/
 stitch_assets/
 models/
+
+# Vendored pvrecorder binding: its embedded native lib must be committed
+!third_party/**/*.dll
