@@ -95,3 +95,12 @@ The upstream `pvrecorder` v1.2.4 Go binding has a copy-paste bug: it tries to lo
 and `log.Fatal`s at package init — crashing the app when the wake-word loop starts. This repo
 vendors a corrected copy under `third_party/pvrecorder/` (DLL name fixed) wired via a `go.mod`
 `replace` directive. No action needed; just don't remove the replace.
+
+### Known limitation: pill + wake-word mic sharing
+
+The wake-word loop releases the mic only when *it* detects the keyword. A command started by
+clicking the pill (not by the wake word) runs the command recorder while the wake recorder is
+still listening — both hold the mic at once. On Windows shared-mode audio this coexists without
+error, but the wake detector can briefly fire on your own command speech (harmlessly ignored
+while busy). A future refinement can pause the wake recorder around any command. Say the wake
+word (rather than clicking) to avoid the overlap.
