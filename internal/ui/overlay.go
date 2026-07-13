@@ -173,8 +173,13 @@ func RequestConfirmationCard(cardJSON string) bool {
 	if w == nil {
 		return false
 	}
+	// cardJSON is JSON text. It must reach JS as a *string* argument (so the JS
+	// can JSON.parse it) — injecting it raw makes JS parse it as an object
+	// literal, and String(obj) renders "[object Object]". Marshal wraps it as a
+	// quoted JS string literal.
+	quoted, _ := json.Marshal(cardJSON)
 	w.Dispatch(func() {
-		w.Eval(fmt.Sprintf("showConfirmCard(%s);", cardJSON))
+		w.Eval(fmt.Sprintf("showConfirmCard(%s);", string(quoted)))
 	})
 	return <-confirmChan
 }
