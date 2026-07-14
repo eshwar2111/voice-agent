@@ -27,6 +27,17 @@ The agent is built around a reactive, event-driven engine (`internal/engine`):
 
 ## 🛠️ Setup & Build
 
+### Getting the source
+```bash
+git clone https://github.com/eshwar2111/voice-agent.git
+cd voice-agent
+```
+
+The default build is **voice-free** (text/typed commands only) and needs no extra native
+setup — the local Whisper speech-to-text path is opt-in behind the `whisper` build tag. To
+produce the voice-enabled binary (whisper.cpp rebuild, model download, wake word), follow
+**[docs/BUILD-VOICE.md](docs/BUILD-VOICE.md)**.
+
 ### Prerequisites
 * Go 1.21+
 * Windows OS (Currently heavily optimized for Windows APIs like `user32.dll` and UIA).
@@ -54,6 +65,8 @@ go fmt ./...
 # -H windowsgui hides the background terminal.
 go build -ldflags="-s -w -H windowsgui" -o voice-agent.exe ./cmd/app
 ```
+
+> For the voice-enabled build (`-tags whisper`), see **[docs/BUILD-VOICE.md](docs/BUILD-VOICE.md)**.
 
 > **CGO note:** the build links C dependencies (SQLite, WebView2, robotgo, whisper.cpp),
 > so a matching MinGW-w64 GCC toolchain must be on `PATH` and pointed to by `go env CC`.
