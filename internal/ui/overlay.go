@@ -2,7 +2,6 @@ package ui
 
 import (
 	"context"
-	_ "embed"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -77,9 +76,6 @@ var (
 	// OnCommand is declared in command_bar.go
 	OnSettingsSaved func(cfg interface{})
 )
-
-//go:embed overlay_v2.html
-var htmlTemplate string
 
 func init() {
 	// Force WebView2 background to be transparent (0 alpha)
@@ -362,7 +358,13 @@ func StartOverlay(ctx context.Context, cfg *config.Config) {
 		return true
 	})
 
-	w.SetHtml(htmlTemplate)
+	assets, err := startAssetServer()
+	if err != nil {
+		log.Fatalf("[ui] cannot start asset server: %v", err)
+	}
+	defer assets.Close()
+	log.Printf("[ui] assets at %s", assets.URL)
+	w.Navigate(assets.URL + "index.html")
 
 	go func() {
 		time.Sleep(250 * time.Millisecond)

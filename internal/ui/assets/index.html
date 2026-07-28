@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<style>
+/* ─── Voice Agent · macOS-style frosted-glass overlay ─────────────────────── */
+:root{
+  --glass: rgba(24,25,31,0.66);
+  --glass-solid: #14151b;
+  --hi: rgba(255,255,255,0.10);      /* top inner highlight */
+  --stroke: rgba(255,255,255,0.12);
+  --ink:#f2f3f7; --ink-2:#a6abb8; --ink-3:#6b7180;
+  --accent:#0a84ff;                  /* macOS system blue */
+  --accent-soft: rgba(10,132,255,.16);
+  --good:#30d158; --warn:#ff9f0a; --danger:#ff453a;
+  --shadow: 0 22px 60px -18px rgba(0,0,0,.72), 0 6px 18px -8px rgba(0,0,0,.55);
+  --font:-apple-system,"SF Pro Text","SF Pro Display",system-ui,"Segoe UI",Roboto,sans-serif;
+  --ease:cubic-bezier(.22,.7,.3,1);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:100%;height:100%;overflow:hidden;background:transparent;color:var(--ink);
+  font-family:var(--font);-webkit-font-smoothing:antialiased;letter-spacing:-0.01em;cursor:default}
+button,input,textarea,select{font:inherit;color:inherit}
+.hidden{display:none!important}
+
+/* one glass surface, used by pill + every panel/card */
+.glass{
+  background:var(--glass);
+  -webkit-backdrop-filter:blur(34px) saturate(180%); backdrop-filter:blur(34px) saturate(180%);
+  border:1px solid var(--stroke);
+  box-shadow:var(--shadow), inset 0 1px 0 var(--hi);
+}
+@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+  .glass{background:var(--glass-solid)} /* fallback: opaque so nothing bleeds through */
+}
+
+#shell{position:relative;width:100%;height:100%;overflow:hidden}
+
+/* ─── Pill (compact, fixed height → always a capsule, never an ellipse) ───── */
+.pill{position:absolute;inset:0;display:flex;align-items:center;gap:11px;
+  border-radius:26px;               /* fixed — bounded so a stray large window can't ellipse it */
+  padding:0 8px 0 18px;cursor:pointer;overflow:hidden}
+.orb{width:9px;height:9px;border-radius:50%;flex:0 0 auto;background:#5a6070;
+  transition:background .2s,box-shadow .2s}
+.orb.on{background:radial-gradient(circle at 34% 30%,#bcd6ff,var(--accent));
+  box-shadow:0 0 0 3px var(--accent-soft),0 0 12px 1px rgba(10,132,255,.55)}
+.orb.pulse{animation:pulse 1.7s var(--ease) infinite}
+.orb.warm{background:radial-gradient(circle at 34% 30%,#ffe0ad,var(--warn));box-shadow:0 0 0 3px rgba(255,159,10,.16),0 0 12px 1px rgba(255,159,10,.5)}
+.orb.good{background:radial-gradient(circle at 34% 30%,#b6f7c6,var(--good));box-shadow:0 0 0 3px rgba(48,209,88,.16),0 0 12px 1px rgba(48,209,88,.5)}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 3px var(--accent-soft),0 0 8px 1px rgba(10,132,255,.4)}50%{box-shadow:0 0 0 6px rgba(10,132,255,.05),0 0 16px 3px rgba(10,132,255,.6)}}
+.label{flex:1;min-width:0;font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink)}
+.label .mut{color:var(--ink-2);font-weight:400}
+.eq{display:inline-flex;align-items:center;gap:2.5px;height:15px;flex:0 0 auto}
+.eq i{width:2.5px;height:5px;border-radius:2px;background:var(--accent);animation:bounce 1s var(--ease) infinite}
+.eq i:nth-child(2){animation-delay:.15s}.eq i:nth-child(3){animation-delay:.3s}.eq i:nth-child(4){animation-delay:.45s}.eq i:nth-child(5){animation-delay:.1s}
+@keyframes bounce{0%,100%{height:4px;opacity:.5}50%{height:14px;opacity:1}}
+.shimmer{width:46px;height:5px;border-radius:3px;overflow:hidden;background:rgba(255,255,255,.08);position:relative;flex:0 0 auto}
+.shimmer::after{content:"";position:absolute;inset:0;transform:translateX(-100%);background:linear-gradient(90deg,transparent,rgba(10,132,255,.85),transparent);animation:sweep 1.25s var(--ease) infinite}
+@keyframes sweep{to{transform:translateX(100%)}}
+.iconbtn{width:28px;height:28px;border-radius:50%;border:0;cursor:pointer;display:grid;place-items:center;background:rgba(255,255,255,.06);color:var(--ink-2);transition:background .16s,color .16s;flex:0 0 auto;font-size:14px}
+.iconbtn:hover{background:var(--accent-soft);color:#cfe0ff}
+.iconbtn.stop{background:rgba(255,69,58,.12);color:var(--danger)}
+.iconbtn.stop:hover{background:rgba(255,69,58,.22)}
+
+/* ─── Panels (command / output / confirm) — larger frosted sheets ────────── */
+.panel{display:none;position:absolute;inset:0;z-index:4;flex-direction:column;overflow:hidden;border-radius:26px}
+.panel.active{display:flex}
+.phead{padding:20px 22px 15px;display:flex;align-items:flex-start;justify-content:space-between;gap:16px;border-bottom:1px solid var(--stroke)}
+.eyebrow{font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);font-weight:700;margin:0 0 7px}
+.phead h1{font-size:21px;font-weight:640;letter-spacing:-0.03em;line-height:1.12;margin:0 0 6px}
+.phead p{font-size:12.5px;line-height:1.5;color:var(--ink-2);margin:0;max-width:46ch}
+.chip{padding:6px 11px;border-radius:999px;border:1px solid var(--stroke);background:rgba(255,255,255,.05);color:var(--ink-2);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;white-space:nowrap;flex:0 0 auto}
+#commandInput{flex:1;width:100%;min-height:0;border:none;outline:none;background:transparent;color:var(--ink);resize:none;padding:18px 22px;font-size:21px;font-weight:600;line-height:1.3;letter-spacing:-0.02em}
+#commandInput::placeholder{color:var(--ink-3)}
+.footer{border-top:1px solid var(--stroke);padding:14px 18px 16px;display:flex;flex-direction:column;gap:12px}
+.suggestions{display:flex;flex-wrap:wrap;gap:8px}
+.hint{display:flex;justify-content:space-between;color:var(--ink-3);font-size:11.5px}
+kbd{font:600 11px var(--font);color:var(--ink-2);background:rgba(255,255,255,.07);border:1px solid var(--stroke);border-radius:6px;padding:2px 6px}
+.obody{padding:18px 22px;overflow:auto;font-size:13.5px;line-height:1.62;color:#dfe2ea;flex:1}
+.list{display:grid;gap:10px}
+.item{padding:12px 14px;border-radius:14px;border:1px solid var(--stroke);background:rgba(255,255,255,.04)}
+.item-title{font-size:13px;font-weight:700;margin-bottom:4px}
+.item-meta{font-size:11.5px;color:var(--ink-2)}
+
+/* ─── Buttons ─────────────────────────────────────────────────────────────── */
+.btn{border:1px solid transparent;border-radius:11px;cursor:pointer;font:600 13px var(--font);padding:9px 16px;letter-spacing:-0.01em;transition:transform .1s var(--ease),background .16s,border-color .16s}
+.btn:active{transform:scale(.97)}
+.btn.primary{background:var(--accent);color:#fff}
+.btn.primary:hover{background:#3d9bff}
+.btn.ghost{background:rgba(255,255,255,.05);color:var(--ink);border-color:var(--stroke)}
+.btn.ghost:hover{background:rgba(255,255,255,.09)}
+.btn.danger{background:var(--danger);color:#fff}
+.btn.danger:hover{background:#ff655b}
+.actions{display:flex;gap:8px;margin-top:14px}
+.actions.right{justify-content:flex-end}
+
+/* ─── Suggestion / meeting card ───────────────────────────────────────────── */
+.card{position:absolute;inset:0;z-index:4;border-radius:22px;padding:17px 19px;text-align:left;display:none;flex-direction:column;justify-content:center}
+.card.shown{display:flex}
+.card .row{display:flex;align-items:center;gap:13px}
+.badge{flex:0 0 38px;height:38px;border-radius:11px;display:grid;place-items:center;background:var(--accent-soft);color:#cfe0ff;font-size:17px}
+.badge.warn{background:rgba(255,159,10,.16);color:#ffd699}
+.card .ttl{font-size:14.5px;font-weight:620;letter-spacing:-0.02em;margin:0 0 2px}
+.card .sub{font-size:12.5px;color:var(--ink-2);margin:0;line-height:1.45}
+
+/* ─── Settings dashboard (reskinned; structure preserved) ─────────────────── */
+#dashboard{position:absolute;inset:0;z-index:5;display:none;border-radius:26px;overflow:hidden}
+#dashboard.visible{display:grid;grid-template-columns:248px 1fr}
+.sidebar{padding:26px 20px;border-right:1px solid var(--stroke);display:flex;flex-direction:column;gap:22px;background:rgba(255,255,255,.02)}
+.sidebar h2{font-size:23px;font-weight:640;letter-spacing:-0.03em;line-height:1.05;margin-bottom:10px}
+.sidebar p{font-size:12.5px;line-height:1.5;color:var(--ink-2)}
+.nav{display:grid;gap:7px}
+.nav button{text-align:left;color:var(--ink-2);padding:10px 13px;border-radius:11px;border:1px solid transparent;background:transparent;cursor:pointer;transition:all .14s ease;font-weight:500}
+.nav button:hover{background:rgba(255,255,255,.05)}
+.nav button.active{background:var(--accent-soft);border-color:rgba(10,132,255,.28);color:#fff}
+.metric{padding:13px;border-radius:13px;border:1px solid var(--stroke);background:rgba(255,255,255,.03)}
+.metric .metriclabel{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:var(--ink-3);margin-bottom:6px}
+.metric .value{font-size:14px;font-weight:700}
+.content{display:flex;flex-direction:column;overflow:hidden}
+.content-head{padding:24px 28px 16px;border-bottom:1px solid var(--stroke);display:flex;justify-content:space-between;gap:18px}
+.content-head h3{font-size:19px;font-weight:640;letter-spacing:-0.03em}
+.content-head p{font-size:12.5px;color:var(--ink-2);line-height:1.5;margin-top:6px;max-width:52ch}
+.content-body{flex:1;overflow:auto;padding:22px 28px}
+.tab{display:none}.tab.active{display:block}
+.grid{display:grid;gap:16px}.two{grid-template-columns:repeat(2,minmax(0,1fr))}.three{grid-template-columns:repeat(3,minmax(0,1fr))}
+.surface{padding:18px;border-radius:16px;border:1px solid var(--stroke);background:rgba(255,255,255,.03)}
+.surface h4{font-size:15px;font-weight:700;margin-bottom:8px}
+.surface p{font-size:12.5px;color:var(--ink-2);line-height:1.5}
+.taglets{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px}
+.taglet{padding:5px 9px;border-radius:999px;border:1px solid var(--stroke);background:rgba(255,255,255,.04);font-size:11px;font-weight:600;color:var(--ink-2)}
+.integration{display:grid;grid-template-columns:1fr auto;gap:18px;align-items:center}
+.statusbadge{display:inline-flex;align-items:center;gap:8px;padding:6px 11px;border-radius:999px;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;border:1px solid var(--stroke);background:rgba(255,255,255,.03)}
+.statusbadge:before{content:'';width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.3)}
+.statusbadge.connected{background:rgba(48,209,88,.1);border-color:rgba(48,209,88,.24);color:#c7f5d3}
+.statusbadge.connected:before{background:var(--good);box-shadow:0 0 10px rgba(48,209,88,.5)}
+.statusbadge.disconnected{background:rgba(255,69,58,.08);border-color:rgba(255,69,58,.18);color:#ffcecb}
+.statusbadge.disconnected:before{background:var(--danger)}
+.fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:16px}
+.field{display:flex;flex-direction:column;gap:8px}.field.full{grid-column:1/-1}
+.field label{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:var(--ink-3)}
+.field input,.field select{width:100%;padding:11px 13px;border-radius:11px;border:1px solid var(--stroke);background:rgba(255,255,255,.05);color:var(--ink);outline:none}
+.field input:focus,.field select:focus{border-color:rgba(10,132,255,.5)}
+.switch-row{display:flex;justify-content:space-between;gap:16px;padding:16px 0;border-top:1px solid var(--stroke)}
+.switch-row:first-child{border-top:none;padding-top:4px}
+.switch-copy h5{font-size:14px;font-weight:700;margin-bottom:4px}
+.switch-copy p{font-size:12px;color:var(--ink-2)}
+.toggle{width:50px;height:30px;border-radius:999px;border:1px solid var(--stroke);background:rgba(255,255,255,.08);position:relative;cursor:pointer;flex:0 0 auto;transition:background .18s}
+.toggle:after{content:'';position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#fff;transition:transform .18s ease}
+.toggle.active{background:var(--accent);border-color:var(--accent)}
+.toggle.active:after{transform:translateX(20px)}
+#toast{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);min-width:200px;max-width:480px;padding:10px 14px;border-radius:12px;border:1px solid var(--stroke);background:rgba(20,21,27,.96);box-shadow:var(--shadow);display:none;font-size:12px;line-height:1.5;z-index:10}
+@media (prefers-reduced-motion:reduce){.orb.pulse,.eq i,.shimmer::after{animation:none!important}}
+</style>
+</head>
+<body>
+<div id="shell">
+  <div class="pill glass" id="statusPill" onclick="handleHeaderClick()">
+    <span class="orb" id="statusDot"></span>
+    <span class="label" id="statusText">Ready</span>
+    <span class="eq hidden" id="statusEq"><i></i><i></i><i></i><i></i><i></i></span>
+    <span class="shimmer hidden" id="statusShimmer"></span>
+    <button class="iconbtn stop hidden" id="stopBtn" type="button" onclick="event.stopPropagation();collapseShell()">&times;</button>
+    <button class="iconbtn" type="button" onclick="event.stopPropagation();openSettings('overview')">&#9881;</button>
+  </div>
+
+  <section class="panel glass" id="commandPanel">
+    <div class="phead"><div><div class="eyebrow">Command</div><h1>Ask anything.</h1><p>Type a request — apps, files, the web, or desktop actions. Prefix with “ai” for a free-form prompt.</p></div><div class="chip">⌘ Space</div></div>
+    <textarea id="commandInput" placeholder="Try: open notepad · summarize this · play focus music"></textarea>
+    <div class="footer">
+      <div class="suggestions">
+        <button class="btn ghost" type="button" onclick="fillSuggestion('ai give me my Google Workspace brief')">Workspace brief</button>
+        <button class="btn ghost" type="button" onclick="fillSuggestion('ai draft a Google Doc for sprint planning')">Draft a doc</button>
+        <button class="btn ghost" type="button" onclick="fillSuggestion('ai create a slide deck about quarterly goals')">Create slides</button>
+        <button class="btn ghost" type="button" onclick="fillSuggestion('ai play something for deep focus on spotify')">Spotify focus</button>
+      </div>
+      <div class="hint"><div>Enter to submit · Shift+Enter for a new line.</div><div><kbd>Esc</kbd> collapse</div></div>
+    </div>
+  </section>
+
+  <section class="panel glass" id="outputPanel">
+    <div class="phead"><div><div class="eyebrow">Response</div><h1>Result</h1><p>Answers and connected-app results appear here.</p></div><button class="btn ghost" type="button" onclick="copyOutput()">Copy</button></div>
+    <div class="obody" id="outputBody"></div>
+    <div class="footer"><div class="actions"><button class="btn ghost" type="button" onclick="showCommand()">Ask another</button></div></div>
+  </section>
+
+  <section class="panel glass" id="confirmPanel">
+    <div class="phead"><div><div class="eyebrow">Approval</div><h1 id="confirmTitle">Confirm before we proceed.</h1><p>Sensitive actions surface here so you stay in control.</p></div><div class="chip">Safety</div></div>
+    <div class="obody" id="confirmBody"></div>
+    <div class="footer"><div class="actions right"><button class="btn ghost" type="button" onclick="resolveConfirm(false)">Cancel</button><button class="btn primary" type="button" onclick="resolveConfirm(true)">Approve</button></div></div>
+  </section>
+
+  <div class="card glass" id="suggestion"></div>
+
+  <section id="dashboard" class="glass">
+    <aside class="sidebar">
+      <div><div class="eyebrow">Control Center</div><h2>Assistant</h2><p>Manage models, integrations, and privacy without touching config files.</p></div>
+      <div class="nav">
+        <button class="active" data-tab="overview" type="button" onclick="switchTab('overview',event)">Overview</button>
+        <button data-tab="integrations" type="button" onclick="switchTab('integrations',event)">Integrations</button>
+        <button data-tab="model" type="button" onclick="switchTab('model',event)">Models</button>
+        <button data-tab="privacy" type="button" onclick="switchTab('privacy',event)">Privacy</button>
+      </div>
+      <div style="margin-top:auto;display:grid;gap:10px">
+        <div class="metric"><div class="metriclabel">Primary Model</div><div class="value" id="metricProvider">GEMINI</div></div>
+        <div class="metric"><div class="metriclabel">Connected Apps</div><div class="value" id="metricConnections">0 active</div></div>
+        <button class="btn ghost" type="button" onclick="closeSettings()">Close</button>
+        <button class="btn danger" type="button" onclick="if(window.quitApp)window.quitApp()">Quit Voice Agent</button>
+      </div>
+    </aside>
+    <div class="content">
+      <div class="content-head">
+        <div><div class="eyebrow" id="dashKicker">Overview</div><h3 id="dashTitle">Your assistant at a glance.</h3><p id="dashSub">See readiness, wire in ecosystems, and tune behavior.</p></div>
+        <button class="btn primary" type="button" onclick="persistSettings()">Save</button>
+      </div>
+      <div class="content-body">
+        <div class="tab active" id="tab-overview">
+          <div class="grid two">
+            <div class="surface"><h4>System posture</h4><p>Google Workspace and Spotify are first-class assistant surfaces, not scattered tools.</p><div class="taglets"><span class="taglet" id="overviewVoice">Voice: Off</span><span class="taglet" id="overviewPrivacy">Privacy: Standard</span><span class="taglet" id="overviewProvider">Model: gemini</span></div></div>
+            <div class="surface"><h4>Ecosystem coverage</h4><p>Coordinated across Gmail, Calendar, Drive, Docs, Sheets, Slides — and taste-aware Spotify.</p><div class="taglets"><span class="taglet">Gmail</span><span class="taglet">Calendar</span><span class="taglet">Drive</span><span class="taglet">Docs</span><span class="taglet">Sheets</span><span class="taglet">Slides</span><span class="taglet">Spotify</span></div></div>
+          </div>
+          <div class="grid three" style="margin-top:16px">
+            <div class="surface"><h4>Workspace assistant</h4><p>Briefs, drafted docs, slide outlines, and file discovery — ecosystem-aware.</p></div>
+            <div class="surface"><h4>Spotify assistant</h4><p>Mood playback, recommendations, queueing, and curated sessions in natural language.</p></div>
+            <div class="surface"><h4>Execution safety</h4><p>Richer actions still flow through approval checks where they should.</p></div>
+          </div>
+        </div>
+        <div class="tab" id="tab-integrations">
+          <div class="grid" style="gap:16px">
+            <div class="surface integration"><div><div class="statusbadge disconnected" id="googleBadge">Disconnected</div><h4 style="margin-top:12px">Google Workspace</h4><p id="googleStatusText">Link Gmail, Calendar, Drive, Docs, Sheets, and Slides for a unified workspace assistant.</p><div class="taglets" id="googleCapabilities"><span class="taglet">Gmail</span><span class="taglet">Calendar</span><span class="taglet">Drive</span><span class="taglet">Docs</span><span class="taglet">Sheets</span><span class="taglet">Slides</span></div></div><div style="display:flex;gap:10px"><button class="btn ghost hidden" id="googleUnlinkBtn" type="button" onclick="window.unlinkGoogle()">Unlink</button><button class="btn primary" id="googleLinkBtn" type="button" onclick="window.linkGoogle()">Connect</button></div></div>
+            <div class="surface integration"><div><div class="statusbadge disconnected" id="spotifyBadge">Disconnected</div><h4 style="margin-top:12px">Spotify</h4><p id="spotifyStatusText">Link Spotify for playback control, queueing, recommendations, and AI-curated sessions.</p><div class="taglets" id="spotifyCapabilities"><span class="taglet">Playback</span><span class="taglet">Queue</span><span class="taglet">Recommendations</span><span class="taglet">AI Curation</span></div></div><div style="display:flex;gap:10px"><button class="btn ghost hidden" id="spotifyUnlinkBtn" type="button" onclick="window.unlinkSpotify()">Unlink</button><button class="btn primary" id="spotifyLinkBtn" type="button" onclick="window.linkSpotify()">Connect</button></div></div>
+            <div class="surface integration"><div><div class="statusbadge disconnected" id="microsoftBadge">Disconnected</div><h4 style="margin-top:12px">Microsoft 365</h4><p id="microsoftStatusText">Outlook and adjacent Microsoft workflows can be connected here.</p><div class="taglets" id="microsoftCapabilities"><span class="taglet">Outlook</span><span class="taglet">Calendar</span><span class="taglet">OneDrive</span></div></div><div style="display:flex;gap:10px"><button class="btn ghost hidden" id="microsoftUnlinkBtn" type="button" onclick="window.unlinkMicrosoft()">Unlink</button><button class="btn primary" id="microsoftLinkBtn" type="button" onclick="window.linkMicrosoft()">Connect</button></div></div>
+          </div>
+        </div>
+        <div class="tab" id="tab-model">
+          <div class="surface"><h4>Core model configuration</h4><p>Choose the provider and runtime settings that shape planning and responses.</p>
+            <div class="fields">
+              <div class="field"><label for="providerSelect">Provider</label><select id="providerSelect"><option value="gemini">Gemini</option><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="ollama">Ollama</option><option value="custom">Custom</option></select></div>
+              <div class="field"><label for="modelInput">Model</label><input id="modelInput" placeholder="gemini-2.5-flash"/></div>
+              <div class="field full"><label for="apiKeyInput">API key</label><input id="apiKeyInput" type="password" placeholder="Enter provider key"/></div>
+              <div class="field full"><label for="baseUrlInput">Base URL</label><input id="baseUrlInput" placeholder="Optional for compatible providers"/></div>
+            </div>
+          </div>
+        </div>
+        <div class="tab" id="tab-privacy">
+          <div class="surface"><h4>Behavior and privacy</h4><p>Control how the assistant listens and how much desktop context surfaces.</p>
+            <div class="switch-row"><div class="switch-copy"><h5>Enable voice</h5><p>Voice-readiness posture in the app.</p></div><button class="toggle" id="voiceToggle" type="button" onclick="toggleFlag('voice')"></button></div>
+            <div class="switch-row"><div class="switch-copy"><h5>Privacy mode</h5><p>Be conservative about system context in prompts and UI.</p></div><button class="toggle" id="privacyToggle" type="button" onclick="toggleFlag('privacy')"></button></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+  <div id="toast"></div>
+</div>
+<script>
+/* ─── logging: everything goes to Go (voice-agent.log) ────────────────────── */
+function jlog(m){try{window.jslog&&window.jslog('[js] '+m)}catch(e){}}
+
+/* ─── central view sizing (fixes the ellipse: idle always → pill) ─────────── */
+const VIEW={pill:[300,52,26],command:[720,440,26],output:[720,540,26],confirm:[680,410,26],suggestion:[400,150,22],settings:[1160,760,26]};
+let currentPanel=null,latestOutput='',integrationTimer=null;
+let settingsState={llm_provider:'gemini',api_key:'',model:'',base_url:'',enable_voice:false,privacy_mode:false};
+const dashCopy={overview:['Overview','Your assistant at a glance.','See readiness, wire in ecosystems, and tune behavior.'],integrations:['Integrations','Connected ecosystems that feel first-class.','Google Workspace and Spotify behave like native assistant surfaces.'],model:['Models','Shape how the assistant thinks.','Point the runtime at the provider and model that fit your setup.'],privacy:['Privacy','Tune interaction and context posture.','Decide how voice and privacy defaults should feel.']};
+function esc(t){return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
+function sizeTo(v){const s=VIEW[v]||VIEW.pill;jlog('resize -> '+v+' '+s[0]+'x'+s[1]);window.callResize&&window.callResize(s[0],s[1],s[2])}
+function toast(t){const el=document.getElementById('toast');el.textContent=t;el.style.display='block';clearTimeout(toast.tm);toast.tm=setTimeout(()=>el.style.display='none',2200)}
+
+function setIndicator(kind){statusEq.classList.add('hidden');statusShimmer.classList.add('hidden');if(kind==='eq')statusEq.classList.remove('hidden');else if(kind==='shimmer')statusShimmer.classList.remove('hidden')}
+function updateUI(state,text){jlog('updateUI '+state+(text?(' "'+text+'"'):''));
+  stopBtn.classList.toggle('hidden',state==='idle');const d=statusDot;d.classList.remove('on','warm','good','pulse');
+  if(state==='listening'){statusText.textContent=text||'Listening…';d.classList.add('on','pulse');setIndicator('eq')}
+  else if(state==='thinking'){statusText.textContent=text||'Thinking…';d.classList.add('on','warm');setIndicator('shimmer')}
+  else if(state==='acting'){statusText.textContent=text||'Working…';d.classList.add('on','warm');setIndicator(null)}
+  else if(state==='speaking'){statusText.textContent=text||'Speaking…';d.classList.add('on','good');setIndicator('eq')}
+  else{statusText.textContent=text||'Ready';setIndicator(null)}
+  // Critical: when idle and no panel/dashboard is open, snap the window back to the pill
+  // so a lingering large window can never render the pill as a giant ellipse.
+  if(!currentPanel && !dashboard.classList.contains('visible') && !document.getElementById('suggestion').classList.contains('shown')) sizeTo('pill');
+}
+function handleHeaderClick(){if(dashboard.classList.contains('visible'))return;if(currentPanel){collapseShell();return}jlog('pill click -> triggerListen');window.triggerListen&&window.triggerListen()}
+function refreshPillVisibility(){const sg=document.getElementById('suggestion').classList.contains('shown');const hide=!!currentPanel||sg||dashboard.classList.contains('visible');statusPill.style.display=hide?'none':'flex'}
+function setPanel(id){['commandPanel','outputPanel','confirmPanel'].forEach(x=>document.getElementById(x).classList.remove('active'));currentPanel=id;if(id){document.getElementById(id).classList.add('active')}refreshPillVisibility()}
+function collapseShell(){jlog('collapse');setPanel(null);if(window.setInputActive)window.setInputActive(false);sizeTo('pill');if(!dashboard.classList.contains('visible'))updateUI('idle')}
+function showCommand(){jlog('showCommand');setPanel('commandPanel');sizeTo('command');if(window.setInputActive)window.setInputActive(true);setTimeout(()=>commandInput.focus(),80)}
+function fillSuggestion(v){commandInput.value=v;commandInput.focus()}
+function renderText(t){return '<div>'+esc(t).replace(/\n/g,'<br/>').replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>')+'</div>'}
+function renderContent(text){try{const p=JSON.parse(text);if(p&&p.type==='calendar_list'&&Array.isArray(p.data))return '<div class="list">'+p.data.map(x=>'<div class="item"><div class="item-title">'+esc(x.summary||'Untitled event')+'</div><div class="item-meta">'+esc(x.startTime||'')+(x.location?' · '+esc(x.location):'')+'</div></div>').join('')+'</div>';if(p&&p.type==='gmail_list'&&Array.isArray(p.data))return '<div class="list">'+p.data.map(x=>'<div class="item"><div class="item-title">'+esc(x.subject||'No subject')+'</div><div class="item-meta">'+esc(x.from||'Unknown')+(x.date?' · '+esc(x.date):'')+'</div>'+(x.snippet?'<div style="margin-top:8px;color:var(--ink-2);font-size:12px">'+esc(x.snippet)+'</div>':'')+'</div>').join('')+'</div>';if(p&&p.type==='system_status'&&p.data)return '<div class="list"><div class="item"><div class="item-title">CPU</div><div class="item-meta">'+Number(p.data.cpu||0)+'% active</div></div><div class="item"><div class="item-title">Memory</div><div class="item-meta">'+(p.data.ramFree||0)+' GB free of '+(p.data.ramTotal||0)+' GB</div></div></div>'}catch(e){}return renderText(text)}
+function showCard(text){jlog('showCard');latestOutput=text||'';outputBody.innerHTML=renderContent(latestOutput);setPanel('outputPanel');sizeTo('output')}
+function copyOutput(){if(!latestOutput)return;navigator.clipboard.writeText(latestOutput).then(()=>toast('Copied'))}
+function showConfirm(text){confirmTitle.textContent='Review action request';confirmBody.innerHTML=renderText(String(text));setPanel('confirmPanel');sizeTo('confirm')}
+function showConfirmCard(cardJSON){confirmTitle.textContent='Review action request';let html=renderText(String(cardJSON));try{const p=JSON.parse(cardJSON);if(p.title)confirmTitle.textContent=p.title;const steps=Array.isArray(p.fields)?p.fields:(p.plan&&Array.isArray(p.plan.steps)?p.plan.steps:null);const parts=[];if(p.plan&&p.plan.goal)parts.push('<div style="margin-bottom:14px;color:var(--ink-2);font-size:13px">'+esc(String(p.plan.goal))+'</div>');if(steps&&steps.length)parts.push(steps.map(f=>'<div class="item" style="margin-bottom:10px"><div class="eyebrow" style="margin-bottom:6px">'+esc(f.label||'Step')+'</div><div>'+esc(String(f.value||''))+'</div></div>').join(''));if(parts.length)html=parts.join('');else if(p&&typeof p==='object')html=renderText(JSON.stringify(p,null,2))}catch(e){}confirmBody.innerHTML=html;setPanel('confirmPanel');sizeTo('confirm')}
+function resolveConfirm(ok){window.confirmCallback&&window.confirmCallback(ok);collapseShell()}
+function triggerMeetingAlert(title,subtitle){showCard('Upcoming meeting\n\n'+title+'\n'+subtitle)}
+
+/* ─── proactive suggestion card ───────────────────────────────────────────── */
+function showSuggestion(id,icon,title,message,action){jlog('showSuggestion '+id+' '+icon);
+  const glyph={download:'⭳',calendar:'▦',link:'↗',warn:'△'}[icon]||'•';
+  const el=document.getElementById('suggestion');el.dataset.id=id;
+  el.innerHTML='<div class="row"><span class="badge'+(icon==='warn'?' warn':'')+'">'+glyph+'</span><div><p class="ttl">'+esc(title)+'</p><p class="sub">'+esc(message)+'</p></div></div>'+
+    '<div class="actions right"><button class="btn ghost" onclick="dismissSuggestion()">Dismiss</button>'+(action?'<button class="btn primary" onclick="acceptSuggestion()">'+esc(action)+'</button>':'')+'</div>';
+  el.classList.add('shown');refreshPillVisibility();sizeTo('suggestion');
+  clearTimeout(window.__sg);window.__sg=setTimeout(dismissSuggestion,15000);
+}
+function acceptSuggestion(){const el=document.getElementById('suggestion');if(el&&window.suggestionAccept)window.suggestionAccept(el.dataset.id);hideSuggestion()}
+function dismissSuggestion(){const el=document.getElementById('suggestion');if(el&&window.suggestionDismiss)window.suggestionDismiss(el.dataset.id);hideSuggestion()}
+function hideSuggestion(){document.getElementById('suggestion').classList.remove('shown');clearTimeout(window.__sg);refreshPillVisibility();if(!currentPanel&&!dashboard.classList.contains('visible'))sizeTo('pill')}
+
+/* ─── settings dashboard ──────────────────────────────────────────────────── */
+async function loadSettings(){if(!window.getSettings)return;const s=await window.getSettings();if(!s)return;settingsState=Object.assign(settingsState,s);providerSelect.value=settingsState.llm_provider||'gemini';modelInput.value=settingsState.model||'';apiKeyInput.value=settingsState.api_key||'';baseUrlInput.value=settingsState.base_url||'';voiceToggle.classList.toggle('active',!!settingsState.enable_voice);privacyToggle.classList.toggle('active',!!settingsState.privacy_mode);metricProvider.textContent=(settingsState.llm_provider||'gemini').toUpperCase();overviewProvider.textContent='Model: '+(settingsState.llm_provider||'gemini');overviewVoice.textContent='Voice: '+(settingsState.enable_voice?'On':'Off');overviewPrivacy.textContent='Privacy: '+(settingsState.privacy_mode?'High':'Standard')}
+function toggleFlag(f){if(f==='voice'){settingsState.enable_voice=!settingsState.enable_voice;voiceToggle.classList.toggle('active',settingsState.enable_voice);overviewVoice.textContent='Voice: '+(settingsState.enable_voice?'On':'Off')}else{settingsState.privacy_mode=!settingsState.privacy_mode;privacyToggle.classList.toggle('active',settingsState.privacy_mode);overviewPrivacy.textContent='Privacy: '+(settingsState.privacy_mode?'High':'Standard')}}
+async function persistSettings(){settingsState.llm_provider=providerSelect.value;settingsState.model=modelInput.value.trim();settingsState.api_key=apiKeyInput.value.trim();settingsState.base_url=baseUrlInput.value.trim();const ok=await window.saveSettings(settingsState.llm_provider,settingsState.api_key,settingsState.model,settingsState.base_url,settingsState.enable_voice,settingsState.privacy_mode);if(ok){metricProvider.textContent=settingsState.llm_provider.toUpperCase();overviewProvider.textContent='Model: '+settingsState.llm_provider;toast('Settings saved')}else toast('Save failed')}
+function setConn(prefix,connected,text,pills){const badge=document.getElementById(prefix+'Badge'),txt=document.getElementById(prefix+'StatusText'),link=document.getElementById(prefix+'LinkBtn'),unlink=document.getElementById(prefix+'UnlinkBtn'),caps=document.getElementById(prefix+'Capabilities');badge.classList.remove('connected','disconnected');badge.classList.add(connected?'connected':'disconnected');badge.textContent=connected?'Connected':'Disconnected';txt.textContent=text;link.classList.toggle('hidden',connected);unlink.classList.toggle('hidden',!connected);if(caps&&pills&&pills.length)caps.innerHTML=pills.map(x=>'<span class="taglet">'+esc(x)+'</span>').join('')}
+async function loadIntegrationStatusesDash(){let total=0;if(window.getGoogleStatus){const g=await window.getGoogleStatus();const on=!!(g&&g.connected);if(on)total++;setConn('google',on,on?'Connected as '+(g.email||'your account')+' — Docs, Sheets, Slides, Drive, Gmail, Calendar.':'Link Gmail, Calendar, Drive, Docs, Sheets, and Slides for a unified workspace assistant.',g&&g.workspace?g.workspace:['Gmail','Calendar','Drive','Docs','Sheets','Slides'])}if(window.getSpotifyStatus){const s=await window.getSpotifyStatus();const on=!!(s&&s.connected);if(on)total++;setConn('spotify',on,on?'Connected as '+(s.display_name||'your account')+(s.product?' ('+s.product+')':''):'Link Spotify for playback control, queueing, recommendations, and AI-curated sessions.',s&&s.capabilities?s.capabilities:['Playback','Queue','Recommendations','AI Curation'])}if(window.getMicrosoftStatus){const m=await window.getMicrosoftStatus();const on=!!(m&&m.connected);if(on)total++;setConn('microsoft',on,on?'Microsoft account linked for Outlook and calendar workflows.':'Outlook and adjacent Microsoft workflows can be connected here.',m&&m.workspace?m.workspace:['Outlook','Calendar','OneDrive'])}metricConnections.textContent=total+' active'}
+async function openSettings(tab){jlog('openSettings');await loadSettings();dashboard.classList.add('visible');if(window.setInputActive)window.setInputActive(true);sizeTo('settings');switchTab(tab||'overview');loadIntegrationStatusesDash();if(!integrationTimer)integrationTimer=setInterval(loadIntegrationStatusesDash,4000);refreshPillVisibility()}
+function closeSettings(){jlog('closeSettings');dashboard.classList.remove('visible');clearInterval(integrationTimer);integrationTimer=null;refreshPillVisibility();if(currentPanel){sizeTo(currentPanel==='commandPanel'?'command':currentPanel==='outputPanel'?'output':'confirm')}else{if(window.setInputActive)window.setInputActive(false);sizeTo('pill');updateUI('idle')}}
+function switchTab(tab){document.querySelectorAll('.nav button').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));document.getElementById('tab-'+tab).classList.add('active');dashKicker.textContent=dashCopy[tab][0];dashTitle.textContent=dashCopy[tab][1];dashSub.textContent=dashCopy[tab][2]}
+function submitCurrentCommand(){const v=commandInput.value.trim();if(!v)return;jlog('submit "'+v+'"');window.submitCommand&&window.submitCommand(v);commandInput.value='';collapseShell();updateUI('thinking','Dispatching…')}
+commandInput.addEventListener('keydown',async e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();submitCurrentCommand();return}if(e.key==='ArrowUp'&&e.altKey&&window.getPrevCommand){e.preventDefault();const p=await window.getPrevCommand();if(p)e.target.value=p}if(e.key==='ArrowDown'&&e.altKey&&window.getNextCommand){e.preventDefault();e.target.value=await window.getNextCommand()}if(e.key==='Escape'){e.preventDefault();collapseShell()}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&dashboard.classList.contains('visible'))closeSettings()});
+jlog('overlay loaded');loadSettings();updateUI('idle','Ready');
+</script>
+</body>
+</html>
