@@ -106,7 +106,10 @@ func spotifyScopeError(err error) (string, bool) {
 		return "", false
 	}
 	msg := err.Error()
-	if strings.Contains(msg, "403") || strings.Contains(msg, "Insufficient") {
+	// Match the HTTP status portion "(403 " (helpers format errors as
+	// "Spotify error (403 Forbidden): <body>") or Spotify's scope message, so a
+	// body that merely contains the digits 403 doesn't trigger a false re-link.
+	if strings.Contains(msg, "(403 ") || strings.Contains(msg, "Insufficient client scope") {
 		return "Re-link Spotify to enable saving songs (⚙ → Spotify).", true
 	}
 	return "", false

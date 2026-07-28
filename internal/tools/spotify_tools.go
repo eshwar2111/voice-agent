@@ -160,39 +160,27 @@ func (t *SpotifyPlayTool) Execute(ctx context.Context, params json.RawMessage) (
 	// Extract the URN from the first result based on type
 	switch searchType {
 	case "track":
-		if tracks, ok := searchResult["tracks"].(map[string]interface{}); ok {
-			if items, ok := tracks["items"].([]interface{}); ok && len(items) > 0 {
-				track := items[0].(map[string]interface{})
-				name := track["name"].(string)
-				uri := track["uri"].(string)
-				return t.playURI(ctx, client, uri, "Playing: "+name)
+		if items := arrField(nested(searchResult, "tracks"), "items"); len(items) > 0 {
+			if track := asMap(items[0]); track != nil {
+				return t.playURI(ctx, client, str(track, "uri"), "Playing: "+str(track, "name"))
 			}
 		}
 	case "artist":
-		if artists, ok := searchResult["artists"].(map[string]interface{}); ok {
-			if items, ok := artists["items"].([]interface{}); ok && len(items) > 0 {
-				artist := items[0].(map[string]interface{})
-				name := artist["name"].(string)
-				uri := artist["uri"].(string)
-				return t.playURI(ctx, client, uri, "Playing artist: "+name)
+		if items := arrField(nested(searchResult, "artists"), "items"); len(items) > 0 {
+			if artist := asMap(items[0]); artist != nil {
+				return t.playURI(ctx, client, str(artist, "uri"), "Playing artist: "+str(artist, "name"))
 			}
 		}
 	case "album":
-		if albums, ok := searchResult["albums"].(map[string]interface{}); ok {
-			if items, ok := albums["items"].([]interface{}); ok && len(items) > 0 {
-				album := items[0].(map[string]interface{})
-				name := album["name"].(string)
-				uri := album["uri"].(string)
-				return t.playURI(ctx, client, uri, "Playing album: "+name)
+		if items := arrField(nested(searchResult, "albums"), "items"); len(items) > 0 {
+			if album := asMap(items[0]); album != nil {
+				return t.playURI(ctx, client, str(album, "uri"), "Playing album: "+str(album, "name"))
 			}
 		}
 	case "playlist":
-		if playlists, ok := searchResult["playlists"].(map[string]interface{}); ok {
-			if items, ok := playlists["items"].([]interface{}); ok && len(items) > 0 {
-				pl := items[0].(map[string]interface{})
-				name := pl["name"].(string)
-				uri := pl["uri"].(string)
-				return t.playURI(ctx, client, uri, "Playing playlist: "+name)
+		if items := arrField(nested(searchResult, "playlists"), "items"); len(items) > 0 {
+			if pl := asMap(items[0]); pl != nil {
+				return t.playURI(ctx, client, str(pl, "uri"), "Playing playlist: "+str(pl, "name"))
 			}
 		}
 	}
@@ -388,75 +376,64 @@ func (t *SpotifySearchTool) Execute(ctx context.Context, params json.RawMessage)
 	var choices []AmbiguousChoice
 	var firstURI string
 
+	// Field access uses safe accessors (str/asMap/arrField/numField): a Spotify
+	// response with a null item or a missing owner/artists/name yields "" or is
+	// skipped instead of panicking.
 	switch args.Type {
 	case "track":
-		if tracks, ok := data["tracks"].(map[string]interface{}); ok {
-			if items, ok := tracks["items"].([]interface{}); ok {
-				for i, item := range items {
-					track := item.(map[string]interface{})
-					uri := track["uri"].(string)
-					artists := track["artists"].([]interface{})
-					var names []string
-					for _, a := range artists {
-						names = append(names, a.(map[string]interface{})["name"].(string))
-					}
-					label := fmt.Sprintf("%s — %s", track["name"], strings.Join(names, ", "))
-					result.WriteString(fmt.Sprintf("%d. **%s**\n", i+1, label))
-					choices = append(choices, AmbiguousChoice{ID: uri, Label: label})
-					if i == 0 {
-						firstURI = uri
-					}
-				}
+		for i, item := range arrField(nested(data, "tracks"), "items") {
+			track := asMap(item)
+			if track == nil {
+				continue
+			}
+			uri := str(track, "uri")
+			label := fmt.Sprintf("%s — %s", str(track, "name"), strings.Join(artistNames(arrField(track, "artists")), ", "))
+			result.WriteString(fmt.Sprintf("%d. **%s**\n", i+1, label))
+			choices = append(choices, AmbiguousChoice{ID: uri, Label: label})
+			if firstURI == "" {
+				firstURI = uri
 			}
 		}
 	case "artist":
-		if artists, ok := data["artists"].(map[string]interface{}); ok {
-			if items, ok := artists["items"].([]interface{}); ok {
-				for i, item := range items {
-					artist := item.(map[string]interface{})
-					uri := artist["uri"].(string)
-					followers := artist["followers"].(map[string]interface{})
-					label := fmt.Sprintf("%s (followers: %.0f)", artist["name"], followers["total"].(float64))
-					result.WriteString(fmt.Sprintf("%d. **%s**\n", i+1, label))
-					choices = append(choices, AmbiguousChoice{ID: uri, Label: label})
-					if i == 0 {
-						firstURI = uri
-					}
-				}
+		for i, item := range arrField(nested(data, "artists"), "items") {
+			artist := asMap(item)
+			if artist == nil {
+				continue
+			}
+			uri := str(artist, "uri")
+			label := fmt.Sprintf("%s (followers: %.0f)", str(artist, "name"), numField(nested(artist, "followers"), "total"))
+			result.WriteString(fmt.Sprintf("%d. **%s**\n", i+1, label))
+			choices = append(choices, AmbiguousChoice{ID: uri, Label: label})
+			if firstURI == "" {
+				firstURI = uri
 			}
 		}
 	case "album":
-		if albums, ok := data["albums"].(map[string]interface{}); ok {
-			if items, ok := albums["items"].([]interface{}); ok {
-				for i, item := range items {
-					album := item.(map[string]interface{})
-					uri := album["uri"].(string)
-					var names []string
-					for _, a := range album["artists"].([]interface{}) {
-						names = append(names, a.(map[string]interface{})["name"].(string))
-					}
-					label := fmt.Sprintf("%s — %s (%s)", album["name"], strings.Join(names, ", "), album["release_date"])
-					result.WriteString(fmt.Sprintf("%d. **%s**\n", i+1, label))
-					choices = append(choices, AmbiguousChoice{ID: uri, Label: label})
-					if i == 0 {
-						firstURI = uri
-					}
-				}
+		for i, item := range arrField(nested(data, "albums"), "items") {
+			album := asMap(item)
+			if album == nil {
+				continue
+			}
+			uri := str(album, "uri")
+			label := fmt.Sprintf("%s — %s (%s)", str(album, "name"), strings.Join(artistNames(arrField(album, "artists")), ", "), str(album, "release_date"))
+			result.WriteString(fmt.Sprintf("%d. **%s**\n", i+1, label))
+			choices = append(choices, AmbiguousChoice{ID: uri, Label: label})
+			if firstURI == "" {
+				firstURI = uri
 			}
 		}
 	case "playlist":
-		if playlists, ok := data["playlists"].(map[string]interface{}); ok {
-			if items, ok := playlists["items"].([]interface{}); ok {
-				for i, item := range items {
-					pl := item.(map[string]interface{})
-					uri := pl["uri"].(string)
-					label := fmt.Sprintf("%s — %s (%.0f tracks)", pl["name"], pl["owner"].(map[string]interface{})["display_name"].(string), pl["tracks"].(map[string]interface{})["total"].(float64))
-					result.WriteString(fmt.Sprintf("%d. **%s**\n", i+1, label))
-					choices = append(choices, AmbiguousChoice{ID: uri, Label: label})
-					if i == 0 {
-						firstURI = uri
-					}
-				}
+		for i, item := range arrField(nested(data, "playlists"), "items") {
+			pl := asMap(item)
+			if pl == nil {
+				continue
+			}
+			uri := str(pl, "uri")
+			label := fmt.Sprintf("%s — %s (%.0f tracks)", str(pl, "name"), str(nested(pl, "owner"), "display_name"), numField(nested(pl, "tracks"), "total"))
+			result.WriteString(fmt.Sprintf("%d. **%s**\n", i+1, label))
+			choices = append(choices, AmbiguousChoice{ID: uri, Label: label})
+			if firstURI == "" {
+				firstURI = uri
 			}
 		}
 	}
@@ -873,7 +850,7 @@ func pickDevice(devices []SpotifyDevice, preferName string) (string, string) {
 	return "", ""
 }
 
-// parseSeekPosition converts "1:30" / "90" / raw ms-ish / relative "+30s"/"-15s"
+// parseSeekPosition converts "1:30" (mm:ss) / "90" (bare seconds) / relative "+30s"/"-15s"
 // into an absolute position in ms (floored at 0). currentMs is used for relative.
 func parseSeekPosition(s string, currentMs int) (int, error) {
 	s = strings.TrimSpace(s)
@@ -957,6 +934,48 @@ func firstImageURL(images any) string {
 		return str(m, "url")
 	}
 	return ""
+}
+
+// asMap safely casts an arbitrary JSON value to a map; nil if it isn't one.
+func asMap(v any) map[string]any {
+	if m, ok := v.(map[string]any); ok {
+		return m
+	}
+	return nil
+}
+
+// arrField returns m[key] as a JSON array; nil if absent or wrong type.
+func arrField(m map[string]any, key string) []any {
+	if m == nil {
+		return nil
+	}
+	if v, ok := m[key].([]any); ok {
+		return v
+	}
+	return nil
+}
+
+// numField returns m[key] as a float64 (JSON numbers); 0 if absent/wrong type.
+func numField(m map[string]any, key string) float64 {
+	if m == nil {
+		return 0
+	}
+	if v, ok := m[key].(float64); ok {
+		return v
+	}
+	return 0
+}
+
+// artistNames extracts the "name" of each entry in an artists array, skipping
+// malformed entries. Used by search formatting.
+func artistNames(artists []any) []string {
+	var names []string
+	for _, a := range artists {
+		if n := str(asMap(a), "name"); n != "" {
+			names = append(names, n)
+		}
+	}
+	return names
 }
 
 func spotifyDelete(ctx context.Context, client *http.Client, path string) ([]byte, error) {
