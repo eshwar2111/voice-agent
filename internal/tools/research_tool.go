@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -52,42 +51,19 @@ func (t *ResearchTool) Execute(ctx context.Context, rawParams json.RawMessage) (
 
 	ui.ShowNotification(fmt.Sprintf("Researching: %s...", query))
 
-	// 1. Search (using DuckDuckGo HTML/Lite for simplicity without API keys)
-	searchURL := fmt.Sprintf("https://html.duckduckgo.com/html/?q=%s", url.QueryEscape(query))
-
-	client := &http.Client{Timeout: 10 * time.Second}
-	req, _ := http.NewRequest("GET", searchURL, nil)
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
-
-	resp, err := client.Do(req)
+	// 1. Search (shared DuckDuckGo scraper also used by web_search)
+	results, err := ddgSearch(ctx, query, 5)
 	if err != nil {
 		return "", fmt.Errorf("search failed: %w", err)
 	}
-	defer resp.Body.Close()
-
-	body, _ := io.ReadAll(resp.Body)
-	html := string(body)
-
-	// 2. Extract top 3-5 links (very basic regex for this MVP)
-	re := regexp.MustCompile(`class="result__a" href="([^"]+)"`)
-	matches := re.FindAllStringSubmatch(html, 5)
 
 	var researchContext strings.Builder
 	researchContext.WriteString(fmt.Sprintf("Research Results for: %s\n\n", query))
 
-	// 3. Fetch content from top results
+	// 2. Fetch content from top results
 	linksCount := 0
-	for _, match := range matches {
-		link := match[1]
-		// Decode URL if needed
-		if strings.Contains(link, "uddg=") {
-			u, _ := url.Parse(link)
-			link = u.Query().Get("uddg")
-		}
-
-		if link == "" || strings.Contains(link, "duckduckgo.com") {
-			continue
-		}
+	for _, r := range results {
+		link := r.URL
 
 		ui.ShowNotification(fmt.Sprintf("Reading: %s", link))
 		content, err := fetchPageText(link)

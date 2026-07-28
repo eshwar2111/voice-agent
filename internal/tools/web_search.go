@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
-	"os/exec"
 	"strings"
 )
 
@@ -17,7 +15,7 @@ func (w *WebSearchTool) Name() string {
 }
 
 func (w *WebSearchTool) Description() string {
-	return "Opens the default browser and performs a DuckDuckGo search for the specific query."
+	return "Searches the web (DuckDuckGo) and returns the top results (title, URL, snippet) as text to reason over. For a deep synthesized answer use 'research' instead."
 }
 
 func (w *WebSearchTool) Parameters() string {
@@ -43,17 +41,24 @@ func (w *WebSearchTool) Execute(ctx context.Context, rawParams json.RawMessage) 
 	if err := json.Unmarshal(rawParams, &params); err != nil {
 		return "", fmt.Errorf("invalid parameters: %w", err)
 	}
-
-	query := params.Query
-	if strings.TrimSpace(query) == "" {
+	query := strings.TrimSpace(params.Query)
+	if query == "" {
 		return "", errors.New("missing query parameter")
 	}
-
-	searchURL := "https://duckduckgo.com/?q=" + url.QueryEscape(query)
-	cmd := exec.Command("rundll32", "url.dll,FileProtocolHandler", searchURL)
-	err := cmd.Start()
+	results, err := ddgSearch(ctx, query, 6)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("search failed: %w", err)
 	}
-	return "Web search initiated", nil
+	if len(results) == 0 {
+		return "No results found for: " + query, nil
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "Web results for %q:\n\n", query)
+	for i, r := range results {
+		fmt.Fprintf(&b, "%d. %s — %s\n", i+1, r.Title, r.URL)
+		if r.Snippet != "" {
+			fmt.Fprintf(&b, "   %s\n", r.Snippet)
+		}
+	}
+	return b.String(), nil
 }
