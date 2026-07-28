@@ -29,7 +29,7 @@ func (t *SpotifyAssistantTool) Parameters() string {
 		"type": "object",
 		"properties": {
 			"request": {"type": "string", "description": "Natural language Spotify request"},
-			"mode": {"type": "string", "description": "Optional mode override: status, play, pause, next, previous, search, recommend, curate, queue_add, volume"}
+			"mode": {"type": "string", "description": "Optional mode override: status, play, pause, next, previous, search, recommend, curate, queue_add, volume, seek, save, transfer"}
 		},
 		"required": ["request"]
 	}`
@@ -91,6 +91,16 @@ func (t *SpotifyAssistantTool) Execute(ctx context.Context, params json.RawMessa
 			volume = 50
 		}
 		return (&SpotifyVolumeTool{Cfg: t.Cfg}).Execute(ctx, mustJSON(map[string]any{"volume_percent": volume}))
+	case "seek":
+		return (&SpotifySeekTool{Cfg: t.Cfg}).Execute(ctx, mustJSON(map[string]any{"position": query}))
+	case "save":
+		action := strings.ToLower(strings.TrimSpace(query))
+		if action != "save" && action != "remove" && action != "check" {
+			action = "save"
+		}
+		return (&SpotifySaveTrackTool{Cfg: t.Cfg}).Execute(ctx, mustJSON(map[string]any{"action": action}))
+	case "transfer":
+		return (&SpotifyTransferTool{Cfg: t.Cfg}).Execute(ctx, mustJSON(map[string]any{"device": query}))
 	default:
 		return t.status(ctx)
 	}
@@ -112,6 +122,9 @@ Allowed modes:
 - curate
 - queue_add
 - volume
+- seek (query = position, e.g. "1:30", "90", "+30s", "-15s"; use for "jump to", "skip ahead N seconds", "rewind")
+- save (query = "save"/"remove"/"check"; use for "like this song", "unlike", "is this saved")
+- transfer (query = device name; use for "play on my laptop", "move to kitchen speaker")
 
 Return ONLY JSON like {"mode":"play","query":"lofi coding music"}`, request)
 

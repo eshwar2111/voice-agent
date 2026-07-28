@@ -173,6 +173,9 @@ func DefaultRegistryWithConfig(provider llm.Provider, cfg *config.Config) *Regis
 		r.Register(&SpotifyAssistantTool{Cfg: cfg, Provider: provider})
 		r.Register(&SpotifyWorkflowAgentTool{Cfg: cfg, Provider: provider})
 		r.Register(&SpotifyContextualMoodTool{Cfg: cfg, Provider: provider})
+		r.Register(&SpotifySeekTool{Cfg: cfg})
+		r.Register(&SpotifySaveTrackTool{Cfg: cfg})
+		r.Register(&SpotifyTransferTool{Cfg: cfg})
 
 		r.Register(&GoogleWorkflowAgentTool{Cfg: cfg, Provider: provider})
 		r.Register(&GoogleWorkspaceBriefTool{Cfg: cfg, Provider: provider})

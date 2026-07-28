@@ -95,6 +95,18 @@ The agent comes with a massive registry of tools (`internal/tools/registry.go`):
 * `keyboard_combo` / `keyboard_type`: Low-level key emulation.
 * File Operations (`read_file`, `write_file`, `list_files`, `open_file`).
 * System Context (`screenshot_analysis`, `explain_selection`).
+* `web_search`: searches DuckDuckGo and returns the top results (title, URL, snippet) as text to reason over — no longer just opens a browser.
+
+### 🎧 Spotify
+
+Playback, search, queue, playlists, devices, and AI curation via the Spotify Web API, plus:
+
+* `spotify_seek`: seek within the current track — absolute (`1:30`, `90`) or relative (`+30s`, `-15s`).
+* `spotify_save_track`: save (like) / remove / check the current or a given track in your Liked Songs.
+* `spotify_transfer`: transfer playback to a device by name (e.g. "play on my Laptop").
+* **Automatic no-device recovery:** if playback fails with `NO_ACTIVE_DEVICE`, the agent transfers to an available device and retries once — play/pause/next/previous/volume all self-heal.
+
+> **One-time re-link for saving:** liking songs adds the `user-library-modify` scope. Existing links will get a `403` until you **re-link Spotify (⚙ → Spotify)** once; the agent will prompt you.
 
 ## 🔒 Security
 The agent operates with permission profiles. Destructive actions (like `delete_file`) require explicit UI confirmation before the agent is allowed to execute them.

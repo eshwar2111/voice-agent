@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/yourname/voice-agent/config"
@@ -123,7 +124,10 @@ func (t *SpotifyPlayTool) Execute(ctx context.Context, params json.RawMessage) (
 
 	// If no query, just resume playback
 	if args.Query == "" {
-		_, err = spotifyPut(ctx, client, "/me/player/play", []byte("{}"))
+		err = withDeviceRecovery(ctx, client, func() error {
+			_, e := spotifyPut(ctx, client, "/me/player/play", []byte("{}"))
+			return e
+		})
 		if err != nil {
 			return "", fmt.Errorf("failed to resume playback: %w", err)
 		}
@@ -198,7 +202,10 @@ func (t *SpotifyPlayTool) Execute(ctx context.Context, params json.RawMessage) (
 
 func (t *SpotifyPlayTool) playURI(ctx context.Context, client *http.Client, uri string, msg string) (string, error) {
 	payload, _ := json.Marshal(map[string]interface{}{"context_uri": uri})
-	_, err := spotifyPut(ctx, client, "/me/player/play", payload)
+	err := withDeviceRecovery(ctx, client, func() error {
+		_, e := spotifyPut(ctx, client, "/me/player/play", payload)
+		return e
+	})
 	if err != nil {
 		return "", fmt.Errorf("failed to play: %w", err)
 	}
@@ -226,7 +233,10 @@ func (t *SpotifyPauseTool) Execute(ctx context.Context, params json.RawMessage) 
 		return "", err
 	}
 
-	_, err = spotifyPut(ctx, client, "/me/player/pause", []byte("{}"))
+	err = withDeviceRecovery(ctx, client, func() error {
+		_, e := spotifyPut(ctx, client, "/me/player/pause", []byte("{}"))
+		return e
+	})
 	if err != nil {
 		return "", fmt.Errorf("failed to pause: %w", err)
 	}
@@ -249,7 +259,10 @@ func (t *SpotifyNextTool) Execute(ctx context.Context, params json.RawMessage) (
 		return "", err
 	}
 
-	_, err = spotifyPost(ctx, client, "/me/player/next", nil)
+	err = withDeviceRecovery(ctx, client, func() error {
+		_, e := spotifyPost(ctx, client, "/me/player/next", nil)
+		return e
+	})
 	if err != nil {
 		return "", fmt.Errorf("failed to skip: %w", err)
 	}
@@ -272,7 +285,10 @@ func (t *SpotifyPreviousTool) Execute(ctx context.Context, params json.RawMessag
 		return "", err
 	}
 
-	_, err = spotifyPost(ctx, client, "/me/player/previous", nil)
+	err = withDeviceRecovery(ctx, client, func() error {
+		_, e := spotifyPost(ctx, client, "/me/player/previous", nil)
+		return e
+	})
 	if err != nil {
 		return "", fmt.Errorf("failed to go to previous track: %w", err)
 	}
@@ -304,7 +320,10 @@ func (t *SpotifyVolumeTool) Execute(ctx context.Context, params json.RawMessage)
 		return "", err
 	}
 
-	_, err = spotifyPut(ctx, client, fmt.Sprintf("/me/player/volume?volume_percent=%d", args.Volume), nil)
+	err = withDeviceRecovery(ctx, client, func() error {
+		_, e := spotifyPut(ctx, client, fmt.Sprintf("/me/player/volume?volume_percent=%d", args.Volume), nil)
+		return e
+	})
 	if err != nil {
 		return "", fmt.Errorf("failed to set volume: %w", err)
 	}
@@ -819,4 +838,196 @@ func spotifyPost(ctx context.Context, client *http.Client, path string, body []b
 	}
 
 	return io.ReadAll(resp.Body)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Pure helpers (device pick, seek parse, safe accessors, delete)
+// ───────────────────────────────────────────────────────────────────────
+
+type SpotifyDevice struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	IsActive bool   `json:"is_active"`
+}
+
+// pickDevice chooses a target device id+name. With preferName set it does a
+// case-insensitive name match (or "","" on miss). Otherwise an already-active
+// device wins, else the first device. "","" if the list is empty.
+func pickDevice(devices []SpotifyDevice, preferName string) (string, string) {
+	if preferName != "" {
+		for _, d := range devices {
+			if strings.EqualFold(d.Name, preferName) {
+				return d.ID, d.Name
+			}
+		}
+		return "", ""
+	}
+	for _, d := range devices {
+		if d.IsActive {
+			return d.ID, d.Name
+		}
+	}
+	if len(devices) > 0 {
+		return devices[0].ID, devices[0].Name
+	}
+	return "", ""
+}
+
+// parseSeekPosition converts "1:30" / "90" / raw ms-ish / relative "+30s"/"-15s"
+// into an absolute position in ms (floored at 0). currentMs is used for relative.
+func parseSeekPosition(s string, currentMs int) (int, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0, fmt.Errorf("empty position")
+	}
+	// relative: +30s / -15s
+	if (s[0] == '+' || s[0] == '-') && strings.HasSuffix(s, "s") {
+		n, err := strconv.Atoi(strings.TrimSuffix(s[1:], "s"))
+		if err != nil {
+			return 0, fmt.Errorf("bad relative seek %q", s)
+		}
+		delta := n * 1000
+		if s[0] == '-' {
+			delta = -delta
+		}
+		pos := currentMs + delta
+		if pos < 0 {
+			pos = 0
+		}
+		return pos, nil
+	}
+	// mm:ss
+	if strings.Contains(s, ":") {
+		parts := strings.SplitN(s, ":", 2)
+		mm, e1 := strconv.Atoi(parts[0])
+		ss, e2 := strconv.Atoi(parts[1])
+		if e1 != nil || e2 != nil {
+			return 0, fmt.Errorf("bad mm:ss %q", s)
+		}
+		return (mm*60 + ss) * 1000, nil
+	}
+	// bare number = seconds
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		return 0, fmt.Errorf("bad seek %q", s)
+	}
+	return n * 1000, nil
+}
+
+func str(m map[string]any, key string) string {
+	if m == nil {
+		return ""
+	}
+	if v, ok := m[key].(string); ok {
+		return v
+	}
+	return ""
+}
+
+func nested(m map[string]any, keys ...string) map[string]any {
+	cur := m
+	for i, k := range keys {
+		if cur == nil {
+			return nil
+		}
+		v, exists := cur[k]
+		if !exists {
+			return nil
+		}
+		next, ok := v.(map[string]any)
+		if !ok {
+			// Final segment may be a non-map value (e.g. an images array);
+			// the path exists, so return the parent map rather than nil.
+			if i == len(keys)-1 {
+				return cur
+			}
+			return nil
+		}
+		cur = next
+	}
+	return cur
+}
+
+func firstImageURL(images any) string {
+	arr, ok := images.([]any)
+	if !ok || len(arr) == 0 {
+		return ""
+	}
+	if m, ok := arr[0].(map[string]any); ok {
+		return str(m, "url")
+	}
+	return ""
+}
+
+func spotifyDelete(ctx context.Context, client *http.Client, path string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, "DELETE", spotifyBase+path, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create DELETE request: %w", err)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("DELETE failed: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("Spotify error (%s): %s", resp.Status, string(body))
+	}
+	return io.ReadAll(resp.Body)
+}
+
+func isNoActiveDevice(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "NO_ACTIVE_DEVICE")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Device management (ensureActiveDevice + one-shot recovery)
+// ───────────────────────────────────────────────────────────────────────
+
+// ensureActiveDevice guarantees playback has a target device. If preferName is
+// empty and a device is already active, it returns that device's name without
+// transferring. Otherwise it picks a device (pickDevice) and transfers playback
+// to it (PUT /me/player, play:false). Returns the target device name.
+func ensureActiveDevice(ctx context.Context, client *http.Client, preferName string) (string, error) {
+	body, err := spotifyGet(ctx, client, "/me/player/devices")
+	if err != nil {
+		return "", err
+	}
+	var dr struct {
+		Devices []SpotifyDevice `json:"devices"`
+	}
+	if err := json.Unmarshal(body, &dr); err != nil {
+		return "", fmt.Errorf("could not read devices: %w", err)
+	}
+	id, name := pickDevice(dr.Devices, preferName)
+	if id == "" {
+		if preferName != "" {
+			return "", fmt.Errorf("no Spotify device named %q found", preferName)
+		}
+		return "", fmt.Errorf("no Spotify devices available — open Spotify on a device first")
+	}
+	// already active and no explicit target → nothing to do
+	for _, d := range dr.Devices {
+		if d.ID == id && d.IsActive {
+			return name, nil
+		}
+	}
+	payload, _ := json.Marshal(map[string]any{"device_ids": []string{id}, "play": false})
+	if _, err := spotifyPut(ctx, client, "/me/player", payload); err != nil {
+		return "", err
+	}
+	return name, nil
+}
+
+// withDeviceRecovery runs do(); if it fails with NO_ACTIVE_DEVICE, it transfers
+// to an available device and retries do() once.
+func withDeviceRecovery(ctx context.Context, client *http.Client, do func() error) error {
+	err := do()
+	if isNoActiveDevice(err) {
+		if _, derr := ensureActiveDevice(ctx, client, ""); derr != nil {
+			return derr
+		}
+		return do()
+	}
+	return err
 }

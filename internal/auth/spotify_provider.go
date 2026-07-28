@@ -39,6 +39,7 @@ func NewSpotifyProvider(cfg *config.Config) *SpotifyProvider {
 			"user-modify-playback-state",
 			"user-read-currently-playing",
 			"user-library-read",
+			"user-library-modify",
 			"user-top-read",
 			"user-read-recently-played",
 			"playlist-read-private",
