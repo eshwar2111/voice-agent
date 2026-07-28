@@ -14,6 +14,7 @@ import (
 	"github.com/yourname/voice-agent/internal/resolver"
 	"github.com/yourname/voice-agent/internal/security"
 	"github.com/yourname/voice-agent/internal/tools"
+	"github.com/yourname/voice-agent/internal/trust"
 )
 
 var (
@@ -23,7 +24,18 @@ var (
 	globalCtx      gocontext.Context
 	globalCancel   gocontext.CancelFunc
 	globalDispatch *dispatch.Deps
+	globalTrusted  *trust.TrustedExecutor
 )
+
+// SetTrusted injects the shared trust layer into the router. Wiring both the
+// dispatcher (voice/typed commands) and the AI-command executor to the same
+// *trust.TrustedExecutor keeps every execution path behind the one-shot gate.
+func SetTrusted(te *trust.TrustedExecutor) {
+	globalTrusted = te
+	if globalDispatch != nil {
+		globalDispatch.Trusted = te
+	}
+}
 
 func InitRouter(registry *tools.Registry, provider llm.Provider, profile *security.Profile) {
 	globalRegistry = registry
@@ -125,6 +137,7 @@ func RunAICommand(input string) {
 	// (single-step dispatch); the Orchestrator's decomposer is only invoked when the
 	// user sends a free-text "ai <request>" that contains no explicit tool selection.
 	executor := agent.NewExecutor(globalRegistry)
+	executor.Trusted = globalTrusted
 	orch := agent.NewOrchestrator(globalProvider, executor)
 	if err := orch.Run(globalCtx, prompt, contextStr); err != nil {
 		log.Printf("Orchestration failed: %v", err)

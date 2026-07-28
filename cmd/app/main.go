@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -23,6 +24,7 @@ import (
 	"github.com/yourname/voice-agent/internal/search"
 	"github.com/yourname/voice-agent/internal/security"
 	"github.com/yourname/voice-agent/internal/tools"
+	"github.com/yourname/voice-agent/internal/trust"
 	"github.com/yourname/voice-agent/internal/ui"
 	"github.com/yourname/voice-agent/internal/wakeword"
 )
@@ -128,6 +130,48 @@ func main() {
 
 	command.InitRouter(registry, provider, &profile)
 	command.SetCancelFunc(cancel)
+
+	// Trust layer: build a single *trust.TrustedExecutor and inject it into every
+	// execution path (dispatch → engine + router AI commands), gated by config.
+	// The LLM judge only fires for fuzzy GUI/vision steps; it never blocks on an
+	// unavailable provider (returns verified=true on error).
+	//
+	// Known limitation (v1): Replan is a no-op — no LLM re-plan is wired yet, so
+	// the recovery ladder degrades Replan → Ask (spec-correct fallthrough).
+	var trustedExec *trust.TrustedExecutor
+	if cfg.TrustedExecution {
+		judge := func(ctx context.Context, goal, obs string) (bool, string) {
+			out, jerr := provider.Generate(ctx, "Goal: "+goal+"\nObservation: "+obs+
+				"\nDid the action succeed? Answer 'yes' or 'no' then a short reason.", nil)
+			if jerr != nil {
+				return true, "" // never block on an unavailable judge
+			}
+			yes := strings.HasPrefix(strings.ToLower(strings.TrimSpace(out)), "yes")
+			return yes, out
+		}
+		trustedExec = &trust.TrustedExecutor{
+			Classifier: trust.NewRiskClassifier(),
+			Verifier:   trust.NewStepVerifier(judge),
+			Recoverer:  trust.NewLadderRecoverer(2),
+			Confirm:    ui.RequestConfirmationCard,
+			Describe:   trust.DefaultDescribe,
+			Narrate:    ui.ShowNotification,
+			Ask: func(s trust.Step, reason string) trust.Decision {
+				if ui.AskStepChoice(reason) {
+					return trust.Retry
+				}
+				return trust.Abort
+			},
+			Replan: func(ctx context.Context, remaining []trust.Step, failed trust.Step, err error) []trust.Step {
+				return nil // v1: no LLM re-plan wired yet → ladder falls through to Ask
+			},
+		}
+		log.Println("[trust] trustworthy execution layer enabled")
+	} else {
+		log.Println("[trust] trustworthy execution layer disabled (trusted_execution=false)")
+	}
+	command.SetTrusted(trustedExec)
+
 	ui.OnCommand = command.ProcessCommand
 	ui.OnHistoryUp = command.GetPreviousHistory
 	ui.OnHistoryDown = command.GetNextHistory
@@ -150,7 +194,7 @@ func main() {
 	// (ShowAutomationStep / FlashHighlightBox), instead of launching here.
 
 	// Initialize and run the Event-Driven Engine
-	engineApp := engine.NewEngine(cfg, provider, registry, memStore, memRetriever, rateLimiter, &profile)
+	engineApp := engine.NewEngine(cfg, provider, registry, memStore, memRetriever, rateLimiter, &profile, trustedExec)
 	go engineApp.Start(rootCtx)
 
 	// Start the ambient (proactive suggestions) engine, gated by config + privacy mode.

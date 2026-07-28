@@ -37,6 +37,11 @@ type Config struct {
 	GoogleToken    string `json:"google_token"`
 	MicrosoftToken string `json:"microsoft_token"`
 	SpotifyToken   string `json:"spotify_token"`
+
+	// TrustedExecution gates plans through the internal/trust layer (risk
+	// classification, one-shot approval gate, verification, recovery ladder).
+	// Defaults to true when the key is absent from config.json.
+	TrustedExecution bool `json:"trusted_execution"`
 }
 
 // defaults applied when fields are missing or invalid.
@@ -51,6 +56,12 @@ func LoadConfig(path string) (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("config: read file: %w", err)
 	}
+	return loadFromBytes(data)
+}
+
+// loadFromBytes parses config JSON and applies defaults. Factored out of
+// LoadConfig so tests can exercise default logic without touching the disk.
+func loadFromBytes(data []byte) (*Config, error) {
 	var cfg Config
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("config: parse JSON: %w", err)
@@ -65,6 +76,16 @@ func LoadConfig(path string) (*Config, error) {
 	}
 	if cfg.TimeoutSeconds <= 0 {
 		cfg.TimeoutSeconds = DefaultTimeoutSeconds
+	}
+
+	// TrustedExecution defaults to true when the key is absent. A plain
+	// bool would default to false, so detect key presence by re-unmarshalling
+	// into a raw map and only override when the key was not supplied.
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err == nil {
+		if _, ok := raw["trusted_execution"]; !ok {
+			cfg.TrustedExecution = true
+		}
 	}
 
 	return &cfg, nil

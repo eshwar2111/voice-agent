@@ -99,6 +99,29 @@ The agent comes with a massive registry of tools (`internal/tools/registry.go`):
 ## 🔒 Security
 The agent operates with permission profiles. Destructive actions (like `delete_file`) require explicit UI confirmation before the agent is allowed to execute them.
 
+## 🛡️ Trustworthy execution (SP4)
+
+Every plan is wrapped by a dependency-free trust layer (`internal/trust`) at the
+`GraphExecutor` choke point, giving one-shot execution you can actually trust:
+
+- **Risk classification** — each step is tagged `Safe`/`Risky` by a name table plus a
+  param-aware bump (e.g. `system_control{action:"shutdown"}` becomes `Risky`); unknown tools
+  default to `Risky`.
+- **One up-front approval gate** — a single `workflow_approval` card fires **before any side
+  effect** when a plan has ≥2 steps or any risky step. Reject ⇒ **zero** side effects. Re-planned
+  tail steps do not trigger a second gate.
+- **Cheap-first verification** — deterministic post-conditions (file created / deleted, non-empty
+  result) run with no LLM cost; only fuzzy GUI/vision steps consult the optional LLM judge, which
+  never blocks if the provider is unavailable.
+- **Bounded recovery ladder** — retry (≤2) → re-plan (once) → ask the user (Retry/Stop card).
+  No auto-rollback.
+
+**Config flag:** `"trusted_execution"` in `config.json` **defaults to `true`** when the key is
+absent; set it to `false` to run the legacy executor loop with no gate/verification.
+
+> **Known limitation (v1):** LLM re-plan is not yet wired — `Replan` is a no-op, so the ladder
+> degrades `Replan → Ask` (spec-correct fallthrough). A real re-plan is deferred to a follow-up.
+
 ## 🔔 Proactive suggestions (SP3)
 
 The agent can proactively surface one-tap suggestions — "ZIP downloaded, unzip it?",

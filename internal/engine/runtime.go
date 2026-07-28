@@ -20,6 +20,7 @@ import (
 	"github.com/yourname/voice-agent/internal/resolver"
 	"github.com/yourname/voice-agent/internal/security"
 	"github.com/yourname/voice-agent/internal/tools"
+	"github.com/yourname/voice-agent/internal/trust"
 	"github.com/yourname/voice-agent/internal/ui"
 )
 
@@ -62,7 +63,7 @@ type Engine struct {
 	commandDone chan struct{}
 }
 
-func NewEngine(cfg *config.Config, provider llm.Provider, registry *tools.Registry, store *memory.Store, retriever *memory.Retriever, rateLimiter *security.RateLimiter, profile *security.Profile) *Engine {
+func NewEngine(cfg *config.Config, provider llm.Provider, registry *tools.Registry, store *memory.Store, retriever *memory.Retriever, rateLimiter *security.RateLimiter, profile *security.Profile, trusted *trust.TrustedExecutor) *Engine {
 	return &Engine{
 		Config:       cfg,
 		Provider:     provider,
@@ -76,6 +77,7 @@ func NewEngine(cfg *config.Config, provider llm.Provider, registry *tools.Regist
 			Provider: provider,
 			Profile:  profile,
 			Resolver: resolver.Default(),
+			Trusted:  trusted,
 		},
 		Events:      make(chan Event, 100),
 		commandDone: make(chan struct{}, 1),

@@ -56,3 +56,14 @@ func TestBuildPreviewShape(t *testing.T) {
 		t.Errorf("describe not used: %q", card.Plan.Steps[1].Value)
 	}
 }
+
+func TestDefaultDescribe(t *testing.T) {
+	p, _ := json.Marshal(map[string]string{"path": `C:\x\invoice_old.pdf`})
+	if got := DefaultDescribe("delete_file", p); got != "Delete invoice_old.pdf" {
+		t.Errorf("got %q", got)
+	}
+	q, _ := json.Marshal(map[string]string{"query": "budget"})
+	if got := DefaultDescribe("search", q); got != "Search for 'budget'" {
+		t.Errorf("got %q", got)
+	}
+}

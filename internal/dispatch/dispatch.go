@@ -12,6 +12,7 @@ import (
 	"github.com/yourname/voice-agent/internal/resolver"
 	"github.com/yourname/voice-agent/internal/security"
 	"github.com/yourname/voice-agent/internal/tools"
+	"github.com/yourname/voice-agent/internal/trust"
 	"github.com/yourname/voice-agent/internal/ui"
 )
 
@@ -21,6 +22,8 @@ type Deps struct {
 	Provider llm.Provider
 	Profile  *security.Profile
 	Resolver *resolver.Resolver
+	// Trusted, when non-nil, wraps every executed plan with the trust layer.
+	Trusted *trust.TrustedExecutor
 }
 
 // localHits/cloudHits count ROUTING DECISIONS (which tier handled the
@@ -45,6 +48,7 @@ func (d *Deps) Handle(ctx context.Context, input string, cap agentctx.Capture) e
 			return err
 		}
 		exec := agent.NewExecutor(d.Registry)
+		exec.Trusted = d.Trusted
 		return exec.ExecutePlan(ctx, agent.Plan{Transcript: input, Intent: "local_resolve", Tasks: match.Tasks})
 	}
 	atomic.AddInt64(&cloudHits, 1)
@@ -66,6 +70,7 @@ func (d *Deps) Handle(ctx context.Context, input string, cap agentctx.Capture) e
 	// Tier 1: text path via the orchestrator, enriched with captured context.
 	log.Printf("[dispatch] TIER1 (cloud) %q", input)
 	exec := agent.NewExecutor(d.Registry)
+	exec.Trusted = d.Trusted
 	orch := agent.NewOrchestrator(d.Provider, exec)
 	return orch.Run(ctx, input, cap.String())
 }
