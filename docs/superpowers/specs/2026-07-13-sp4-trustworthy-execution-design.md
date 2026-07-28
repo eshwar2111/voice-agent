@@ -63,7 +63,7 @@ sub-goal into a one-task plan, `orchestrator.go:108`) — are covered at **one c
 dispatch / orchestrator
         │  agent.Plan{Tasks}
         ▼
-GraphExecutor.ExecutePlan ──► trust.TrustedExecutor.Run(ctx, plan)
+GraphExecutor.ExecutePlan ──► trust.TrustedExecutor.Run(ctx, steps, command)
                                    │
              ┌─────────────────────┼──────────────────────────────┐
              ▼                     ▼                                ▼
