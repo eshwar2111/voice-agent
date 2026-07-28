@@ -36,7 +36,7 @@ func injectPrev(params json.RawMessage, prev string) json.RawMessage {
 	if len(params) == 0 || !strings.Contains(string(params), prevOutputToken) {
 		return params
 	}
-	var m map[string]interface{}
+	var m map[string]any
 	if json.Unmarshal(params, &m) != nil {
 		return params
 	}
@@ -54,6 +54,12 @@ func injectPrev(params json.RawMessage, prev string) json.RawMessage {
 
 func (t *TrustedExecutor) Run(ctx context.Context, steps []Step, command string) (Report, error) {
 	rep := Report{FailedAt: -1}
+	// Reset the once-per-plan re-plan guard — the executor holds one shared
+	// recoverer across every plan, so without this the budget would latch
+	// process-wide after the first plan that reaches the re-plan rung.
+	if r, ok := t.Recoverer.(*LadderRecoverer); ok {
+		r.Reset()
+	}
 	risks := t.classifyAll(steps)
 
 	// One gate up front.
@@ -102,7 +108,13 @@ func (t *TrustedExecutor) Run(ctx context.Context, steps []Step, command string)
 					r.MarkReplanned()
 				}
 				if len(tail) == 0 {
-					return t.stop(rep, i, "re-plan produced no steps: "+stepErr.Error())
+					// No re-plan available (e.g. v1 no-op Replan). Fall through to
+					// asking the user rather than aborting outright.
+					if t.Ask != nil && t.Ask(step, reason) == Retry {
+						t.sleep(150 * time.Millisecond)
+						continue
+					}
+					return t.stop(rep, i, "stopped at failing step: "+stepErr.Error())
 				}
 				// Replace remaining tail; re-classify (no second gate).
 				steps = append(steps[:i], tail...)

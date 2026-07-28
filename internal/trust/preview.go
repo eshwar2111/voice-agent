@@ -4,18 +4,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"slices"
 )
 
 func ShouldGate(steps []Step, risks []Risk) bool {
 	if len(steps) >= 2 {
 		return true
 	}
-	for _, r := range risks {
-		if r == Risky {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(risks, Risky)
 }
 
 func BuildPreview(command string, steps []Step, risks []Risk, describe func(tool string, params json.RawMessage) string) string {
@@ -23,7 +19,7 @@ func BuildPreview(command string, steps []Step, risks []Risk, describe func(tool
 		Label string `json:"label"`
 		Value string `json:"value"`
 	}
-	card := map[string]interface{}{
+	card := map[string]any{
 		"type":  "workflow_approval",
 		"title": fmt.Sprintf("Review this %d-step task", len(steps)),
 	}
@@ -48,7 +44,7 @@ func BuildPreview(command string, steps []Step, risks []Risk, describe func(tool
 		}
 		out[i] = cardStep{Label: fmt.Sprintf("Step %d · %s", i+1, tag), Value: val}
 	}
-	card["plan"] = map[string]interface{}{"goal": command, "steps": out}
+	card["plan"] = map[string]any{"goal": command, "steps": out}
 	b, _ := json.Marshal(card)
 	return string(b)
 }
