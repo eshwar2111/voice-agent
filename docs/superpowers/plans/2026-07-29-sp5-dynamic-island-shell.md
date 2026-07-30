@@ -1675,7 +1675,7 @@ export function swapContent(host, render) {
 }
 ```
 
-Create `internal/ui/assets/icons.svg` as an inline sprite. Each icon is a `<symbol>` with `viewBox="0 0 24 24"`; used as `<svg class="ico"><use href="#i-mic"/></svg>`.
+**ERRATUM (Task 5 review): do NOT create a separate `icons.svg` file.** Step 7 inlines a byte-identical copy of this sprite into `index.html`, and nothing ever reads the standalone file, so the two copies silently drift. The sprite must live inline in the document anyway for `<use href="#i-mic">` to resolve. Inline it in Step 7 only. The markup below is still the sprite to use. Each icon is a `<symbol>` with `viewBox="0 0 24 24"`; used as `<svg class="ico"><use href="#i-mic"/></svg>`.
 
 ```html
 <svg xmlns="http://www.w3.org/2000/svg" style="display:none">
@@ -1741,13 +1741,24 @@ function unionRegionRect(fromPresence, toPresence){
   return {x: cx - w/2, y: top, w, h};
 }
 
+> **ERRATUM (found in Task 5 review, fixed in Task 5 fix round 1).** The
+> `setRegionRects([u])` call below is WRONG as written. It *replaces* the whole
+> published region with an island-only rect instead of unioning it with the other
+> visible surfaces (`.panel.active`, `.card.shown`, `#dashboard.visible`), and when
+> the island is `display:none` (Control Center open) `getBoundingClientRect()`
+> returns zeros, producing a garbage rect pinned near the window origin that clips
+> the open dashboard for 380–460ms. The widen phase must publish the SAME surface
+> set as the settle phase, appending the widened island rect only when the island is
+> actually visible. Corrected in the implementation; kept here with this note so the
+> mistake is visible rather than silently rewritten.
+
 export function rerender(){
   store.now = Date.now();
   const r = resolve(store);
   if(r.presence !== applied.presence){
     // Widen the region FIRST, so the growing island is never clipped.
     const u = unionRegionRect(applied.presence || r.presence, r.presence);
-    if(u) window.setRegionRects && window.setRegionRects([u]);
+    if(u) window.setRegionRects && window.setRegionRects([u]);   // <-- see ERRATUM above
     // ...then narrow it to the exact shape once the morph settles.
     morphTo(island, r.presence, publishRegionRects);
     applied.presence = r.presence;
