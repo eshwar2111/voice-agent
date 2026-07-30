@@ -1,8 +1,9 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
+<link rel="stylesheet" href="css/island.css"/>
 <style>
 /* ─── Voice Agent · macOS-style frosted-glass overlay ─────────────────────── */
 :root{
@@ -161,14 +162,28 @@ kbd{font:600 11px var(--font);color:var(--ink-2);background:rgba(255,255,255,.07
 </style>
 </head>
 <body>
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none">
+  <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v4"/></symbol>
+  <symbol id="i-wave" viewBox="0 0 24 24"><path d="M3 12h2M7 8v8M11 5v14M15 8v8M19 11h2"/></symbol>
+  <symbol id="i-spotify" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M7.5 9.5c3-1 6.5-.6 9 1M8 13c2.4-.8 5-.5 7 .8M8.5 16c1.8-.6 3.8-.4 5.5.6"/></symbol>
+  <symbol id="i-mail" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></symbol>
+  <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12M7 11l5 5 5-5M4 20h16"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l7 3v6c0 5-3 8-7 9-4-1-7-4-7-9V6z"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
+  <symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="m16 16 4 4"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+  <symbol id="i-terminal" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3M13 15h4"/></symbol>
+</svg>
 <div id="shell">
-  <div class="pill glass" id="statusPill" onclick="handleHeaderClick()">
-    <span class="orb" id="statusDot"></span>
-    <span class="label" id="statusText">Ready</span>
-    <span class="eq hidden" id="statusEq"><i></i><i></i><i></i><i></i><i></i></span>
-    <span class="shimmer hidden" id="statusShimmer"></span>
-    <button class="iconbtn stop hidden" id="stopBtn" type="button" onclick="event.stopPropagation();collapseShell()">&times;</button>
-    <button class="iconbtn" type="button" onclick="event.stopPropagation();openSettings('overview')">&#9881;</button>
+  <div id="island" class="glass" onclick="handleIslandClick()">
+    <span class="cap lead" id="capLead"></span>
+    <span class="body" id="islandBody"></span>
+    <span class="cap trail" id="capTrail"></span>
   </div>
 
   <section class="panel glass" id="commandPanel">
@@ -260,122 +275,6 @@ kbd{font:600 11px var(--font);color:var(--ink-2);background:rgba(255,255,255,.07
   </section>
   <div id="toast"></div>
 </div>
-<script>
-/* ─── logging: everything goes to Go (voice-agent.log) ────────────────────── */
-function jlog(m){try{window.jslog&&window.jslog('[js] '+m)}catch(e){}}
-
-/* Single entry point for everything Go pushes. Handlers are registered by
-   feature modules; unknown kinds are logged and dropped, never thrown, so a
-   stale Go build can't take down the render loop. */
-window.__agent = {
-  handlers: {},
-  on(kind, fn){ (this.handlers[kind] ||= []).push(fn) },
-  recv(env){
-    try{
-      const hs = this.handlers[env.kind];
-      if(!hs || !hs.length){ jlog('unhandled event '+env.kind); return }
-      for(const h of hs) h(env.data);
-    }catch(e){ jlog('recv error '+env.kind+': '+e) }
-  }
-};
-window.__agent.on('state', d => updateUI(d.state, d.text));
-window.__agent.on('notify', d => updateUI('idle', d.text));
-window.__agent.on('surface:open', d => {
-  if(d.id==='command') showCommand();
-  else if(d.id==='result') showCard(d.text);
-  else if(d.id==='approve'){
-    /* Explicit discriminator, not JSON.parse sniffing: RequestConfirmationCard
-       sends {card}, RequestConfirmation sends {text}. Never infer structure
-       from string contents on the security-approval path. If neither is
-       present (shouldn't happen from either current caller), refuse to open
-       an unreadable approval panel rather than rendering the literal word
-       "undefined" for the user to approve blind. */
-    if(d.card!==undefined) showConfirmCard(d.card);
-    else if(d.text!==undefined) showConfirm(d.text);
-    else { jlog('approve payload missing card and text'); resolveConfirm(false); }
-  }
-});
-window.__agent.on('activity:update', d => {
-  if(d.id==='ambient.nudge')
-    showSuggestion(d.data.id, d.data.icon, d.data.title, d.data.message, d.data.action);
-});
-
-let currentPanel=null,latestOutput='',integrationTimer=null;
-let settingsState={llm_provider:'gemini',api_key:'',model:'',base_url:'',enable_voice:false,privacy_mode:false};
-const dashCopy={overview:['Overview','Your assistant at a glance.','See readiness, wire in ecosystems, and tune behavior.'],integrations:['Integrations','Connected ecosystems that feel first-class.','Google Workspace and Spotify behave like native assistant surfaces.'],model:['Models','Shape how the assistant thinks.','Point the runtime at the provider and model that fit your setup.'],privacy:['Privacy','Tune interaction and context posture.','Decide how voice and privacy defaults should feel.']};
-function esc(t){return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
-/* Publish every visible surface to Go, which unions them into the window
-   region. Anything not covered by these rects is not part of the window at all,
-   so clicks there land on the desktop. Called on visibility changes, and on
-   morph start/settle from Task 6 — never per animation frame. */
-function publishRegionRects(){
-  const rects=[];
-  document.querySelectorAll('.pill, .panel.active, .card.shown, #dashboard.visible').forEach(el=>{
-    const cs=getComputedStyle(el);
-    if(cs.display==='none') return;
-    const r=el.getBoundingClientRect();
-    if(r.width>0 && r.height>0) rects.push({x:r.left,y:r.top,w:r.width,h:r.height});
-  });
-  jlog('regionRects '+rects.length);
-  window.setRegionRects && window.setRegionRects(rects);
-}
-function sizeTo(_v){ publishRegionRects(); }
-function toast(t){const el=document.getElementById('toast');el.textContent=t;el.style.display='block';clearTimeout(toast.tm);toast.tm=setTimeout(()=>el.style.display='none',2200)}
-
-function setIndicator(kind){statusEq.classList.add('hidden');statusShimmer.classList.add('hidden');if(kind==='eq')statusEq.classList.remove('hidden');else if(kind==='shimmer')statusShimmer.classList.remove('hidden')}
-function updateUI(state,text){jlog('updateUI '+state+(text?(' "'+text+'"'):''));
-  stopBtn.classList.toggle('hidden',state==='idle');const d=statusDot;d.classList.remove('on','warm','good','pulse');
-  if(state==='listening'){statusText.textContent=text||'Listening…';d.classList.add('on','pulse');setIndicator('eq')}
-  else if(state==='thinking'){statusText.textContent=text||'Thinking…';d.classList.add('on','warm');setIndicator('shimmer')}
-  else if(state==='acting'){statusText.textContent=text||'Working…';d.classList.add('on','warm');setIndicator(null)}
-  else if(state==='speaking'){statusText.textContent=text||'Speaking…';d.classList.add('on','good');setIndicator('eq')}
-  else{statusText.textContent=text||'Ready';setIndicator(null)}
-  // Critical: when idle and no panel/dashboard is open, snap the window back to the pill
-  // so a lingering large window can never render the pill as a giant ellipse.
-  if(!currentPanel && !dashboard.classList.contains('visible') && !document.getElementById('suggestion').classList.contains('shown')) sizeTo('pill');
-}
-function handleHeaderClick(){if(dashboard.classList.contains('visible'))return;if(currentPanel){collapseShell();return}jlog('pill click -> triggerListen');window.triggerListen&&window.triggerListen()}
-function refreshPillVisibility(){const sg=document.getElementById('suggestion').classList.contains('shown');const hide=!!currentPanel||sg||dashboard.classList.contains('visible');statusPill.style.display=hide?'none':'flex';publishRegionRects()}
-function setPanel(id){['commandPanel','outputPanel','confirmPanel'].forEach(x=>document.getElementById(x).classList.remove('active'));currentPanel=id;if(id){document.getElementById(id).classList.add('active')}refreshPillVisibility();publishRegionRects()}
-function collapseShell(){jlog('collapse');setPanel(null);if(window.setInputActive)window.setInputActive(false);sizeTo('pill');if(!dashboard.classList.contains('visible'))updateUI('idle')}
-function showCommand(){jlog('showCommand');setPanel('commandPanel');sizeTo('command');if(window.setInputActive)window.setInputActive(true);setTimeout(()=>commandInput.focus(),80)}
-function fillSuggestion(v){commandInput.value=v;commandInput.focus()}
-function renderText(t){return '<div>'+esc(t).replace(/\n/g,'<br/>').replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>')+'</div>'}
-function renderContent(text){try{const p=JSON.parse(text);if(p&&p.type==='calendar_list'&&Array.isArray(p.data))return '<div class="list">'+p.data.map(x=>'<div class="item"><div class="item-title">'+esc(x.summary||'Untitled event')+'</div><div class="item-meta">'+esc(x.startTime||'')+(x.location?' · '+esc(x.location):'')+'</div></div>').join('')+'</div>';if(p&&p.type==='gmail_list'&&Array.isArray(p.data))return '<div class="list">'+p.data.map(x=>'<div class="item"><div class="item-title">'+esc(x.subject||'No subject')+'</div><div class="item-meta">'+esc(x.from||'Unknown')+(x.date?' · '+esc(x.date):'')+'</div>'+(x.snippet?'<div style="margin-top:8px;color:var(--ink-2);font-size:12px">'+esc(x.snippet)+'</div>':'')+'</div>').join('')+'</div>';if(p&&p.type==='system_status'&&p.data)return '<div class="list"><div class="item"><div class="item-title">CPU</div><div class="item-meta">'+Number(p.data.cpu||0)+'% active</div></div><div class="item"><div class="item-title">Memory</div><div class="item-meta">'+(p.data.ramFree||0)+' GB free of '+(p.data.ramTotal||0)+' GB</div></div></div>'}catch(e){}return renderText(text)}
-function showCard(text){jlog('showCard');latestOutput=text||'';outputBody.innerHTML=renderContent(latestOutput);setPanel('outputPanel');sizeTo('output')}
-function copyOutput(){if(!latestOutput)return;navigator.clipboard.writeText(latestOutput).then(()=>toast('Copied'))}
-function showConfirm(text){confirmTitle.textContent='Review action request';confirmBody.innerHTML=renderText(String(text));setPanel('confirmPanel');sizeTo('confirm')}
-function showConfirmCard(cardJSON){confirmTitle.textContent='Review action request';let html=renderText(String(cardJSON));try{const p=JSON.parse(cardJSON);if(p.title)confirmTitle.textContent=p.title;const steps=Array.isArray(p.fields)?p.fields:(p.plan&&Array.isArray(p.plan.steps)?p.plan.steps:null);const parts=[];if(p.plan&&p.plan.goal)parts.push('<div style="margin-bottom:14px;color:var(--ink-2);font-size:13px">'+esc(String(p.plan.goal))+'</div>');if(steps&&steps.length)parts.push(steps.map(f=>'<div class="item" style="margin-bottom:10px"><div class="eyebrow" style="margin-bottom:6px">'+esc(f.label||'Step')+'</div><div>'+esc(String(f.value||''))+'</div></div>').join(''));if(parts.length)html=parts.join('');else if(p&&typeof p==='object')html=renderText(JSON.stringify(p,null,2))}catch(e){}confirmBody.innerHTML=html;setPanel('confirmPanel');sizeTo('confirm')}
-function resolveConfirm(ok){window.confirmCallback&&window.confirmCallback(ok);collapseShell()}
-
-/* ─── proactive suggestion card ───────────────────────────────────────────── */
-function showSuggestion(id,icon,title,message,action){jlog('showSuggestion '+id+' '+icon);
-  const glyph={download:'⭳',calendar:'▦',link:'↗',warn:'△'}[icon]||'•';
-  const el=document.getElementById('suggestion');el.dataset.id=id;
-  el.innerHTML='<div class="row"><span class="badge'+(icon==='warn'?' warn':'')+'">'+glyph+'</span><div><p class="ttl">'+esc(title)+'</p><p class="sub">'+esc(message)+'</p></div></div>'+
-    '<div class="actions right"><button class="btn ghost" onclick="dismissSuggestion()">Dismiss</button>'+(action?'<button class="btn primary" onclick="acceptSuggestion()">'+esc(action)+'</button>':'')+'</div>';
-  el.classList.add('shown');refreshPillVisibility();sizeTo('suggestion');
-  clearTimeout(window.__sg);window.__sg=setTimeout(dismissSuggestion,15000);
-}
-function acceptSuggestion(){const el=document.getElementById('suggestion');if(el&&window.suggestionAccept)window.suggestionAccept(el.dataset.id);hideSuggestion()}
-function dismissSuggestion(){const el=document.getElementById('suggestion');if(el&&window.suggestionDismiss)window.suggestionDismiss(el.dataset.id);hideSuggestion()}
-function hideSuggestion(){document.getElementById('suggestion').classList.remove('shown');clearTimeout(window.__sg);refreshPillVisibility();if(!currentPanel&&!dashboard.classList.contains('visible'))sizeTo('pill');publishRegionRects()}
-
-/* ─── settings dashboard ──────────────────────────────────────────────────── */
-async function loadSettings(){if(!window.getSettings)return;const s=await window.getSettings();if(!s)return;settingsState=Object.assign(settingsState,s);providerSelect.value=settingsState.llm_provider||'gemini';modelInput.value=settingsState.model||'';apiKeyInput.value=settingsState.api_key||'';baseUrlInput.value=settingsState.base_url||'';voiceToggle.classList.toggle('active',!!settingsState.enable_voice);privacyToggle.classList.toggle('active',!!settingsState.privacy_mode);metricProvider.textContent=(settingsState.llm_provider||'gemini').toUpperCase();overviewProvider.textContent='Model: '+(settingsState.llm_provider||'gemini');overviewVoice.textContent='Voice: '+(settingsState.enable_voice?'On':'Off');overviewPrivacy.textContent='Privacy: '+(settingsState.privacy_mode?'High':'Standard')}
-function toggleFlag(f){if(f==='voice'){settingsState.enable_voice=!settingsState.enable_voice;voiceToggle.classList.toggle('active',settingsState.enable_voice);overviewVoice.textContent='Voice: '+(settingsState.enable_voice?'On':'Off')}else{settingsState.privacy_mode=!settingsState.privacy_mode;privacyToggle.classList.toggle('active',settingsState.privacy_mode);overviewPrivacy.textContent='Privacy: '+(settingsState.privacy_mode?'High':'Standard')}}
-async function persistSettings(){settingsState.llm_provider=providerSelect.value;settingsState.model=modelInput.value.trim();settingsState.api_key=apiKeyInput.value.trim();settingsState.base_url=baseUrlInput.value.trim();const ok=await window.saveSettings(settingsState.llm_provider,settingsState.api_key,settingsState.model,settingsState.base_url,settingsState.enable_voice,settingsState.privacy_mode);if(ok){metricProvider.textContent=settingsState.llm_provider.toUpperCase();overviewProvider.textContent='Model: '+settingsState.llm_provider;toast('Settings saved')}else toast('Save failed')}
-function setConn(prefix,connected,text,pills){const badge=document.getElementById(prefix+'Badge'),txt=document.getElementById(prefix+'StatusText'),link=document.getElementById(prefix+'LinkBtn'),unlink=document.getElementById(prefix+'UnlinkBtn'),caps=document.getElementById(prefix+'Capabilities');badge.classList.remove('connected','disconnected');badge.classList.add(connected?'connected':'disconnected');badge.textContent=connected?'Connected':'Disconnected';txt.textContent=text;link.classList.toggle('hidden',connected);unlink.classList.toggle('hidden',!connected);if(caps&&pills&&pills.length)caps.innerHTML=pills.map(x=>'<span class="taglet">'+esc(x)+'</span>').join('')}
-async function loadIntegrationStatusesDash(){let total=0;if(window.getGoogleStatus){const g=await window.getGoogleStatus();const on=!!(g&&g.connected);if(on)total++;setConn('google',on,on?'Connected as '+(g.email||'your account')+' — Docs, Sheets, Slides, Drive, Gmail, Calendar.':'Link Gmail, Calendar, Drive, Docs, Sheets, and Slides for a unified workspace assistant.',g&&g.workspace?g.workspace:['Gmail','Calendar','Drive','Docs','Sheets','Slides'])}if(window.getSpotifyStatus){const s=await window.getSpotifyStatus();const on=!!(s&&s.connected);if(on)total++;setConn('spotify',on,on?'Connected as '+(s.display_name||'your account')+(s.product?' ('+s.product+')':''):'Link Spotify for playback control, queueing, recommendations, and AI-curated sessions.',s&&s.capabilities?s.capabilities:['Playback','Queue','Recommendations','AI Curation'])}if(window.getMicrosoftStatus){const m=await window.getMicrosoftStatus();const on=!!(m&&m.connected);if(on)total++;setConn('microsoft',on,on?'Microsoft account linked for Outlook and calendar workflows.':'Outlook and adjacent Microsoft workflows can be connected here.',m&&m.workspace?m.workspace:['Outlook','Calendar','OneDrive'])}metricConnections.textContent=total+' active'}
-async function openSettings(tab){jlog('openSettings');await loadSettings();dashboard.classList.add('visible');if(window.setInputActive)window.setInputActive(true);sizeTo('settings');switchTab(tab||'overview');loadIntegrationStatusesDash();if(!integrationTimer)integrationTimer=setInterval(loadIntegrationStatusesDash,4000);refreshPillVisibility();publishRegionRects()}
-function closeSettings(){jlog('closeSettings');dashboard.classList.remove('visible');clearInterval(integrationTimer);integrationTimer=null;refreshPillVisibility();if(currentPanel){sizeTo(currentPanel==='commandPanel'?'command':currentPanel==='outputPanel'?'output':'confirm')}else{if(window.setInputActive)window.setInputActive(false);sizeTo('pill');updateUI('idle')}publishRegionRects()}
-function switchTab(tab){document.querySelectorAll('.nav button').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));document.getElementById('tab-'+tab).classList.add('active');dashKicker.textContent=dashCopy[tab][0];dashTitle.textContent=dashCopy[tab][1];dashSub.textContent=dashCopy[tab][2]}
-function submitCurrentCommand(){const v=commandInput.value.trim();if(!v)return;jlog('submit "'+v+'"');window.submitCommand&&window.submitCommand(v);commandInput.value='';collapseShell();updateUI('thinking','Dispatching…')}
-commandInput.addEventListener('keydown',async e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();submitCurrentCommand();return}if(e.key==='ArrowUp'&&e.altKey&&window.getPrevCommand){e.preventDefault();const p=await window.getPrevCommand();if(p)e.target.value=p}if(e.key==='ArrowDown'&&e.altKey&&window.getNextCommand){e.preventDefault();e.target.value=await window.getNextCommand()}if(e.key==='Escape'){e.preventDefault();collapseShell()}});
-document.addEventListener('keydown',e=>{if(e.key==='Escape'&&dashboard.classList.contains('visible'))closeSettings()});
-jlog('overlay loaded');loadSettings();updateUI('idle','Ready');
-window.uiReady && window.uiReady();
-requestAnimationFrame(publishRegionRects);
-</script>
+<script type="module" src="js/main.js"></script>
 </body>
 </html>
