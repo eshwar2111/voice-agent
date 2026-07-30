@@ -6,7 +6,7 @@
 // assigned to `window` explicitly below.
 
 import { resolve } from './state.js';
-import { morphTo, swapContent } from './motion.js';
+import { morphTo, swapContent, currentSwapTarget } from './motion.js';
 import { unionIslandRect } from './geometry.js';
 import { registerActivity, updateActivity, endActivity, activeActivities, renderActivity }
   from './activities.js';
@@ -192,9 +192,20 @@ export function rerender(){
     // change, a nudge's message. swapContent's fade+blur transition exists
     // to sell an OBJECT changing, not a VALUE ticking, so refresh in place
     // instead of re-running the morph animation on every notify event.
+    //
+    // Must NOT assume the outgoing swap's target is islandBody.firstElementChild:
+    // for ~120ms after a contentId change, swapContent leaves BOTH the
+    // fading-out old node and the fading-in new node in islandBody, with the
+    // stale one still first. currentSwapTarget() tracks the real one
+    // (host.__current, set by swapContent) so an update landing mid-swap
+    // patches the node actually on its way in, not the one on its way out —
+    // otherwise the real incoming node is orphaned on screen as a permanent
+    // absolutely-positioned ghost (fix-round-1 finding).
     const fresh = renderContentFor(r.contentId, r.presence);
-    if(islandBody.firstElementChild) islandBody.replaceChild(fresh, islandBody.firstElementChild);
+    const current = currentSwapTarget(islandBody);
+    if(current) islandBody.replaceChild(fresh, current);
     else islandBody.appendChild(fresh);
+    islandBody.__current = fresh;
     updateCaps(r.contentId);
   }
   setSurface(r.surface);

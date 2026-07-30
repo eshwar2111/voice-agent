@@ -24,11 +24,18 @@
 #island .cap-btn:hover{color:var(--ink)}
 /* Settings' second entry point (see index.html): while any live activity
    owns the trailing cap, this row surfaces the same gear so the Control
-   Center is still reachable by mouse. Only at presence="peek" (hover always
-   promotes there — state.js) and only when the idle cap isn't already
-   showing its own gear, so the two never render at once. */
+   Center is still reachable by mouse. Shown at presence="peek" (hover
+   always promotes there — state.js) unless the idle cap already has its
+   own gear, so the two never render at once; ALSO shown at
+   presence="expanded", which is exclusively trust.approval (state.js
+   forces it unconditionally, with no hover branch, so an open approval
+   never reaches 'peek' on its own) — fix-round-1 finding: without this,
+   settings was unreachable by mouse for the entire time an approval sat
+   open, which trust.approval's deliberate no-ttl design means could be
+   indefinite. resolve() itself is untouched; this is CSS-only. */
 #island .peek-actions{display:none; flex:0 0 auto; width:28px; height:28px; margin:0 8px 0 2px}
-#island[data-presence="peek"]:not([data-content="idle"]) .peek-actions{display:grid}
+#island[data-presence="peek"]:not([data-content="idle"]) .peek-actions,
+#island[data-presence="expanded"] .peek-actions{display:grid}
 #island .body{
   flex:1 1 auto; min-width:0; position:relative; height:100%;
   display:flex; align-items:center;
