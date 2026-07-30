@@ -286,9 +286,13 @@ window.__agent.on('surface:open', d => {
   else if(d.id==='approve'){
     /* Explicit discriminator, not JSON.parse sniffing: RequestConfirmationCard
        sends {card}, RequestConfirmation sends {text}. Never infer structure
-       from string contents on the security-approval path. */
+       from string contents on the security-approval path. If neither is
+       present (shouldn't happen from either current caller), refuse to open
+       an unreadable approval panel rather than rendering the literal word
+       "undefined" for the user to approve blind. */
     if(d.card!==undefined) showConfirmCard(d.card);
-    else showConfirm(d.text);
+    else if(d.text!==undefined) showConfirm(d.text);
+    else { jlog('approve payload missing card and text'); resolveConfirm(false); }
   }
 });
 window.__agent.on('activity:update', d => {

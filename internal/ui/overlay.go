@@ -156,8 +156,19 @@ func ShowOutputOverlay(text string) {
 	bridge.Push("surface:open", map[string]any{"id": "result", "text": text})
 }
 
+// canDeliverConfirmation reports whether an approve prompt can actually reach
+// the WebView. It is pure (no globals) so it can be unit tested directly: the
+// real bug this guards was a real window (w != nil) with no bridge yet
+// (bridge == nil, the window between the two assignments in StartOverlay),
+// which used to let RequestConfirmation(Card) push into a nil Bridge and then
+// block forever on <-confirmChan — a hung plan step with no error and no UI.
+func canDeliverConfirmation(hasWindow, hasBridge bool) bool {
+	return hasWindow && hasBridge
+}
+
 func RequestConfirmationCard(cardJSON string) bool {
-	if w == nil {
+	if !canDeliverConfirmation(w != nil, bridge != nil) {
+		log.Printf("[ui] confirmation requested before bridge ready — denying")
 		return false
 	}
 	bridge.Push("surface:open", map[string]any{"id": "approve", "card": cardJSON})
@@ -165,7 +176,8 @@ func RequestConfirmationCard(cardJSON string) bool {
 }
 
 func RequestConfirmation(msg string) bool {
-	if w == nil {
+	if !canDeliverConfirmation(w != nil, bridge != nil) {
+		log.Printf("[ui] confirmation requested before bridge ready — denying")
 		return false
 	}
 	bridge.Push("surface:open", map[string]any{"id": "approve", "text": msg})
