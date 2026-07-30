@@ -4,7 +4,9 @@
 
 **Goal:** Replace the resize-driven WebView overlay with a Dynamic Island that morphs fluidly between five sizes, reacts to hover, and swells on its own when the agent or an integration has something to say.
 
-**Architecture:** One full-screen transparent WebView window created once and never resized. All shape changes are CSS animations inside that canvas. Windows click-through is handled by toggling `WS_EX_TRANSPARENT` from a Go cursor-poll loop against a rect registry published by JS. Go→JS becomes a single typed JSON envelope instead of string-interpolated `w.Eval` calls.
+**Architecture:** One transparent WebView window at a fixed 1200×800, created once and never resized (it may be *moved*, which does not relayout WebView2). All shape changes are CSS animations inside it. `SetWindowRgn` clips the window to the shape of whatever is visible, so pixels outside are not the window and clicks reach the desktop by definition — no click-through flag is involved. Go→JS becomes a single typed JSON envelope instead of string-interpolated `w.Eval` calls.
+
+> **Revised 2026-07-29.** Task 0's spike FAILED: `WS_EX_TRANSPARENT` did not make a WebView2-hosted window click-through. The plan moved to region-shaped windows. Tasks 1 and 2 are already complete and survive the change (Task 2 partially — see Task 3). Task 0 is closed.
 
 **Tech Stack:** Go 1.26, `webview/webview_go` (WebView2), `lxn/win` for Win32, `go:embed` + `net/http` loopback for assets, vanilla ES modules + CSS (no frameworks, no CDN — must work fully offline).
 
@@ -23,6 +25,8 @@
 - All git commit messages end with:
   `Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>`
 - Rect coordinates crossing the JS→Go boundary are **CSS pixels relative to the window's top-left**. Go multiplies by `dpiScale()` to get physical pixels. Never mix the two.
+- The window is **never resized** after creation. `SetWindowPos` may only be called with `SWP_NOSIZE`. Resizing forces a WebView2 relayout, which is the jank this whole design exists to avoid.
+- A region of zero total area would make the entire UI invisible. Region application must refuse an empty shape list and keep the previous region.
 
 ---
 
@@ -139,7 +143,19 @@ git commit -m "docs(sp5): record WS_EX_TRANSPARENT click-through spike result
 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 ```
 
-**SPIKE RESULT (fill in):** _not yet run_
+**SPIKE RESULT: FAIL.** v1 flipped `WS_EX_TRANSPARENT` without a following
+`SetWindowPos(SWP_FRAMECHANGED)`, so the window never re-read its frame and both phases behaved
+identically. v2 fixed that and tested three modes — baseline, `WS_EX_TRANSPARENT`, and
+`WS_EX_LAYERED | WS_EX_TRANSPARENT` (with `SetLayeredWindowAttributes`) — each applied with
+`SWP_FRAMECHANGED`. Clicks were still swallowed. Conclusion: this flag is not a viable
+click-through mechanism for a WebView2-hosted window here.
+
+Switching UI frameworks was considered and rejected: Electron's `setIgnoreMouseEvents`, Tauri's
+`set_ignore_cursor_events`, and Wails' `SetIgnoreMouseEvents` all wrap the same Win32 flag.
+
+**Resolution:** adopt the spec's documented fallback — region-shaped windows (spec §1). Clicks
+fall through because the pixels are not part of the window, so no flag is involved. `hit()` from
+Task 2 becomes dead code and is removed in Task 3. `cmd/spike-clickthrough` is deleted.
 
 ---
 
@@ -500,7 +516,7 @@ package ui
 import "sync"
 
 // Rect is an interactive region in CSS pixels, relative to the canvas
-// window's top-left corner. JS publishes these via setHitRects.
+// window's top-left corner. JS publishes these via setRegionRects.
 type Rect struct {
 	X float64 `json:"x"`
 	Y float64 `json:"y"`
@@ -591,175 +607,383 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 ---
 
-### Task 3: Full-screen transparent canvas + click-through wiring
+### Task 3: Fixed-size window + region shaping
 
-Turn the window into the canvas, wire the cursor loop, and delete the resize machinery. After this task the app looks the same but is structurally different — every surface is positioned by CSS inside a full-screen window.
+Turn the window into a fixed 1200×800 transparent surface clipped by `SetWindowRgn`, and delete the resize machinery. After this task the app looks the same but is structurally different: every surface is positioned by CSS, and the window's *shape* comes from a region rather than its size.
 
 **Files:**
 - Create: `internal/ui/canvas.go`
-- Modify: `internal/ui/overlay.go` — delete `resizeWindow` (`:217-252`), the `defaultW`/`defaultH` consts (`:60-64`), the `callResize` binding (`:328-330`), the `procCreateRoundRectRgn`/`procSetWindowRgn`/`procRedrawWindow`/`procGetWindowRect` lazy procs (`:27-31`), and the `time.Sleep(250ms)` startup block (`:367-381`)
-- Modify: `internal/ui/assets/index.html` — surfaces become absolutely positioned; `sizeTo()` publishes rects instead of resizing
+- Create: `internal/ui/region.go`
+- Create: `internal/ui/region_test.go`
+- Modify: `internal/ui/hittest.go` — delete `hit()` and `Point` (dead under the region design); keep `Rect` and `rectRegistry`
+- Modify: `internal/ui/hittest_test.go` — delete `TestHit`; keep both registry tests
+- Modify: `internal/ui/overlay.go` — delete `resizeWindow` (`:217-252`), `defaultW`/`defaultH` (`:60-64`), the `callResize` binding (`:328-330`), `procRedrawWindow` and `procGetWindowRect` lazy procs, and the `time.Sleep(250ms)` startup block (`:367-381`). **Keep** `procCreateRoundRectRgn` and `procSetWindowRgn` — `region.go` uses them.
+- Modify: `internal/ui/assets/index.html` — surfaces become absolutely positioned; `sizeTo()` publishes region rects instead of resizing
 
 **Interfaces:**
-- Consumes: `Rect`, `newRectRegistry`, `hit` (Task 2); `startAssetServer` (Task 1)
+- Consumes: `Rect`, `newRectRegistry` (Task 2); `startAssetServer` (Task 1)
 - Produces:
   - `func newCanvas(w webview.WebView) *canvas`
-  - `func (c *canvas) Attach()` — applies styles/geometry; call once from `uiReady`-equivalent
-  - `func (c *canvas) SetRects(rects []Rect)`
-  - `func (c *canvas) Start(ctx context.Context)` — begins the cursor loop
-  - `var canvasCSSWidth, canvasCSSHeight float64` — work-area size in CSS px, read by later tasks
+  - `func (c *canvas) Attach()` — creates window geometry and styles; call once on `uiReady`
+  - `func (c *canvas) SetRects(rects []Rect)` — publishes rects and applies the region
+  - `type physRect struct { X, Y, W, H, R int32 }`
+  - `func regionShapes(rects []Rect, radius, inflate, scale float64) []physRect`
+  - `var canvasCSSWidth, canvasCSSHeight float64`
 
-- [ ] **Step 1: Write `canvas.go`**
+**Carried finding from Task 2 (ledger):** `rectRegistry.Get()` returns the internal slice by reference. It is race-safe today only because `Set()` always assigns a new slice header. This task adds the first real consumer — **treat the returned slice as read-only; never sort or mutate it in place.**
+
+- [ ] **Step 1: Write the failing test**
+
+```go
+// internal/ui/region_test.go
+package ui
+
+import "testing"
+
+func TestRegionShapes(t *testing.T) {
+	island := Rect{X: 470, Y: 10, W: 260, H: 40} // compact island in a 1200-wide window
+
+	cases := []struct {
+		name    string
+		rects   []Rect
+		radius  float64
+		inflate float64
+		scale   float64
+		want    []physRect
+	}{
+		{
+			name: "single rect at 100% with no inflation",
+			rects: []Rect{island}, radius: 20, inflate: 0, scale: 1.0,
+			want: []physRect{{X: 470, Y: 10, W: 260, H: 40, R: 20}},
+		},
+		{
+			// Inflation grows the shape in all four directions, so origin moves
+			// back by `inflate` and size grows by 2*inflate.
+			name: "2px inflation at 100%",
+			rects: []Rect{island}, radius: 20, inflate: 2, scale: 1.0,
+			want: []physRect{{X: 468, Y: 8, W: 264, H: 44, R: 22}},
+		},
+		{
+			name: "125% scale applies to position, size and radius",
+			rects: []Rect{island}, radius: 20, inflate: 0, scale: 1.25,
+			want: []physRect{{X: 587, Y: 12, W: 325, H: 50, R: 25}},
+		},
+		{
+			name: "150% scale",
+			rects: []Rect{island}, radius: 20, inflate: 0, scale: 1.5,
+			want: []physRect{{X: 705, Y: 15, W: 390, H: 60, R: 30}},
+		},
+		{
+			name: "two rects both converted",
+			rects: []Rect{island, {X: 0, Y: 600, W: 400, H: 150}},
+			radius: 20, inflate: 0, scale: 1.0,
+			want: []physRect{
+				{X: 470, Y: 10, W: 260, H: 40, R: 20},
+				{X: 0, Y: 600, W: 400, H: 150, R: 20},
+			},
+		},
+		{
+			name: "zero-area rects are dropped, not emitted",
+			rects: []Rect{island, {X: 5, Y: 5, W: 0, H: 40}, {X: 5, Y: 5, W: 100, H: 0}},
+			radius: 20, inflate: 0, scale: 1.0,
+			want: []physRect{{X: 470, Y: 10, W: 260, H: 40, R: 20}},
+		},
+		{
+			name: "no rects yields no shapes",
+			rects: nil, radius: 20, inflate: 2, scale: 1.0,
+			want: []physRect{},
+		},
+	}
+
+	for _, tc := range cases {
+		got := regionShapes(tc.rects, tc.radius, tc.inflate, tc.scale)
+		if len(got) != len(tc.want) {
+			t.Errorf("%s: got %d shapes, want %d (%v)", tc.name, len(got), len(tc.want), got)
+			continue
+		}
+		for i := range got {
+			if got[i] != tc.want[i] {
+				t.Errorf("%s: shape %d = %+v, want %+v", tc.name, i, got[i], tc.want[i])
+			}
+		}
+	}
+}
+
+// A region of zero area would make the whole UI invisible — worse than any
+// click-through bug. regionShapes must never emit a degenerate shape list that
+// the caller could apply blindly.
+func TestRegionShapesNeverEmitsZeroArea(t *testing.T) {
+	got := regionShapes([]Rect{{X: 10, Y: 10, W: 0, H: 0}}, 20, 0, 1.0)
+	if len(got) != 0 {
+		t.Fatalf("degenerate rect produced %d shapes, want 0 so the caller can refuse", len(got))
+	}
+	for _, s := range got {
+		if s.W <= 0 || s.H <= 0 {
+			t.Errorf("emitted zero-area shape %+v", s)
+		}
+	}
+}
+
+// Inflation must not be able to invert a rect into negative territory.
+func TestRegionShapesInflationClampsAtWindowEdge(t *testing.T) {
+	got := regionShapes([]Rect{{X: 0, Y: 0, W: 100, H: 40}}, 10, 6, 1.0)
+	if len(got) != 1 {
+		t.Fatalf("got %d shapes, want 1", len(got))
+	}
+	if got[0].X < 0 || got[0].Y < 0 {
+		t.Errorf("inflation pushed origin negative: %+v — region coords are window-relative "+
+			"and must never be negative", got[0])
+	}
+}
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+```bash
+export PATH="$PATH:/c/w64devkit/bin"
+go test ./internal/ui/ -run TestRegion -v
+```
+
+Expected: FAIL — `undefined: regionShapes`, `undefined: physRect`
+
+- [ ] **Step 3: Write `region.go`**
+
+```go
+// internal/ui/region.go
+package ui
+
+import (
+	"log"
+	"sync"
+
+	"github.com/lxn/win"
+)
+
+// physRect is a rounded rectangle in PHYSICAL pixels, relative to the window's
+// top-left — exactly what CreateRoundRectRgn consumes.
+type physRect struct {
+	X, Y, W, H int32
+	R          int32 // corner radius
+}
+
+// regionShapes converts published CSS-pixel rects into physical-pixel rounded
+// rects for CreateRoundRectRgn.
+//
+// inflate grows every shape by `inflate` CSS px on all four sides. It absorbs
+// DPI rounding so the region is never a hair smaller than what CSS painted,
+// which would show as a clipped edge on the island.
+//
+// Degenerate rects are dropped rather than emitted: a zero-area region would
+// make the entire UI invisible, so the caller must be able to detect "nothing
+// to apply" by getting an empty slice back.
+func regionShapes(rects []Rect, radius, inflate, scale float64) []physRect {
+	out := make([]physRect, 0, len(rects))
+	for _, r := range rects {
+		if r.W <= 0 || r.H <= 0 {
+			continue
+		}
+		x := (r.X - inflate) * scale
+		y := (r.Y - inflate) * scale
+		w := (r.W + 2*inflate) * scale
+		h := (r.H + 2*inflate) * scale
+		// Region coordinates are window-relative and must never go negative,
+		// or the shape silently loses its left/top edge.
+		if x < 0 {
+			w += x
+			x = 0
+		}
+		if y < 0 {
+			h += y
+			y = 0
+		}
+		if w <= 0 || h <= 0 {
+			continue
+		}
+		out = append(out, physRect{
+			X: int32(x), Y: int32(y), W: int32(w), H: int32(h),
+			R: int32((radius + inflate) * scale),
+		})
+	}
+	return out
+}
+
+// regionApplier owns the window's current shape.
+type regionApplier struct {
+	mu   sync.Mutex
+	hwnd win.HWND
+}
+
+// Apply clips the window to the union of shapes.
+//
+// Refuses an empty shape list and leaves the previous region in place: with a
+// region-shaped window, an empty region means the UI vanishes entirely, which
+// is a far worse failure than anything it could be guarding against.
+func (ra *regionApplier) Apply(shapes []physRect) {
+	ra.mu.Lock()
+	defer ra.mu.Unlock()
+	if ra.hwnd == 0 {
+		return
+	}
+	if len(shapes) == 0 {
+		log.Printf("[ui/region] refusing empty region — keeping previous shape")
+		return
+	}
+
+	var combined win.HRGN
+	for _, s := range shapes {
+		hrgn, _, _ := procCreateRoundRectRgn.Call(
+			uintptr(s.X), uintptr(s.Y),
+			uintptr(s.X+s.W+1), uintptr(s.Y+s.H+1),
+			uintptr(s.R*2), uintptr(s.R*2))
+		if hrgn == 0 {
+			continue
+		}
+		if combined == 0 {
+			combined = win.HRGN(hrgn)
+			continue
+		}
+		win.CombineRgn(combined, combined, win.HRGN(hrgn), win.RGN_OR)
+		win.DeleteObject(win.HGDIOBJ(hrgn))
+	}
+	if combined == 0 {
+		log.Printf("[ui/region] all CreateRoundRectRgn calls failed — keeping previous shape")
+		return
+	}
+
+	// SetWindowRgn takes ownership of the region on success; do not delete it.
+	procSetWindowRgn.Call(uintptr(ra.hwnd), uintptr(combined), 1)
+}
+```
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+```bash
+export PATH="$PATH:/c/w64devkit/bin"
+go test ./internal/ui/ -run TestRegion -v
+```
+
+Expected: PASS (3 tests)
+
+- [ ] **Step 5: Remove the dead click-through code**
+
+`hit()` and `Point` in `internal/ui/hittest.go` were built for the abandoned `WS_EX_TRANSPARENT` design and now have no caller. Delete both, and delete `TestHit` from `internal/ui/hittest_test.go`. Keep `Rect`, `rectRegistry`, `newRectRegistry`, and both registry tests — the region path uses all of them.
+
+Update the doc comment on `newRectRegistry` so it describes the region fallback rather than click-through:
+
+```go
+// newRectRegistry builds a registry for a canvas cssWidth CSS pixels wide.
+//
+// The fallback matters more here than it looks: the window is clipped to the
+// region built from these rects, so an empty registry would clip the UI away
+// entirely. It covers the island's largest presence — sheet, 720x520 —
+// centered and top-anchored, so a JS failure leaves a usable window rather
+// than an invisible one.
+```
+
+Run the remaining tests:
+
+```bash
+export PATH="$PATH:/c/w64devkit/bin"
+go test ./internal/ui/ -v
+```
+
+Expected: PASS — `TestAssetServer*` (3), `TestRectRegistry*` (2), `TestRegion*` (3). `TestHit` is gone.
+
+- [ ] **Step 6: Write `canvas.go`**
 
 ```go
 // internal/ui/canvas.go
 package ui
 
 import (
-	"context"
 	"log"
-	"time"
 
 	"github.com/lxn/win"
 	webview "github.com/webview/webview_go"
 )
 
-// canvas owns the single full-screen transparent WebView window.
+// Fixed window size in CSS pixels. 1200x800 is the smallest box that contains
+// the largest surface (Control Center, 1160x760).
+const (
+	canvasW = 1200.0
+	canvasH = 800.0
+)
+
+var canvasCSSWidth, canvasCSSHeight float64 = canvasW, canvasH
+
+// canvas owns the single transparent WebView window.
 //
-// The window is created once at work-area size and NEVER resized. Every visual
-// size change is a CSS animation inside it. That is what makes the island able
-// to morph: an animation cannot cross a window boundary, so the boundary has to
-// be far away and stationary.
+// The window is created once and NEVER resized — resizing forces a WebView2
+// relayout, which is the jank this design exists to avoid. It may be MOVED
+// (SetWindowPos with SWP_NOSIZE), which does not relayout.
 //
-// The cost is click-through. A full-screen invisible window would eat every
-// click on the desktop, so WS_EX_TRANSPARENT is ON by default and cleared only
-// while the cursor is over a region JS has declared interactive.
+// Its visible shape comes from SetWindowRgn, not from its size. Pixels outside
+// the region are not part of the window, so clicks reach the desktop by
+// definition — there is no click-through flag involved.
 type canvas struct {
-	w    webview.WebView
-	hwnd win.HWND
-	reg  *rectRegistry
-
-	originX, originY int32   // window top-left in screen physical px
-	scale            float64 // DPI scale at attach time
-
-	clickThrough bool
+	w      webview.WebView
+	hwnd   win.HWND
+	reg    *rectRegistry
+	region *regionApplier
+	scale  float64
 }
 
-// Work-area size in CSS pixels. Read by JS via a binding so layout math agrees
-// on both sides of the bridge.
-var canvasCSSWidth, canvasCSSHeight float64
-
 func newCanvas(w webview.WebView) *canvas {
-	return &canvas{w: w, clickThrough: true}
+	return &canvas{w: w, region: &regionApplier{}}
 }
 
 // Attach applies window styles and geometry. Must run on the WebView thread.
 func (c *canvas) Attach() {
 	c.hwnd = win.HWND(c.w.Window())
 	hwndGlobal = c.hwnd
+	c.region.hwnd = c.hwnd
 
 	style := win.GetWindowLong(c.hwnd, win.GWL_STYLE)
 	win.SetWindowLong(c.hwnd, win.GWL_STYLE, style&^(win.WS_CAPTION|win.WS_THICKFRAME))
 
 	ex := win.GetWindowLong(c.hwnd, win.GWL_EXSTYLE)
 	win.SetWindowLong(c.hwnd, win.GWL_EXSTYLE,
-		ex|win.WS_EX_TOPMOST|win.WS_EX_TOOLWINDOW|win.WS_EX_NOACTIVATE|win.WS_EX_TRANSPARENT)
-
-	// Work area excludes the taskbar, so the canvas never sits under it.
-	var wa win.RECT
-	if !win.SystemParametersInfo(win.SPI_GETWORKAREA, 0, unsafePtr(&wa), 0) {
-		wa = win.RECT{Left: 0, Top: 0,
-			Right: win.GetSystemMetrics(win.SM_CXSCREEN),
-			Bottom: win.GetSystemMetrics(win.SM_CYSCREEN)}
-	}
-	c.originX, c.originY = wa.Left, wa.Top
-	pw, ph := wa.Right-wa.Left, wa.Bottom-wa.Top
-
-	win.SetWindowPos(c.hwnd, win.HWND_TOPMOST, wa.Left, wa.Top, pw, ph, win.SWP_NOACTIVATE)
+		ex|win.WS_EX_TOPMOST|win.WS_EX_TOOLWINDOW|win.WS_EX_NOACTIVATE)
 
 	c.scale = dpiScale()
-	canvasCSSWidth = float64(pw) / c.scale
-	canvasCSSHeight = float64(ph) / c.scale
+	pw := int32(canvasW * c.scale)
+	ph := int32(canvasH * c.scale)
+	sw := win.GetSystemMetrics(win.SM_CXSCREEN)
+	x := (sw - pw) / 2
+
+	win.SetWindowPos(c.hwnd, win.HWND_TOPMOST, x, 0, pw, ph,
+		win.SWP_NOACTIVATE|win.SWP_FRAMECHANGED)
+
 	c.reg = newRectRegistry(canvasCSSWidth)
+	// Apply the fallback region immediately so the window has a shape before JS
+	// publishes anything. Without this the whole 1200x800 box is clickable.
+	c.applyRegion()
 
-	log.Printf("[ui/canvas] %dx%d physical at (%d,%d), dpiScale=%.2f, css=%.0fx%.0f",
-		pw, ph, wa.Left, wa.Top, c.scale, canvasCSSWidth, canvasCSSHeight)
+	log.Printf("[ui/canvas] fixed %.0fx%.0f css (%dx%d physical) at x=%d, dpiScale=%.2f",
+		canvasW, canvasH, pw, ph, x, c.scale)
 }
 
+// SetRects records the currently visible surface rects and reshapes the window.
+// The slice from Get() is read-only — never sort or mutate it in place.
 func (c *canvas) SetRects(rects []Rect) {
-	if c.reg != nil {
-		c.reg.Set(rects)
-	}
-}
-
-// Start runs the cursor poll. ~60Hz is enough that entering the island never
-// feels laggy (worst case one tick, ~16ms) and cheap enough to ignore: a
-// GetCursorPos call plus a handful of float comparisons.
-func (c *canvas) Start(ctx context.Context) {
-	go func() {
-		t := time.NewTicker(16 * time.Millisecond)
-		defer t.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-t.C:
-				c.tick()
-			}
-		}
-	}()
-}
-
-func (c *canvas) tick() {
-	if c.hwnd == 0 || c.reg == nil {
+	if c.reg == nil {
 		return
 	}
-	var pt win.POINT
-	if !win.GetCursorPos(&pt) {
-		return
-	}
-	rel := Point{X: pt.X - c.originX, Y: pt.Y - c.originY}
-	inside := hit(c.reg.Get(), rel, c.scale)
-
-	// Only touch the window when the answer changes — SetWindowLong 60x/sec
-	// would be wasteful and can perturb focus handling.
-	if inside == !c.clickThrough {
-		return
-	}
-	want := !inside
-	c.clickThrough = want
-	c.w.Dispatch(func() { c.applyClickThrough(want) })
+	c.reg.Set(rects)
+	c.applyRegion()
 }
 
-func (c *canvas) applyClickThrough(on bool) {
-	ex := win.GetWindowLong(c.hwnd, win.GWL_EXSTYLE)
-	if on {
-		win.SetWindowLong(c.hwnd, win.GWL_EXSTYLE, ex|win.WS_EX_TRANSPARENT)
-	} else {
-		win.SetWindowLong(c.hwnd, win.GWL_EXSTYLE, ex&^win.WS_EX_TRANSPARENT)
-	}
+func (c *canvas) applyRegion() {
+	const (
+		regionRadius  = 26.0 // largest island radius; over-rounding is invisible
+		regionInflate = 2.0  // absorbs DPI rounding so no painted edge is clipped
+	)
+	shapes := regionShapes(c.reg.Get(), regionRadius, regionInflate, c.scale)
+	c.region.Apply(shapes)
 }
 ```
 
-Add the small helper (Go forbids `unsafe.Pointer` conversions inline in that call site cleanly):
-
-```go
-// at the bottom of canvas.go
-func unsafePtr(r *win.RECT) unsafe.Pointer { return unsafe.Pointer(r) }
-```
-
-and add `"unsafe"` to the imports.
-
-- [ ] **Step 2: Build to confirm it compiles**
-
-```bash
-export PATH="$PATH:/c/w64devkit/bin"
-go build ./internal/ui/
-```
-
-Expected: no output. If `win.SystemParametersInfo` has a different signature in this `lxn/win` version, check it with `go doc github.com/lxn/win.SystemParametersInfo` and adapt — do not silently drop the work-area lookup, since falling back to full screen puts the canvas under the taskbar.
-
-- [ ] **Step 3: Rewire `overlay.go` startup**
+- [ ] **Step 7: Rewire `overlay.go` startup**
 
 Replace the `go func(){ time.Sleep(250ms) ... }()` block (currently `:367-381`) with a canvas held in a package var, attached from a new `uiReady` binding:
 
@@ -769,26 +993,21 @@ var canvasGlobal *canvas
 // ...inside StartOverlay, alongside the other bindings:
 	canvasGlobal = newCanvas(w)
 	w.Bind("uiReady", func() {
-		w.Dispatch(func() {
-			canvasGlobal.Attach()
-			canvasGlobal.Start(ctx)
-		})
+		w.Dispatch(func() { canvasGlobal.Attach() })
 	})
 	w.Bind("getCanvasSize", func() map[string]float64 {
 		return map[string]float64{"w": canvasCSSWidth, "h": canvasCSSHeight}
 	})
-	w.Bind("setHitRects", func(rects []Rect) {
-		canvasGlobal.SetRects(rects)
+	w.Bind("setRegionRects", func(rects []Rect) {
+		w.Dispatch(func() { canvasGlobal.SetRects(rects) })
 	})
 ```
 
-Delete the `callResize` binding entirely. Delete `resizeWindow`, `defaultW`, `defaultH`, and the four now-unused lazy procs. Keep `dpiScale` and `procGetDpiForWindow`.
+Delete the `callResize` binding entirely. Delete `resizeWindow`, `defaultW`, `defaultH`, `procRedrawWindow`, and `procGetWindowRect`. **Keep** `dpiScale`, `procGetDpiForWindow`, `procCreateRoundRectRgn`, and `procSetWindowRgn`.
 
-- [ ] **Step 4: Convert the page to canvas layout**
+- [ ] **Step 8: Convert the page to fixed-window layout**
 
-In `internal/ui/assets/index.html`:
-
-Replace the `html,body` rule so the page is a full-screen stage:
+In `internal/ui/assets/index.html`, replace the `html,body` rule:
 
 ```css
 html,body{width:100%;height:100%;overflow:hidden;background:transparent;color:var(--ink);
@@ -796,7 +1015,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:transparent;color:va
 #shell{position:fixed;inset:0}
 ```
 
-Every surface currently uses `position:absolute;inset:0` and relied on the *window* being its size. Anchor them explicitly instead. Replace the `.pill`, `.panel`, `.card`, and `#dashboard` positioning rules:
+Every surface currently uses `position:absolute;inset:0` and relied on the *window* being its size. Anchor them explicitly instead:
 
 ```css
 .pill{position:fixed;top:10px;left:50%;transform:translateX(-50%);
@@ -812,28 +1031,30 @@ Every surface currently uses `position:absolute;inset:0` and relied on the *wind
   width:400px;height:150px;z-index:4;border-radius:22px;padding:17px 19px;
   text-align:left;display:none;flex-direction:column;justify-content:center}
 .card.shown{display:flex}
-#dashboard{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
+#dashboard{position:fixed;top:20px;left:50%;transform:translateX(-50%);
   width:1160px;height:760px;z-index:5;display:none;border-radius:26px;overflow:hidden}
 #dashboard.visible{display:grid;grid-template-columns:248px 1fr}
 ```
 
-Replace `sizeTo()` — it no longer resizes anything, it reports geometry:
+Replace `sizeTo()` — it no longer resizes anything, it reports the shape:
 
 ```js
-/* Publish every visible interactive region to Go. The cursor loop uses these
-   to decide whether the window swallows a click or lets it fall through to the
-   desktop. Called on every visibility change, never per animation frame. */
-function publishHitRects(){
+/* Publish every visible surface to Go, which unions them into the window
+   region. Anything not covered by these rects is not part of the window at all,
+   so clicks there land on the desktop. Called on visibility changes, and on
+   morph start/settle from Task 6 — never per animation frame. */
+function publishRegionRects(){
   const rects=[];
   document.querySelectorAll('.pill, .panel.active, .card.shown, #dashboard.visible').forEach(el=>{
-    if(el.offsetParent===null && getComputedStyle(el).display==='none') return;
+    const cs=getComputedStyle(el);
+    if(cs.display==='none') return;
     const r=el.getBoundingClientRect();
     if(r.width>0 && r.height>0) rects.push({x:r.left,y:r.top,w:r.width,h:r.height});
   });
-  jlog('hitRects '+rects.length);
-  window.setHitRects && window.setHitRects(rects);
+  jlog('regionRects '+rects.length);
+  window.setRegionRects && window.setRegionRects(rects);
 }
-function sizeTo(_v){ publishHitRects(); }
+function sizeTo(_v){ publishRegionRects(); }
 ```
 
 At the end of the script, replace the boot line with:
@@ -841,12 +1062,12 @@ At the end of the script, replace the boot line with:
 ```js
 jlog('overlay loaded');loadSettings();updateUI('idle','Ready');
 window.uiReady && window.uiReady();
-requestAnimationFrame(publishHitRects);
+requestAnimationFrame(publishRegionRects);
 ```
 
-Also call `publishHitRects()` at the end of `refreshPillVisibility()`, `setPanel()`, `openSettings()`, `closeSettings()`, and `hideSuggestion()` so no visibility change goes unreported.
+Also call `publishRegionRects()` at the end of `refreshPillVisibility()`, `setPanel()`, `openSettings()`, `closeSettings()`, and `hideSuggestion()` so no visibility change leaves the region stale.
 
-- [ ] **Step 5: Build and verify by hand**
+- [ ] **Step 9: Build and verify by hand**
 
 ```bash
 export PATH="$PATH:/c/w64devkit/bin"
@@ -856,27 +1077,36 @@ go build -ldflags="-s -w -H windowsgui" -o voice-agent.exe ./cmd/app
 
 Verify all of:
 
-1. Pill appears top-center and is clickable.
-2. **Click on the desktop well away from the pill — it must reach the desktop**, not the overlay. Open a browser and click a tab directly below the pill's row.
-3. The gear opens the Control Center centered on screen; Esc closes it.
-4. Typing in the command bar works (focus still transfers).
-5. `voice-agent.log` shows `[ui/canvas]` with sane dimensions and a stream of `hitRects N` lines on state changes only — **not** continuously.
+1. The pill appears top-center and is clickable.
+2. **Click on the desktop beside and below the pill — it must reach the desktop.** Open a browser and click a tab in the row beside the pill. This is the check the whole redesign exists for.
+3. The pill is a clean capsule with no square transparent halo around it (region radius correct).
+4. The gear opens the Control Center; it is fully visible and not clipped at any edge.
+5. Esc closes it and the region returns to the pill shape — no leftover invisible clickable box.
+6. `voice-agent.log` shows `[ui/canvas] fixed 1200x800` with a sane physical size, and `regionRects N` lines on state changes only — **not** continuously.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 10: Delete the dead spike**
 
 ```bash
-git add internal/ui/canvas.go internal/ui/overlay.go internal/ui/assets/index.html
-git commit -m "feat(ui): full-screen transparent canvas with click-through hit-testing
+rm -rf cmd/spike-clickthrough
+```
 
-Window is created once at work-area size and never resized; surfaces are
-positioned by CSS. WS_EX_TRANSPARENT is toggled by a 60Hz cursor loop
-against rects published from JS. Deletes resizeWindow, the VIEW size map,
-callResize, and the RedrawWindow ghost-buster.
+- [ ] **Step 11: Commit**
+
+```bash
+git add internal/ui/canvas.go internal/ui/region.go internal/ui/region_test.go \
+        internal/ui/hittest.go internal/ui/hittest_test.go \
+        internal/ui/overlay.go internal/ui/assets/index.html
+git rm -r --cached cmd/spike-clickthrough 2>/dev/null || true
+git commit -m "feat(ui): fixed-size window shaped by SetWindowRgn
+
+Window is created once at 1200x800 and never resized; its visible shape is a
+region unioned from the rects JS publishes, so clicks outside it reach the
+desktop without any WS_EX_TRANSPARENT flag (that spike failed). Deletes
+resizeWindow, the VIEW size map, callResize, the RedrawWindow ghost-buster,
+and hit()/Point from the abandoned click-through design.
 
 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 ```
-
----
 
 ### Task 4: Typed Go→JS bridge
 
@@ -1180,7 +1410,7 @@ The island's two axes — presence (geometry) and content — plus the springs t
 - Modify: `internal/ui/assets/index.html`
 
 **Interfaces:**
-- Consumes: `window.__agent.on` (Task 4); `publishHitRects` (Task 3)
+- Consumes: `window.__agent.on` (Task 4); `publishRegionRects` (Task 3)
 - Produces:
   - `state.js`: `export const PRESENCE_SIZES`, `export function resolve(store)` → `{presence, contentId, surface}`, `export function topActivity(activities)`
   - `motion.js`: `export function morphTo(el, presence, opts)`, `export function swapContent(el, renderFn)`
@@ -1481,7 +1711,7 @@ Replace the `<div class="pill glass" id="statusPill">` block with:
 
 Add to `<head>`: `<link rel="stylesheet" href="css/island.css"/>`, and change the script tag to `<script type="module" src="js/main.js"></script>`. Inline the icon sprite as the first child of `<body>` (fetch-free — it must be in the document, not linked, so `<use href="#i-mic">` resolves).
 
-Move the existing inline script into `internal/ui/assets/js/main.js`, add `import` lines for `state.js`/`motion.js`, and expose the functions the bridge handlers call (`updateUI`, `showCommand`, `showCard`, `showConfirmCard`, `showSuggestion`, `publishHitRects`) on `window` — ES modules do not create globals, and the `onclick=` attributes in the markup need them.
+Move the existing inline script into `internal/ui/assets/js/main.js`, add `import` lines for `state.js`/`motion.js`, and expose the functions the bridge handlers call (`updateUI`, `showCommand`, `showCard`, `showConfirmCard`, `showSuggestion`, `publishRegionRects`) on `window` — ES modules do not create globals, and the `onclick=` attributes in the markup need them.
 
 Wire the store and the render loop:
 
@@ -1494,11 +1724,32 @@ const store = { surface:null, activities:[], agentState:'idle',
                 hover:false, idleSince:Date.now(), now:Date.now() };
 let applied = { presence:null, contentId:null };
 
+/* The region must never be smaller than what CSS is painting at any instant of
+   a morph, or the island gets visibly clipped mid-animation. Rather than
+   animating the region in lockstep (which needs per-frame IPC or the easing
+   curve duplicated in Go), publish the BOUNDING BOX of the from- and to-shapes
+   for the duration, then the exact shape once it settles. Two calls, not sixty.
+
+   Cost: for the ~460ms of a grow, the surplus area is transparent window that
+   eats clicks. Bounded, brief, and confined to where the island is about to be. */
+function unionRegionRect(fromPresence, toPresence){
+  const a = PRESENCE_SIZES[fromPresence], b = PRESENCE_SIZES[toPresence];
+  if(!a || !b) return null;
+  const r = island.getBoundingClientRect();
+  const cx = r.left + r.width/2, top = r.top;
+  const w = Math.max(a.w, b.w), h = Math.max(a.h, b.h);
+  return {x: cx - w/2, y: top, w, h};
+}
+
 export function rerender(){
   store.now = Date.now();
   const r = resolve(store);
   if(r.presence !== applied.presence){
-    morphTo(island, r.presence, publishHitRects);
+    // Widen the region FIRST, so the growing island is never clipped.
+    const u = unionRegionRect(applied.presence || r.presence, r.presence);
+    if(u) window.setRegionRects && window.setRegionRects([u]);
+    // ...then narrow it to the exact shape once the morph settles.
+    morphTo(island, r.presence, publishRegionRects);
     applied.presence = r.presence;
   }
   if(r.contentId !== applied.contentId){
@@ -1506,7 +1757,7 @@ export function rerender(){
     applied.contentId = r.contentId;
   }
   setSurface(r.surface);
-  publishHitRects();
+  publishRegionRects();
 }
 
 // Stub in this task; Task 7 replaces it with real surface routing. Defined now
@@ -1843,7 +2094,7 @@ Each surface module exports `render(payload)` returning a DOM node plus an `id`.
 - `approve.js` — `showConfirmCard` parsing (the `p.plan.steps` / `p.fields` logic), `resolveConfirm`
 - `controlcenter.js` — `loadSettings`, `persistSettings`, `toggleFlag`, `setConn`, `loadIntegrationStatusesDash`, `switchTab`, `openSettings`, `closeSettings`
 
-`main.js` keeps only the store, `rerender`, hover wiring, bridge handlers, `publishHitRects`, and `openSurface`/`closeSurface`.
+`main.js` keeps only the store, `rerender`, hover wiring, bridge handlers, `publishRegionRects`, and `openSurface`/`closeSurface`.
 
 - [ ] **Step 3: Route surfaces through the store**
 
@@ -1899,14 +2150,18 @@ Write the checklist with an outcome column filled in for each row:
 
 | # | Check | Pass criteria |
 |---|---|---|
-| 1 | Click-through | Click a browser tab directly under the island's row — the tab activates, the overlay does not |
+| 1 | Click-through | Click a browser tab directly beside the island's row — the tab activates, the overlay does not |
 | 2 | Click-through, dormant | Same with the island dormant; also verify the dormant island itself is still clickable |
+| 2a | No square halo | The island reads as a clean capsule — no rectangular dead zone around it swallowing clicks (region radius correct) |
+| 2b | Region releases | Open the Control Center, close it, then click where it was — the click reaches the desktop, no invisible box left behind |
+| 2c | Morph surplus | During a grow the surplus region eats clicks for ~460ms by design. Confirm it is not noticeable in normal use; if it is, reduce it by publishing the union later in the transition |
+| 2d | Shadow clipping (design decision) | Judge whether the region-clipped island looks too flat. If so, apply spec §1's fallback: inflate the region by the shadow radius (~20px) and accept a click-eating halo. Record the decision |
 | 3 | Hover latency | Cursor onto the island — peek begins with no perceptible delay |
 | 4 | Grow curve | Idle → peek overshoots slightly and settles; no visible step or clipping |
 | 5 | Shrink curve | Peek → compact does **not** bounce |
 | 6 | Content lag | On content change the shape moves first; text fades in after, never reflows mid-morph |
 | 7 | Cap permanence | With Spotify playing, hover: album art **slides**, does not blink out and back |
-| 8 | DPI 100 / 125 / 150 | Change scale, restart, verify island geometry and hit-testing at each |
+| 8 | DPI 100 / 125 / 150 | Change scale, restart, verify island geometry AND that the region still aligns with the painted edges at each (this is where the 2px inflation earns its keep) |
 | 9 | Reduced motion | Enable Windows "Show animations off"; all transitions become instant cuts, no broken layout |
 | 10 | Approval fail-closed | Trigger an approval, dismiss the island without answering → executor receives deny, no hang |
 | 11 | Approval no-TTL | Trigger an approval, wait 60s → still waiting, has not auto-denied |
