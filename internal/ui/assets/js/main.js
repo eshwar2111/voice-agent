@@ -5,8 +5,9 @@
 // directly via webview Eval (bare, not through window.__agent.recv) — must be
 // assigned to `window` explicitly below.
 
-import { resolve, PRESENCE_SIZES } from './state.js';
+import { resolve } from './state.js';
 import { morphTo, swapContent } from './motion.js';
+import { unionIslandRect } from './geometry.js';
 
 /* ─── logging: everything goes to Go (voice-agent.log) ────────────────────── */
 function jlog(m){try{window.jslog&&window.jslog('[js] '+m)}catch(e){}}
@@ -52,21 +53,35 @@ let settingsState={llm_provider:'gemini',api_key:'',model:'',base_url:'',enable_
 const dashCopy={overview:['Overview','Your assistant at a glance.','See readiness, wire in ecosystems, and tune behavior.'],integrations:['Integrations','Connected ecosystems that feel first-class.','Google Workspace and Spotify behave like native assistant surfaces.'],model:['Models','Shape how the assistant thinks.','Point the runtime at the provider and model that fit your setup.'],privacy:['Privacy','Tune interaction and context posture.','Decide how voice and privacy defaults should feel.']};
 function esc(t){return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
 
-/* Publish every visible surface to Go, which unions them into the window
-   region. Anything not covered by these rects is not part of the window at all,
-   so clicks there land on the desktop. Called on visibility changes, and on
-   morph start/settle from the island's render loop — never per animation frame. */
-function publishRegionRects(){
+/* Every surface EXCEPT the island: panels, the suggestion card, the
+   dashboard. Shared by both the settle-phase publish (publishRegionRects)
+   and the widen-phase publish (the union rect in rerender) so neither one
+   can drop a surface the other accounts for. */
+function collectOtherSurfaceRects(){
   const rects=[];
-  document.querySelectorAll('#island, .panel.active, .card.shown, #dashboard.visible').forEach(el=>{
+  document.querySelectorAll('.panel.active, .card.shown, #dashboard.visible').forEach(el=>{
     const cs=getComputedStyle(el);
     if(cs.display==='none') return;
     const r=el.getBoundingClientRect();
     if(r.width>0 && r.height>0) rects.push({x:r.left,y:r.top,w:r.width,h:r.height});
   });
+  return rects;
+}
+
+/* Publish every visible surface to Go, which unions them into the window
+   region. Anything not covered by these rects is not part of the window at all,
+   so clicks there land on the desktop. Called on visibility changes, and on
+   morph start/settle from the island's render loop — never per animation frame. */
+function publishRegionRects(){
+  const rects = collectOtherSurfaceRects();
+  const ir = island.getBoundingClientRect();
+  if(ir.width>0 && ir.height>0) rects.push({x:ir.left,y:ir.top,w:ir.width,h:ir.height});
   jlog('regionRects '+rects.length);
   window.setRegionRects && window.setRegionRects(rects);
 }
+// Compatibility shim: old call sites pass a surface name ('pill'/'command'/...)
+// but the argument is now unused — every caller just wants a fresh publish.
+// Task 7's real surface routing removes this indirection entirely.
 function sizeTo(_v){ publishRegionRects(); }
 function toast(t){const el=document.getElementById('toast');el.textContent=t;el.style.display='block';clearTimeout(toast.tm);toast.tm=setTimeout(()=>el.style.display='none',2200)}
 
@@ -79,23 +94,6 @@ const capTrail = document.getElementById('capTrail');
 const store = { surface:null, activities:[], agentState:'idle',
                 hover:false, idleSince:Date.now(), now:Date.now(), stateText:null };
 let applied = { presence:null, contentId:null };
-
-/* The region must never be smaller than what CSS is painting at any instant of
-   a morph, or the island gets visibly clipped mid-animation. Rather than
-   animating the region in lockstep (which needs per-frame IPC or the easing
-   curve duplicated in Go), publish the BOUNDING BOX of the from- and to-shapes
-   for the duration, then the exact shape once it settles. Two calls, not sixty.
-
-   Cost: for the ~460ms of a grow, the surplus area is transparent window that
-   eats clicks. Bounded, brief, and confined to where the island is about to be. */
-function unionRegionRect(fromPresence, toPresence){
-  const a = PRESENCE_SIZES[fromPresence], b = PRESENCE_SIZES[toPresence];
-  if(!a || !b) return null;
-  const r = island.getBoundingClientRect();
-  const cx = r.left + r.width/2, top = r.top;
-  const w = Math.max(a.w, b.w), h = Math.max(a.h, b.h);
-  return {x: cx - w/2, y: top, w, h};
-}
 
 function defaultLabelFor(state){
   if(state==='listening') return 'Listening…';
@@ -125,13 +123,23 @@ function renderContentFor(id){
   return document.createElement('div');
 }
 
+// Caps are content-driven (Task 6 replaces their contents with per-activity
+// render slots), so the Control Center entry point lives here rather than as
+// a static child of #island. Only the idle cap gets it — Task 6/7 decide
+// what, if anything, other activities put there.
 function updateCaps(id){
   if(id === 'agent.run'){
     capLead.innerHTML = '<svg class="ico"><use href="#i-wave"/></svg>';
     capTrail.innerHTML = '';
-  } else {
+  } else if(id === 'idle'){
     capLead.innerHTML = '<svg class="ico"><use href="#i-mic"/></svg>';
-    capTrail.innerHTML = '<svg class="ico"><use href="#i-gear"/></svg>';
+    // stopPropagation is required: without it the click also bubbles to
+    // #island's own onclick and fires handleIslandClick()->triggerListen()
+    // at the same time as opening the Control Center.
+    capTrail.innerHTML = '<button type="button" class="cap-btn" title="Open Control Center" aria-label="Open Control Center" onclick="event.stopPropagation();window.openSettings(\'overview\')"><svg class="ico"><use href="#i-gear"/></svg></button>';
+  } else {
+    capLead.innerHTML = '';
+    capTrail.innerHTML = '';
   }
 }
 
@@ -139,9 +147,29 @@ export function rerender(){
   store.now = Date.now();
   const r = resolve(store);
   if(r.presence !== applied.presence){
-    // Widen the region FIRST, so the growing island is never clipped.
-    const u = unionRegionRect(applied.presence || r.presence, r.presence);
-    if(u) window.setRegionRects && window.setRegionRects([u]);
+    /* The region must never be smaller than what CSS is painting at any
+       instant of a morph, or the island gets visibly clipped mid-animation.
+       Rather than animating the region in lockstep (which needs per-frame
+       IPC or the easing curve duplicated in Go), publish the BOUNDING BOX of
+       the from- and to-shapes for the duration, then the exact shape once it
+       settles. Two calls, not sixty.
+
+       Cost: for the ~460ms of a grow, the surplus area is transparent window
+       that eats clicks. Bounded, brief, and confined to where the island is
+       about to be.
+
+       Critical: this widen-phase publish must include the SAME non-island
+       surfaces the settle phase does (panels/card/dashboard), not just the
+       island. A bare `setRegionRects([u])` here would silently replace the
+       whole region with an island-only rect for the ~380-460ms morph
+       duration — visibly clipping an open Control Center, for example, if a
+       presence change (e.g. idle->dormant on the 1s tick) fires while the
+       island itself is hidden (display:none) behind it. */
+    const rects = collectOtherSurfaceRects();
+    const ir = island.getBoundingClientRect();
+    const u = unionIslandRect(ir, applied.presence || r.presence, r.presence);
+    if(u) rects.push(u); // island rect omitted entirely when it isn't visible
+    if(rects.length) window.setRegionRects && window.setRegionRects(rects);
     // ...then narrow it to the exact shape once the morph settles.
     morphTo(island, r.presence, publishRegionRects);
     applied.presence = r.presence;
