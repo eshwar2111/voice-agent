@@ -283,7 +283,13 @@ window.__agent.on('notify', d => updateUI('idle', d.text));
 window.__agent.on('surface:open', d => {
   if(d.id==='command') showCommand();
   else if(d.id==='result') showCard(d.text);
-  else if(d.id==='approve') showConfirmCard(d.card);
+  else if(d.id==='approve'){
+    /* Explicit discriminator, not JSON.parse sniffing: RequestConfirmationCard
+       sends {card}, RequestConfirmation sends {text}. Never infer structure
+       from string contents on the security-approval path. */
+    if(d.card!==undefined) showConfirmCard(d.card);
+    else showConfirm(d.text);
+  }
 });
 window.__agent.on('activity:update', d => {
   if(d.id==='ambient.nudge')
@@ -337,7 +343,6 @@ function copyOutput(){if(!latestOutput)return;navigator.clipboard.writeText(late
 function showConfirm(text){confirmTitle.textContent='Review action request';confirmBody.innerHTML=renderText(String(text));setPanel('confirmPanel');sizeTo('confirm')}
 function showConfirmCard(cardJSON){confirmTitle.textContent='Review action request';let html=renderText(String(cardJSON));try{const p=JSON.parse(cardJSON);if(p.title)confirmTitle.textContent=p.title;const steps=Array.isArray(p.fields)?p.fields:(p.plan&&Array.isArray(p.plan.steps)?p.plan.steps:null);const parts=[];if(p.plan&&p.plan.goal)parts.push('<div style="margin-bottom:14px;color:var(--ink-2);font-size:13px">'+esc(String(p.plan.goal))+'</div>');if(steps&&steps.length)parts.push(steps.map(f=>'<div class="item" style="margin-bottom:10px"><div class="eyebrow" style="margin-bottom:6px">'+esc(f.label||'Step')+'</div><div>'+esc(String(f.value||''))+'</div></div>').join(''));if(parts.length)html=parts.join('');else if(p&&typeof p==='object')html=renderText(JSON.stringify(p,null,2))}catch(e){}confirmBody.innerHTML=html;setPanel('confirmPanel');sizeTo('confirm')}
 function resolveConfirm(ok){window.confirmCallback&&window.confirmCallback(ok);collapseShell()}
-function triggerMeetingAlert(title,subtitle){showCard('Upcoming meeting\n\n'+title+'\n'+subtitle)}
 
 /* ─── proactive suggestion card ───────────────────────────────────────────── */
 function showSuggestion(id,icon,title,message,action){jlog('showSuggestion '+id+' '+icon);

@@ -2,8 +2,11 @@ package ui
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 // The envelope must survive payloads that used to break string interpolation.
@@ -90,5 +93,55 @@ func TestBridgeBuffersUntilReady(t *testing.T) {
 	b.Push("state", map[string]string{"state": "idle"})
 	if len(sent) != 3 {
 		t.Errorf("post-Ready push was buffered instead of sent immediately")
+	}
+}
+
+// TestBridgeFlushOrderingUnderRace is a regression test for a race in an
+// earlier version of Ready(): it set ready=true, unlocked, and only then
+// looped over the buffered items calling eval. A concurrent Push arriving in
+// that unlocked window saw ready==true and took the "send immediately" path,
+// so it could reach the WebView before some of the buffered messages —
+// breaking the "flushed in order" guarantee. Ordering must be structural
+// (guarded by the single-drainer invariant), not an artifact of how fast
+// Ready's loop happens to run.
+//
+// eval sleeps briefly to widen the race window; without that a fast machine
+// can make even the buggy implementation happen to pass by luck, which is
+// why -race -count=20 is the prescribed way to run this.
+func TestBridgeFlushOrderingUnderRace(t *testing.T) {
+	var mu sync.Mutex
+	var sent []string
+	b := &Bridge{eval: func(js string) {
+		time.Sleep(time.Millisecond)
+		mu.Lock()
+		sent = append(sent, js)
+		mu.Unlock()
+	}}
+
+	const n = 20
+	for i := 0; i < n; i++ {
+		b.Push("state", map[string]string{"state": fmt.Sprintf("buffered-%d", i)})
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() { defer wg.Done(); b.Ready() }()
+	go func() { defer wg.Done(); b.Push("state", map[string]string{"state": "racer"}) }()
+	wg.Wait()
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if len(sent) != n+1 {
+		t.Fatalf("got %d evals, want %d", len(sent), n+1)
+	}
+	racerIdx := -1
+	for i, js := range sent {
+		if strings.Contains(js, "racer") {
+			racerIdx = i
+		}
+	}
+	if racerIdx != n {
+		t.Errorf("racer push landed at index %d, want last (%d) — buffered pushes were not flushed in order: %v", racerIdx, n, sent)
 	}
 }

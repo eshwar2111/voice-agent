@@ -168,7 +168,7 @@ func RequestConfirmation(msg string) bool {
 	if w == nil {
 		return false
 	}
-	bridge.Push("surface:open", map[string]any{"id": "approve", "card": msg})
+	bridge.Push("surface:open", map[string]any{"id": "approve", "text": msg})
 	return <-confirmChan
 }
 
