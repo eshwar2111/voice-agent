@@ -99,6 +99,12 @@ func (ra *regionApplier) Apply(shapes []physRect) {
 		return
 	}
 
-	// SetWindowRgn takes ownership of the region on success; do not delete it.
-	procSetWindowRgn.Call(uintptr(ra.hwnd), uintptr(combined), 1)
+	// SetWindowRgn takes ownership of the region ONLY on success. On failure the
+	// caller still owns it, so it must be explicitly deleted or it leaks a GDI
+	// handle for the process lifetime — this runs on every morph.
+	ret, _, _ := procSetWindowRgn.Call(uintptr(ra.hwnd), uintptr(combined), 1)
+	if ret == 0 {
+		log.Printf("[ui/region] SetWindowRgn failed — deleting unused region, keeping previous shape")
+		win.DeleteObject(win.HGDIOBJ(combined))
+	}
 }

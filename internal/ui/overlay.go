@@ -237,10 +237,6 @@ func StartOverlay(ctx context.Context, cfg *config.Config) {
 	defer w.Destroy()
 
 	w.SetTitle("Voice Agent")
-	// Initial size is a placeholder — canvas.Attach() sets the real, DPI-scaled
-	// 1200x800 physical geometry once uiReady fires from JS. The window is
-	// never resized again after that (see canvas.go).
-	w.SetSize(int(canvasW), int(canvasH), webview.HintNone)
 
 	w.Bind("triggerListen", func() { ListenTrigger <- struct{}{} })
 	w.Bind("submitCommand", func(input string) {
@@ -314,8 +310,20 @@ func StartOverlay(ctx context.Context, cfg *config.Config) {
 	})
 
 	canvasGlobal = newCanvas(w)
+	// Shape and place the window BEFORE it is ever painted. Doing this from the
+	// uiReady callback means the user sees a default-styled, unshaped, wrongly
+	// sized window until JS finishes loading — and w.SetSize before Attach()
+	// strips WS_CAPTION/WS_THICKFRAME would resize the window a *second* time
+	// (frame-sized vs. client-sized), which is the exact relayout jank this
+	// design exists to eliminate. Attach() is now the ONLY place that calls
+	// SetWindowPos with a size.
+	hwnd := win.HWND(w.Window())
+	win.ShowWindow(hwnd, win.SW_HIDE)
+	canvasGlobal.Attach()
+	win.ShowWindow(hwnd, win.SW_SHOWNOACTIVATE)
+
 	w.Bind("uiReady", func() {
-		w.Dispatch(func() { canvasGlobal.Attach() })
+		log.Printf("[ui] uiReady — JS finished loading")
 	})
 	w.Bind("getCanvasSize", func() map[string]float64 {
 		return map[string]float64{"w": canvasCSSWidth, "h": canvasCSSHeight}

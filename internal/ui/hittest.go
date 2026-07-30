@@ -12,7 +12,9 @@ type Rect struct {
 }
 
 // rectRegistry holds the interactive regions JS most recently published.
-// It is read by the cursor loop (~60Hz) and written by the WebView thread.
+// It is written by the WebView thread (via the setRegionRects binding) and
+// read back on the same thread when canvas.applyRegion builds the window
+// region — there is no separate polling reader.
 type rectRegistry struct {
 	mu       sync.RWMutex
 	rects    []Rect
