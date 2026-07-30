@@ -2,7 +2,6 @@ package ui
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -59,6 +58,7 @@ var (
 	w             webview.WebView
 	hwndGlobal    win.HWND
 	canvasGlobal  *canvas
+	bridge        *Bridge
 	ListenTrigger = make(chan struct{})
 
 	notifTimer *time.Timer
@@ -82,9 +82,7 @@ func SetState(s AgentState) {
 	currentState = s
 	if w != nil {
 		sk := stateKey(s)
-		w.Dispatch(func() {
-			w.Eval(fmt.Sprintf("updateUI('%s');", sk))
-		})
+		bridge.Push("state", map[string]string{"state": sk})
 	}
 }
 
@@ -114,15 +112,12 @@ func ShowNotification(text string) {
 	if w == nil {
 		return
 	}
-	escaped, _ := json.Marshal(text)
-	w.Dispatch(func() {
-		w.Eval(fmt.Sprintf("updateUI('idle', %s);", string(escaped)))
-	})
+	bridge.Push("notify", map[string]string{"text": text})
 	if notifTimer != nil {
 		notifTimer.Stop()
 	}
 	notifTimer = time.AfterFunc(4*time.Second, func() {
-		w.Dispatch(func() { w.Eval("updateUI('idle');") })
+		bridge.Push("notify", map[string]string{"text": ""})
 	})
 }
 
@@ -130,11 +125,16 @@ func SetMeetingAlert(title string, minutes int) {
 	if w == nil {
 		return
 	}
-	escapedTitle, _ := json.Marshal(title)
 	text := fmt.Sprintf("in %d mins", minutes)
-	escapedText, _ := json.Marshal(text)
-	w.Dispatch(func() {
-		w.Eval(fmt.Sprintf("triggerMeetingAlert(%s, %s);", string(escapedTitle), string(escapedText)))
+	bridge.Push("activity:update", map[string]any{
+		"id": "ambient.nudge",
+		"data": map[string]any{
+			"id":      "meeting",
+			"icon":    "calendar",
+			"title":   title,
+			"message": text,
+			"action":  "",
+		},
 	})
 }
 
@@ -142,7 +142,7 @@ func ShowCommandBarInOverlay() {
 	if w == nil {
 		return
 	}
-	w.Dispatch(func() { w.Eval("showCommand();") })
+	bridge.Push("surface:open", map[string]string{"id": "command"})
 }
 
 func ShowOutputOverlay(text string) {
@@ -153,22 +153,14 @@ func ShowOutputOverlay(text string) {
 		ShowNotification(text)
 		return
 	}
-	escaped, _ := json.Marshal(text)
-	w.Dispatch(func() { w.Eval(fmt.Sprintf("showCard(%s);", string(escaped))) })
+	bridge.Push("surface:open", map[string]any{"id": "result", "text": text})
 }
 
 func RequestConfirmationCard(cardJSON string) bool {
 	if w == nil {
 		return false
 	}
-	// cardJSON is JSON text. It must reach JS as a *string* argument (so the JS
-	// can JSON.parse it) — injecting it raw makes JS parse it as an object
-	// literal, and String(obj) renders "[object Object]". Marshal wraps it as a
-	// quoted JS string literal.
-	quoted, _ := json.Marshal(cardJSON)
-	w.Dispatch(func() {
-		w.Eval(fmt.Sprintf("showConfirmCard(%s);", string(quoted)))
-	})
+	bridge.Push("surface:open", map[string]any{"id": "approve", "card": cardJSON})
 	return <-confirmChan
 }
 
@@ -176,8 +168,7 @@ func RequestConfirmation(msg string) bool {
 	if w == nil {
 		return false
 	}
-	escaped, _ := json.Marshal(msg)
-	w.Dispatch(func() { w.Eval(fmt.Sprintf("showConfirm(%s);", string(escaped))) })
+	bridge.Push("surface:open", map[string]any{"id": "approve", "card": msg})
 	return <-confirmChan
 }
 
@@ -309,6 +300,7 @@ func StartOverlay(ctx context.Context, cfg *config.Config) {
 		return true
 	})
 
+	bridge = newBridge(w)
 	canvasGlobal = newCanvas(w)
 	// Shape and place the window BEFORE it is ever painted. Doing this from the
 	// uiReady callback means the user sees a default-styled, unshaped, wrongly
@@ -324,6 +316,7 @@ func StartOverlay(ctx context.Context, cfg *config.Config) {
 
 	w.Bind("uiReady", func() {
 		log.Printf("[ui] uiReady — JS finished loading")
+		bridge.Ready()
 	})
 	w.Bind("getCanvasSize", func() map[string]float64 {
 		return map[string]float64{"w": canvasCSSWidth, "h": canvasCSSHeight}

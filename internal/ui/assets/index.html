@@ -264,6 +264,32 @@ kbd{font:600 11px var(--font);color:var(--ink-2);background:rgba(255,255,255,.07
 /* ─── logging: everything goes to Go (voice-agent.log) ────────────────────── */
 function jlog(m){try{window.jslog&&window.jslog('[js] '+m)}catch(e){}}
 
+/* Single entry point for everything Go pushes. Handlers are registered by
+   feature modules; unknown kinds are logged and dropped, never thrown, so a
+   stale Go build can't take down the render loop. */
+window.__agent = {
+  handlers: {},
+  on(kind, fn){ (this.handlers[kind] ||= []).push(fn) },
+  recv(env){
+    try{
+      const hs = this.handlers[env.kind];
+      if(!hs || !hs.length){ jlog('unhandled event '+env.kind); return }
+      for(const h of hs) h(env.data);
+    }catch(e){ jlog('recv error '+env.kind+': '+e) }
+  }
+};
+window.__agent.on('state', d => updateUI(d.state, d.text));
+window.__agent.on('notify', d => updateUI('idle', d.text));
+window.__agent.on('surface:open', d => {
+  if(d.id==='command') showCommand();
+  else if(d.id==='result') showCard(d.text);
+  else if(d.id==='approve') showConfirmCard(d.card);
+});
+window.__agent.on('activity:update', d => {
+  if(d.id==='ambient.nudge')
+    showSuggestion(d.data.id, d.data.icon, d.data.title, d.data.message, d.data.action);
+});
+
 let currentPanel=null,latestOutput='',integrationTimer=null;
 let settingsState={llm_provider:'gemini',api_key:'',model:'',base_url:'',enable_voice:false,privacy_mode:false};
 const dashCopy={overview:['Overview','Your assistant at a glance.','See readiness, wire in ecosystems, and tune behavior.'],integrations:['Integrations','Connected ecosystems that feel first-class.','Google Workspace and Spotify behave like native assistant surfaces.'],model:['Models','Shape how the assistant thinks.','Point the runtime at the provider and model that fit your setup.'],privacy:['Privacy','Tune interaction and context posture.','Decide how voice and privacy defaults should feel.']};
