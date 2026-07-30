@@ -9,7 +9,6 @@ import (
 	"sync"
 	"syscall"
 	"time"
-	"unsafe"
 
 	"github.com/lxn/win"
 	webview "github.com/webview/webview_go"
@@ -25,9 +24,7 @@ var (
 	procSetWindowPos       = moduser32.NewProc("SetWindowPos")
 	procSetWindowRgn       = moduser32.NewProc("SetWindowRgn")
 	procCreateRoundRectRgn = modgdi32.NewProc("CreateRoundRectRgn")
-	procGetWindowRect      = moduser32.NewProc("GetWindowRect")
 	procGetDpiForWindow    = moduser32.NewProc("GetDpiForWindow")
-	procRedrawWindow       = moduser32.NewProc("RedrawWindow")
 
 	modkernel32          = syscall.NewLazyDLL("kernel32.dll")
 	procGetCurrentThread = modkernel32.NewProc("GetCurrentThreadId")
@@ -56,17 +53,12 @@ const (
 	StateSpeaking
 )
 
-const (
-	// Default Pill Dimensions
-	defaultW = 300
-	defaultH = 52
-)
-
 var (
 	currentState  AgentState = StateBoot
 	stateMutex    sync.Mutex
 	w             webview.WebView
 	hwndGlobal    win.HWND
+	canvasGlobal  *canvas
 	ListenTrigger = make(chan struct{})
 
 	notifTimer *time.Timer
@@ -210,43 +202,6 @@ func RestoreTopmost() {
 	win.SetWindowPos(hwndGlobal, win.HWND_TOPMOST, 0, 0, 0, 0, win.SWP_NOMOVE|win.SWP_NOSIZE|win.SWP_NOACTIVATE)
 }
 
-func resizeWindow(width, height, radius int) {
-	if hwndGlobal == 0 {
-		log.Printf("[ui/resize] SKIP: hwnd not ready (req %dx%d)", width, height)
-		return
-	}
-	// The width/height/radius passed in are CSS pixels (the design's logical
-	// units, matching the VIEW map in overlay_v2.html). WebView2 renders CSS at
-	// the system DPI scale, so the physical window must be scaled by the same
-	// factor — otherwise at 125% the whole UI renders ~20% too small and the
-	// content viewport won't match the authored layout.
-	scale := dpiScale()
-	pw := int(float64(width) * scale)
-	ph := int(float64(height) * scale)
-	pr := int(float64(radius) * scale)
-	sw := win.GetSystemMetrics(win.SM_CXSCREEN)
-	x := (int(sw) - pw) / 2
-
-	// 1. Physically resize and reposition the window (physical pixels)
-	win.SetWindowPos(hwndGlobal, win.HWND_TOPMOST, int32(x), int32(10*scale), int32(pw), int32(ph), win.SWP_NOACTIVATE)
-
-	// 2. Create a rounded rectangle region and APPLY it to the window
-	hrgn, _, _ := procCreateRoundRectRgn.Call(0, 0, uintptr(pw+1), uintptr(ph+1), uintptr(pr*2), uintptr(pr*2))
-	procSetWindowRgn.Call(uintptr(hwndGlobal), hrgn, 1)
-
-	// 3. Force a full repaint (frame + all children). WebView2 hosts its browser
-	// in a child HWND and leaves stale pixels behind when the window shrinks —
-	// that's the "grey ghost" at the old size. RDW_INVALIDATE|ERASE|ALLCHILDREN|
-	// UPDATENOW|FRAME (0x0585) clears it immediately.
-	procRedrawWindow.Call(uintptr(hwndGlobal), 0, 0, 0x0585)
-
-	// diagnostics — actual window rect after the resize
-	var rc struct{ L, T, R, B int32 }
-	procGetWindowRect.Call(uintptr(hwndGlobal), uintptr(unsafe.Pointer(&rc)))
-	log.Printf("[ui/resize] req=%dx%d rad=%d dpiScale=%.2f -> actual window rect=%dx%d at (%d,%d)",
-		width, height, radius, scale, rc.R-rc.L, rc.B-rc.T, rc.L, rc.T)
-}
-
 // SetInputActive toggles whether the overlay can take keyboard focus. The pill is
 // created WS_EX_NOACTIVATE so it never steals focus; but typing panels (command bar,
 // settings) need real keyboard focus, so we clear that flag and foreground the window
@@ -282,7 +237,10 @@ func StartOverlay(ctx context.Context, cfg *config.Config) {
 	defer w.Destroy()
 
 	w.SetTitle("Voice Agent")
-	w.SetSize(defaultW, defaultH, webview.HintNone)
+	// Initial size is a placeholder — canvas.Attach() sets the real, DPI-scaled
+	// 1200x800 physical geometry once uiReady fires from JS. The window is
+	// never resized again after that (see canvas.go).
+	w.SetSize(int(canvasW), int(canvasH), webview.HintNone)
 
 	w.Bind("triggerListen", func() { ListenTrigger <- struct{}{} })
 	w.Bind("submitCommand", func(input string) {
@@ -321,9 +279,6 @@ func StartOverlay(ctx context.Context, cfg *config.Config) {
 			OnSuggestionDismiss(id)
 		}
 	})
-	w.Bind("callResize", func(width, height, radius int) {
-		w.Dispatch(func() { resizeWindow(width, height, radius) })
-	})
 	w.Bind("setInputActive", func(active bool) {
 		w.Dispatch(func() { SetInputActive(active) })
 	})
@@ -358,6 +313,17 @@ func StartOverlay(ctx context.Context, cfg *config.Config) {
 		return true
 	})
 
+	canvasGlobal = newCanvas(w)
+	w.Bind("uiReady", func() {
+		w.Dispatch(func() { canvasGlobal.Attach() })
+	})
+	w.Bind("getCanvasSize", func() map[string]float64 {
+		return map[string]float64{"w": canvasCSSWidth, "h": canvasCSSHeight}
+	})
+	w.Bind("setRegionRects", func(rects []Rect) {
+		w.Dispatch(func() { canvasGlobal.SetRects(rects) })
+	})
+
 	assets, err := startAssetServer()
 	if err != nil {
 		log.Fatalf("[ui] cannot start asset server: %v", err)
@@ -365,22 +331,6 @@ func StartOverlay(ctx context.Context, cfg *config.Config) {
 	defer assets.Close()
 	log.Printf("[ui] assets at %s", assets.URL)
 	w.Navigate(assets.URL + "index.html")
-
-	go func() {
-		time.Sleep(250 * time.Millisecond)
-		w.Dispatch(func() {
-			hwnd := win.HWND(w.Window())
-			hwndGlobal = hwnd
-
-			style := win.GetWindowLong(hwnd, win.GWL_STYLE)
-			win.SetWindowLong(hwnd, win.GWL_STYLE, style&^(win.WS_CAPTION|win.WS_THICKFRAME))
-
-			exStyle := win.GetWindowLong(hwnd, win.GWL_EXSTYLE)
-			win.SetWindowLong(hwnd, win.GWL_EXSTYLE, exStyle|win.WS_EX_TOPMOST|win.WS_EX_TOOLWINDOW|win.WS_EX_NOACTIVATE)
-
-			resizeWindow(defaultW, defaultH, 26)
-		})
-	}()
 
 	w.Run()
 }

@@ -11,28 +11,6 @@ type Rect struct {
 	H float64 `json:"h"`
 }
 
-// Point is a cursor position in physical pixels, relative to the canvas
-// window's top-left corner.
-type Point struct {
-	X int32
-	Y int32
-}
-
-// hit reports whether p falls inside any rect. Rects are CSS pixels and p is
-// physical pixels, so every rect is scaled by the window's DPI factor first.
-// Left/top edges are inclusive, right/bottom exclusive — so adjacent rects
-// never both claim the same pixel.
-func hit(rects []Rect, p Point, scale float64) bool {
-	px, py := float64(p.X), float64(p.Y)
-	for _, r := range rects {
-		x0, y0 := r.X*scale, r.Y*scale
-		if px >= x0 && px < x0+r.W*scale && py >= y0 && py < y0+r.H*scale {
-			return true
-		}
-	}
-	return false
-}
-
 // rectRegistry holds the interactive regions JS most recently published.
 // It is read by the cursor loop (~60Hz) and written by the WebView thread.
 type rectRegistry struct {
@@ -43,11 +21,11 @@ type rectRegistry struct {
 
 // newRectRegistry builds a registry for a canvas cssWidth CSS pixels wide.
 //
-// The fallback matters more than it looks: if JS never publishes rects (crash
-// during load, script error), we must still leave the island clickable while
-// keeping the rest of the screen click-through. It covers the island's largest
-// presence — sheet, 720x520 — centered and top-anchored. The failure mode is
-// never "invisible window eats the whole desktop".
+// The fallback matters more here than it looks: the window is clipped to the
+// region built from these rects, so an empty registry would clip the UI away
+// entirely. It covers the island's largest presence — sheet, 720x520 —
+// centered and top-anchored, so a JS failure leaves a usable window rather
+// than an invisible one.
 func newRectRegistry(cssWidth float64) *rectRegistry {
 	const sheetW, sheetH = 720.0, 520.0
 	return &rectRegistry{
