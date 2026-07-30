@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -126,15 +127,12 @@ func SetMeetingAlert(title string, minutes int) {
 		return
 	}
 	text := fmt.Sprintf("in %d mins", minutes)
-	bridge.Push("activity:update", map[string]any{
-		"id": "ambient.nudge",
-		"data": map[string]any{
-			"id":      "meeting",
-			"icon":    "calendar",
-			"title":   title,
-			"message": text,
-			"action":  "",
-		},
+	UpdateActivity("ambient.nudge", map[string]any{
+		"id":      "meeting",
+		"icon":    "calendar",
+		"title":   title,
+		"message": text,
+		"action":  "",
 	})
 }
 
@@ -166,12 +164,41 @@ func canDeliverConfirmation(hasWindow, hasBridge bool) bool {
 	return hasWindow && hasBridge
 }
 
+// approvalCardFields best-effort extracts a headline and a goal/body string
+// out of the plan-card JSON built by callers (agent.executor, security).
+// It never fails the request on a parse miss — worst case the raw JSON shows
+// up as the goal text, which is still readable, just unformatted.
+func approvalCardFields(cardJSON string) (title, goal string) {
+	title, goal = "Approve action?", cardJSON
+	var p struct {
+		Title string `json:"title"`
+		Plan  struct {
+			Goal string `json:"goal"`
+		} `json:"plan"`
+	}
+	if err := json.Unmarshal([]byte(cardJSON), &p); err == nil {
+		if p.Title != "" {
+			title = p.Title
+		}
+		if p.Plan.Goal != "" {
+			goal = p.Plan.Goal
+		}
+	}
+	return title, goal
+}
+
+// RequestConfirmationCard and RequestConfirmation both drive the
+// trust.approval live activity so the island expands inline with Approve/
+// Cancel, rather than opening a full panel. trust.approval has no ttl (see
+// activities.js): it resolves only when resolveConfirm(bool) fires from the
+// island's own buttons, never by timeout.
 func RequestConfirmationCard(cardJSON string) bool {
 	if !canDeliverConfirmation(w != nil, bridge != nil) {
 		log.Printf("[ui] confirmation requested before bridge ready — denying")
 		return false
 	}
-	bridge.Push("surface:open", map[string]any{"id": "approve", "card": cardJSON})
+	title, goal := approvalCardFields(cardJSON)
+	UpdateActivity("trust.approval", map[string]any{"title": title, "goal": goal})
 	return <-confirmChan
 }
 
@@ -180,7 +207,7 @@ func RequestConfirmation(msg string) bool {
 		log.Printf("[ui] confirmation requested before bridge ready — denying")
 		return false
 	}
-	bridge.Push("surface:open", map[string]any{"id": "approve", "text": msg})
+	UpdateActivity("trust.approval", map[string]any{"title": "Approve action?", "goal": msg})
 	return <-confirmChan
 }
 

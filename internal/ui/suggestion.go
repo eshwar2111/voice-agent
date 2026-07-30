@@ -11,14 +11,11 @@ func ShowSuggestion(id, icon, title, message, action string) {
 	if w == nil {
 		return
 	}
-	bridge.Push("activity:update", map[string]any{
-		"id": "ambient.nudge",
-		"data": map[string]any{
-			"id":      id,
-			"icon":    icon,
-			"title":   title,
-			"message": message,
-			"action":  action,
-		},
+	UpdateActivity("ambient.nudge", map[string]any{
+		"id":      id,
+		"icon":    icon,
+		"title":   title,
+		"message": message,
+		"action":  action,
 	})
 }

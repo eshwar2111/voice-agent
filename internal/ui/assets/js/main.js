@@ -8,6 +8,8 @@
 import { resolve } from './state.js';
 import { morphTo, swapContent } from './motion.js';
 import { unionIslandRect } from './geometry.js';
+import { registerActivity, updateActivity, endActivity, activeActivities, renderActivity }
+  from './activities.js';
 
 /* ─── logging: everything goes to Go (voice-agent.log) ────────────────────── */
 function jlog(m){try{window.jslog&&window.jslog('[js] '+m)}catch(e){}}
@@ -27,26 +29,28 @@ window.__agent = {
   }
 };
 window.__agent.on('state', d => updateUI(d.state, d.text));
-window.__agent.on('notify', d => updateUI('idle', d.text));
+window.__agent.on('notify', d => {
+  // ShowNotification is the narration channel: orchestrator.go sends
+  // "Step 2/5: …", research_tool.go sends "Reading: …". Feed the ticker
+  // rather than forcing the agent state back to idle (the old handler called
+  // updateUI('idle', ...) here, which fought the real state transitions).
+  if(!d.text){ return }
+  updateActivity('agent.run', { phase: store.agentState, text: d.text }, syncAndRerender);
+});
 window.__agent.on('surface:open', d => {
   if(d.id==='command') showCommand();
   else if(d.id==='result') showCard(d.text);
-  else if(d.id==='approve'){
-    /* Explicit discriminator, not JSON.parse sniffing: RequestConfirmationCard
-       sends {card}, RequestConfirmation sends {text}. Never infer structure
-       from string contents on the security-approval path. If neither is
-       present (shouldn't happen from either current caller), refuse to open
-       an unreadable approval panel rather than rendering the literal word
-       "undefined" for the user to approve blind. */
-    if(d.card!==undefined) showConfirmCard(d.card);
-    else if(d.text!==undefined) showConfirm(d.text);
-    else { jlog('approve payload missing card and text'); resolveConfirm(false); }
-  }
+  // 'approve' is no longer sent: RequestConfirmationCard/RequestConfirmation
+  // (internal/ui/overlay.go) now drive the trust.approval live activity
+  // instead, so the island expands inline with Approve/Cancel rather than
+  // opening a full panel. Old showConfirm/showConfirmCard/confirmPanel
+  // markup stays in place as inert legacy UI (unreachable, harmless) rather
+  // than risk deleting a code path some other caller still expects.
 });
-window.__agent.on('activity:update', d => {
-  if(d.id==='ambient.nudge')
-    showSuggestion(d.data.id, d.data.icon, d.data.title, d.data.message, d.data.action);
-});
+window.__agent.on('activity:update', d => updateActivity(d.id, d.data, syncAndRerender));
+window.__agent.on('activity:end', d => endActivity(d.id, syncAndRerender));
+
+function syncAndRerender(){ store.activities = activeActivities(); rerender() }
 
 let currentPanel=null,latestOutput='',integrationTimer=null;
 let settingsState={llm_provider:'gemini',api_key:'',model:'',base_url:'',enable_voice:false,privacy_mode:false};
@@ -92,7 +96,7 @@ const capLead = document.getElementById('capLead');
 const capTrail = document.getElementById('capTrail');
 
 const store = { surface:null, activities:[], agentState:'idle',
-                hover:false, idleSince:Date.now(), now:Date.now(), stateText:null };
+                hover:false, idleSince:Date.now(), now:Date.now() };
 let applied = { presence:null, contentId:null };
 
 function defaultLabelFor(state){
@@ -103,43 +107,43 @@ function defaultLabelFor(state){
   return 'Working…';
 }
 
-// Content ids beyond 'idle'/'agent.run' (spotify.nowplaying, trust.approval,
-// command/result/controlcenter surfaces, ...) arrive in Task 6/7. Returning an
-// empty div rather than throwing keeps the render loop alive if resolve() ever
-// names one before its renderer exists.
-function renderContentFor(id){
+function slotFor(presence){
+  return presence === 'expanded' || presence === 'sheet' ? 'expanded' : 'compact';
+}
+
+// Content beyond 'idle' is entirely owned by whichever activity is on top
+// (see activities.js). Returning an empty div for an id with no renderer
+// (or no live entry — e.g. it just ttl'd out between resolve() and render)
+// keeps the render loop alive rather than throwing.
+function renderContentFor(id, presence){
   if(id === 'idle'){
     const d=document.createElement('div');
     d.innerHTML = '<span class="ttl">Ready</span>';
     return d;
   }
-  if(id === 'agent.run'){
-    const d=document.createElement('div');
-    const label = store.stateText || defaultLabelFor(store.agentState);
-    d.innerHTML = '<span class="ttl">'+esc(label)+'</span>'+
-      '<span class="eq"><i></i><i></i><i></i><i></i><i></i></span>';
-    return d;
-  }
-  return document.createElement('div');
+  return renderActivity(id, slotFor(presence)) || document.createElement('div');
 }
 
-// Caps are content-driven (Task 6 replaces their contents with per-activity
-// render slots), so the Control Center entry point lives here rather than as
-// a static child of #island. Only the idle cap gets it — Task 6/7 decide
-// what, if anything, other activities put there.
+// Caps are content-driven: each live activity's `leading`/`trailing` render
+// slots own #capLead/#capTrail while it's on top. Only 'idle' gets the
+// Control Center gear here — BUT see the #island .peek-actions element in
+// index.html and its CSS below: it renders the SAME gear, unconditionally,
+// whenever presence is 'peek', regardless of which activity (if any) owns
+// the caps. Hover always promotes idle/any-activity to peek (state.js), so
+// settings stays one gesture away even while e.g. spotify.nowplaying or
+// agent.run owns the trailing cap. Without that second entry point, the
+// Control Center becomes unreachable by mouse for the entire time an
+// activity is live — the exact bug fixed once already in Task 5.
 function updateCaps(id){
-  if(id === 'agent.run'){
-    capLead.innerHTML = '<svg class="ico"><use href="#i-wave"/></svg>';
-    capTrail.innerHTML = '';
-  } else if(id === 'idle'){
+  if(id === 'idle'){
     capLead.innerHTML = '<svg class="ico"><use href="#i-mic"/></svg>';
     // stopPropagation is required: without it the click also bubbles to
     // #island's own onclick and fires handleIslandClick()->triggerListen()
     // at the same time as opening the Control Center.
     capTrail.innerHTML = '<button type="button" class="cap-btn" title="Open Control Center" aria-label="Open Control Center" onclick="event.stopPropagation();window.openSettings(\'overview\')"><svg class="ico"><use href="#i-gear"/></svg></button>';
   } else {
-    capLead.innerHTML = '';
-    capTrail.innerHTML = '';
+    capLead.replaceChildren(renderActivity(id,'leading')  || document.createTextNode(''));
+    capTrail.replaceChildren(renderActivity(id,'trailing') || document.createTextNode(''));
   }
 }
 
@@ -175,9 +179,23 @@ export function rerender(){
     applied.presence = r.presence;
   }
   if(r.contentId !== applied.contentId){
-    swapContent(islandBody, () => renderContentFor(r.contentId));
+    swapContent(islandBody, () => renderContentFor(r.contentId, r.presence));
     updateCaps(r.contentId);
+    // Drives the .peek-actions CSS gate in island.css: that row is the
+    // settings gear's second entry point (see index.html), shown whenever
+    // presence is 'peek' UNLESS the idle cap already has its own gear.
+    island.dataset.content = r.contentId;
     applied.contentId = r.contentId;
+  } else {
+    // Same content id, but its underlying data (or the compact/expanded
+    // slot) may have moved — the step ticker on agent.run, a spotify track
+    // change, a nudge's message. swapContent's fade+blur transition exists
+    // to sell an OBJECT changing, not a VALUE ticking, so refresh in place
+    // instead of re-running the morph animation on every notify event.
+    const fresh = renderContentFor(r.contentId, r.presence);
+    if(islandBody.firstElementChild) islandBody.replaceChild(fresh, islandBody.firstElementChild);
+    else islandBody.appendChild(fresh);
+    updateCaps(r.contentId);
   }
   setSurface(r.surface);
   publishRegionRects();
@@ -207,6 +225,11 @@ function handleIslandClick(){
   window.triggerListen && window.triggerListen();
 }
 
+// The single entry point for agent state transitions, whether they arrive
+// from Go (the 'state' bridge event) or are synthesized locally (e.g.
+// submitCurrentCommand's immediate "Dispatching…" before Go's own state
+// event lands). Drives the agent.run live activity; rerender() happens as
+// that activity's onChange (syncAndRerender), not here directly.
 function updateUI(state,text){
   jlog('updateUI '+state+(text?(' "'+text+'"'):''));
   // Reset the dormant clock on every transition INTO idle, so a burst of
@@ -214,12 +237,16 @@ function updateUI(state,text){
   // late relative to when the agent actually went quiet.
   const enteringIdle = state === 'idle' && store.agentState !== 'idle';
   store.agentState = state;
-  store.stateText = text || null;
   if(enteringIdle) store.idleSince = Date.now();
-  rerender();
+  if(state === 'idle'){
+    endActivity('agent.run', syncAndRerender);
+  } else {
+    updateActivity('agent.run', { phase: state, text: text || defaultLabelFor(state) },
+                    syncAndRerender);
+  }
 }
 
-function refreshIslandVisibility(){const sg=document.getElementById('suggestion').classList.contains('shown');const hide=!!currentPanel||sg||dashboard.classList.contains('visible');island.style.display=hide?'none':'flex';publishRegionRects()}
+function refreshIslandVisibility(){const hide=!!currentPanel||dashboard.classList.contains('visible');island.style.display=hide?'none':'flex';publishRegionRects()}
 function setPanel(id){['commandPanel','outputPanel','confirmPanel'].forEach(x=>document.getElementById(x).classList.remove('active'));currentPanel=id;if(id){document.getElementById(id).classList.add('active')}refreshIslandVisibility();publishRegionRects()}
 function collapseShell(){jlog('collapse');setPanel(null);if(window.setInputActive)window.setInputActive(false);sizeTo('pill');if(!dashboard.classList.contains('visible'))updateUI('idle')}
 function showCommand(){jlog('showCommand');setPanel('commandPanel');sizeTo('command');if(window.setInputActive)window.setInputActive(true);setTimeout(()=>commandInput.focus(),80)}
@@ -230,20 +257,26 @@ function showCard(text){jlog('showCard');latestOutput=text||'';outputBody.innerH
 function copyOutput(){if(!latestOutput)return;navigator.clipboard.writeText(latestOutput).then(()=>toast('Copied'))}
 function showConfirm(text){confirmTitle.textContent='Review action request';confirmBody.innerHTML=renderText(String(text));setPanel('confirmPanel');sizeTo('confirm')}
 function showConfirmCard(cardJSON){confirmTitle.textContent='Review action request';let html=renderText(String(cardJSON));try{const p=JSON.parse(cardJSON);if(p.title)confirmTitle.textContent=p.title;const steps=Array.isArray(p.fields)?p.fields:(p.plan&&Array.isArray(p.plan.steps)?p.plan.steps:null);const parts=[];if(p.plan&&p.plan.goal)parts.push('<div style="margin-bottom:14px;color:var(--ink-2);font-size:13px">'+esc(String(p.plan.goal))+'</div>');if(steps&&steps.length)parts.push(steps.map(f=>'<div class="item" style="margin-bottom:10px"><div class="eyebrow" style="margin-bottom:6px">'+esc(f.label||'Step')+'</div><div>'+esc(String(f.value||''))+'</div></div>').join(''));if(parts.length)html=parts.join('');else if(p&&typeof p==='object')html=renderText(JSON.stringify(p,null,2))}catch(e){}confirmBody.innerHTML=html;setPanel('confirmPanel');sizeTo('confirm')}
-function resolveConfirm(ok){window.confirmCallback&&window.confirmCallback(ok);collapseShell()}
+// resolveConfirm answers the trust.approval activity's Approve/Cancel
+// buttons (activities.js). It has no ttl (see activities.js), so this is the
+// ONLY thing — besides dismissal/quit — that ever resolves it; ending the
+// activity here, rather than leaving it for the next 'state'/'notify' event
+// to clobber, is what keeps a denied/approved plan from lingering expanded.
+function resolveConfirm(ok){window.confirmCallback&&window.confirmCallback(ok);endActivity('trust.approval',syncAndRerender)}
 
-/* ─── proactive suggestion card ───────────────────────────────────────────── */
-function showSuggestion(id,icon,title,message,action){jlog('showSuggestion '+id+' '+icon);
-  const glyph={download:'⭳',calendar:'▦',link:'↗',warn:'△'}[icon]||'•';
-  const el=document.getElementById('suggestion');el.dataset.id=id;
-  el.innerHTML='<div class="row"><span class="badge'+(icon==='warn'?' warn':'')+'">'+glyph+'</span><div><p class="ttl">'+esc(title)+'</p><p class="sub">'+esc(message)+'</p></div></div>'+
-    '<div class="actions right"><button class="btn ghost" onclick="dismissSuggestion()">Dismiss</button>'+(action?'<button class="btn primary" onclick="acceptSuggestion()">'+esc(action)+'</button>':'')+'</div>';
-  el.classList.add('shown');refreshIslandVisibility();sizeTo('suggestion');
-  clearTimeout(window.__sg);window.__sg=setTimeout(dismissSuggestion,15000);
-}
-function acceptSuggestion(){const el=document.getElementById('suggestion');if(el&&window.suggestionAccept)window.suggestionAccept(el.dataset.id);hideSuggestion()}
-function dismissSuggestion(){const el=document.getElementById('suggestion');if(el&&window.suggestionDismiss)window.suggestionDismiss(el.dataset.id);hideSuggestion()}
-function hideSuggestion(){document.getElementById('suggestion').classList.remove('shown');clearTimeout(window.__sg);refreshIslandVisibility();if(!currentPanel&&!dashboard.classList.contains('visible'))sizeTo('pill');publishRegionRects()}
+/* ─── proactive nudge (ambient.nudge activity) accept/dismiss ─────────────
+   The nudge itself now renders inline in the island (activities.js), not in
+   a separate card, so there is no show/hide-card plumbing left here — just
+   answering the two buttons the activity's `trailing` slot can produce.
+   Auto-dismiss (no user action) is the registry's own 8s ttl. */
+window.acceptSuggestion = (id) => {
+  window.suggestionAccept && window.suggestionAccept(id);
+  endActivity('ambient.nudge', syncAndRerender);
+};
+window.dismissSuggestion = (id) => {
+  window.suggestionDismiss && window.suggestionDismiss(id);
+  endActivity('ambient.nudge', syncAndRerender);
+};
 
 /* ─── settings dashboard ──────────────────────────────────────────────────── */
 async function loadSettings(){if(!window.getSettings)return;const s=await window.getSettings();if(!s)return;settingsState=Object.assign(settingsState,s);providerSelect.value=settingsState.llm_provider||'gemini';modelInput.value=settingsState.model||'';apiKeyInput.value=settingsState.api_key||'';baseUrlInput.value=settingsState.base_url||'';voiceToggle.classList.toggle('active',!!settingsState.enable_voice);privacyToggle.classList.toggle('active',!!settingsState.privacy_mode);metricProvider.textContent=(settingsState.llm_provider||'gemini').toUpperCase();overviewProvider.textContent='Model: '+(settingsState.llm_provider||'gemini');overviewVoice.textContent='Voice: '+(settingsState.enable_voice?'On':'Off');overviewPrivacy.textContent='Privacy: '+(settingsState.privacy_mode?'High':'Standard')}
@@ -269,15 +302,14 @@ window.switchTab = switchTab;
 window.closeSettings = closeSettings;
 window.persistSettings = persistSettings;
 window.toggleFlag = toggleFlag;
-window.dismissSuggestion = dismissSuggestion;
-window.acceptSuggestion = acceptSuggestion;
+// window.acceptSuggestion / window.dismissSuggestion are assigned directly
+// where they're defined, above (they close over the ambient.nudge id).
 window.openSettings = openSettings;
 // Handlers the Go bridge calls directly (see bridge handlers registered above)
 // and one Go calls via a bare, non-__agent Eval (internal/ui/overlay.go).
 window.updateUI = updateUI;
 window.showCard = showCard;
 window.showConfirmCard = showConfirmCard;
-window.showSuggestion = showSuggestion;
 window.publishRegionRects = publishRegionRects;
 window.loadIntegrationStatusesDash = loadIntegrationStatusesDash;
 

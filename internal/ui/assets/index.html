@@ -184,6 +184,16 @@ kbd{font:600 11px var(--font);color:var(--ink-2);background:rgba(255,255,255,.07
     <span class="cap lead" id="capLead"></span>
     <span class="body" id="islandBody"></span>
     <span class="cap trail" id="capTrail"></span>
+    <!-- Quick-action row, visible only at presence="peek" (see island.css).
+         Whichever activity owns capTrail (spotify.nowplaying's equalizer,
+         agent.run's chevron, ...), this stays reachable: hover always
+         promotes to peek, so the Control Center is never more than one
+         gesture away, even while an activity is live. Fixes the bug where
+         the settings gear (only ever in the idle trailing cap) became
+         unreachable by mouse for as long as any activity was on top. -->
+    <span class="peek-actions" id="peekActions">
+      <button type="button" class="cap-btn" title="Open Control Center" aria-label="Open Control Center" onclick="event.stopPropagation();window.openSettings('overview')"><svg class="ico"><use href="#i-gear"/></svg></button>
+    </span>
   </div>
 
   <section class="panel glass" id="commandPanel">
