@@ -55,6 +55,28 @@ func (c *canvas) Attach() {
 	pw := int32(canvasW * c.scale)
 	ph := int32(canvasH * c.scale)
 	sw := win.GetSystemMetrics(win.SM_CXSCREEN)
+	sh := win.GetSystemMetrics(win.SM_CYSCREEN)
+
+	// Fix-round-2 (I4): at 150% DPI on a 1080-tall display, ph = 800*1.5 =
+	// 1200 physical, anchored at y=0 — the bottom ~120 physical px (including
+	// the Control Center's Close/Quit buttons, controlcenter.css puts the
+	// dashboard at CSS y 20-780) fall below the bottom of the screen and are
+	// permanently unreachable, not just clipped. Clamping ph (and pw, for the
+	// same reason, though width wasn't the reported symptom) to the screen's
+	// metrics keeps the window itself on-screen. This does NOT by itself make
+	// every control reachable — see controlcenter.css's own comment — but an
+	// off-screen WINDOW can never be fixed by CSS alone, so this half has to
+	// live here. sw/sh use SM_CXSCREEN/SM_CYSCREEN (full screen, matching the
+	// existing width-centering code just above) rather than SPI_GETWORKAREA
+	// (excludes the taskbar) — not wrapped by github.com/lxn/win, and a
+	// window that just touches the taskbar strip is a much smaller problem
+	// than one whose controls are off-screen entirely.
+	if ph > sh {
+		ph = sh
+	}
+	if pw > sw {
+		pw = sw
+	}
 	x := (sw - pw) / 2
 
 	win.SetWindowPos(c.hwnd, win.HWND_TOPMOST, x, 0, pw, ph,

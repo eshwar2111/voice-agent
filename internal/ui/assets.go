@@ -4,7 +4,9 @@ import (
 	"crypto/rand"
 	"embed"
 	"encoding/hex"
+	"errors"
 	"io/fs"
+	"log"
 	"net"
 	"net/http"
 )
@@ -44,7 +46,17 @@ func startAssetServer() (*assetServer, error) {
 	mux := http.NewServeMux()
 	mux.Handle(prefix, http.StripPrefix(prefix, http.FileServer(http.FS(sub))))
 	srv := &http.Server{Handler: mux}
-	go srv.Serve(ln)
+	// A dead asset server presents as a permanently blank overlay with no
+	// diagnostic — the WebView just never finishes loading — so a silently
+	// discarded Serve error here is exactly the kind of failure manual QA
+	// (the very next step after this fix) would otherwise have no log line
+	// to explain. http.ErrServerClosed is the expected return from Close()
+	// and isn't worth logging.
+	go func() {
+		if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Printf("[ui] asset server stopped: %v", err)
+		}
+	}()
 
 	return &assetServer{
 		URL: "http://" + ln.Addr().String() + prefix,

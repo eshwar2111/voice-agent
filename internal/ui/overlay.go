@@ -65,6 +65,17 @@ var (
 	notifTimer *time.Timer
 
 	confirmChan chan bool
+	// confirmMutex serializes RequestConfirmation/RequestConfirmationCard.
+	// Both share one confirmChan and one 'trust.approval' activity slot; the
+	// typed `ai …` path (OnCommand, run via `go` in submitCommand's bind, see
+	// StartOverlay below) isn't covered by the engine's isBusy guard, so it
+	// can overlap the voice path. Without this, two goroutines could both
+	// block on <-confirmChan while the second UpdateActivity silently
+	// overwrote the first's prompt — one click would answer one goroutine and
+	// the other would hang forever, with no UI and no log (spec §7: "never
+	// deadlocks the executor"). Serializing means the second caller simply
+	// waits its turn for the island instead.
+	confirmMutex sync.Mutex
 
 	// OnCommand is declared in command_bar.go
 	OnSettingsSaved func(cfg interface{})
@@ -197,6 +208,8 @@ func RequestConfirmationCard(cardJSON string) bool {
 		log.Printf("[ui] confirmation requested before bridge ready — denying")
 		return false
 	}
+	waitForConfirmSlot()
+	defer confirmMutex.Unlock()
 	title, goal := approvalCardFields(cardJSON)
 	UpdateActivity("trust.approval", map[string]any{"title": title, "goal": goal})
 	return <-confirmChan
@@ -207,8 +220,24 @@ func RequestConfirmation(msg string) bool {
 		log.Printf("[ui] confirmation requested before bridge ready — denying")
 		return false
 	}
+	waitForConfirmSlot()
+	defer confirmMutex.Unlock()
 	UpdateActivity("trust.approval", map[string]any{"title": "Approve action?", "goal": msg})
 	return <-confirmChan
+}
+
+// waitForConfirmSlot acquires confirmMutex, logging if the caller actually
+// had to wait — i.e. another plan step's approval was already showing. Silent
+// contention here is exactly what made this bug unfindable before: two
+// concurrent callers (typed `ai …` isn't covered by the engine's isBusy
+// guard, so it can overlap the voice path) would otherwise both reach
+// UpdateActivity, the second silently clobbering the first's prompt.
+func waitForConfirmSlot() {
+	if confirmMutex.TryLock() {
+		return
+	}
+	log.Printf("[ui] confirmation request queued behind a pending approval")
+	confirmMutex.Lock()
 }
 
 // LowerTopmostForOAuth temporarily removes TOPMOST so the OAuth browser can be focused.

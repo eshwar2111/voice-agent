@@ -2,8 +2,19 @@
 /* Settings dashboard (reskinned; structure preserved) — driven by
    surfaces/controlcenter.js, shown/hidden by main.js's setSurface() toggling
    the 'visible' class in lockstep with store.surface==='controlcenter'. */
-#dashboard{position:fixed;top:20px;left:50%;transform:translateX(-50%);
-  width:1160px;height:760px;z-index:5;display:none;border-radius:26px;overflow:hidden}
+/* top/height (fix-round-2, I4): the canvas is a FIXED 1200x800 CSS-px box
+   (canvas.go) whose PHYSICAL size scales with DPI; canvas.go now clamps the
+   physical window to the screen's metrics so it can never extend past the
+   screen edge, but that clamp alone still leaves less of this fixed CSS
+   canvas actually visible at high DPI — at 150% on a common 1080-tall
+   display, canvas.go's clamp caps the window at ~1080 physical px tall,
+   which is ~720 CSS px (1080/1.5). The previous top:20/height:760 (bottom
+   edge at CSS y=780) put the sidebar's Close/Quit buttons below that line —
+   reachable at 100% (canvas fits uncapped) and 125% (960 physical / 1080
+   screen still fits, so no clamp triggers), but not 150%. top:10/height:700
+   (bottom edge at CSS y=710) keeps them inside the ~720 CSS px worst case. */
+#dashboard{position:fixed;top:10px;left:50%;transform:translateX(-50%);
+  width:1160px;height:700px;z-index:5;display:none;border-radius:26px;overflow:hidden}
 #dashboard.visible{display:grid;grid-template-columns:248px 1fr}
 .sidebar{padding:26px 20px;border-right:1px solid var(--stroke);display:flex;flex-direction:column;gap:22px;background:rgba(255,255,255,.02)}
 .sidebar h2{font-size:23px;font-weight:640;letter-spacing:-0.03em;line-height:1.05;margin-bottom:10px}

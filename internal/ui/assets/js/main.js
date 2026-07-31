@@ -52,7 +52,15 @@ window.__agent.on('notify', d => {
   // "Step 2/5: …", research_tool.go sends "Reading: …". Feed the ticker
   // rather than forcing the agent state back to idle (the old handler called
   // updateUI('idle', ...) here, which fought the real state transitions).
-  if(!d.text){ return }
+  //
+  // Empty text is overlay.go's ShowNotification 4s auto-clear timer (fix-
+  // round-2 finding: this used to just `return`, making that timer a no-op —
+  // since agent.run has no ttl, any narration not followed by a real state
+  // transition pinned the island to that text forever and blocked dormant).
+  // End the activity instead of leaving stale text on screen; this does NOT
+  // force agentState back to idle, so it can't fight a real transition the
+  // way the old updateUI('idle', ...) call here used to.
+  if(!d.text){ endActivity('agent.run', syncAndRerender); return }
   updateActivity('agent.run', { phase: store.agentState, text: d.text }, syncAndRerender);
 });
 window.__agent.on('surface:open', d => {
