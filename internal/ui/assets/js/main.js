@@ -248,6 +248,12 @@ export function openSurface(id, payload){
   rerender();
 }
 
+// Lets a surface module (approve.js) tell whether IT is the thing currently
+// open, without handing out the store itself — resolveConfirm answers both
+// the trust.approval activity (which never touches store.surface) and this
+// legacy sheet (which does), and must only close the latter.
+export function getSurface(){ return store.surface }
+
 // Clears store.surface/payload, resets the idle clock so dormant timing
 // starts fresh from the moment a surface closes, and re-renders.
 export function closeSurface(){

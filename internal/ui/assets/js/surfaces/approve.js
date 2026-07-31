@@ -4,13 +4,16 @@
 // (activities.js: 'trust.approval', expanded()) so the island expands inline
 // with Approve/Cancel rather than opening this full sheet — no current Go
 // caller sends 'surface:open' with id 'approve', and nothing calls
-// window.showConfirmCard either. Kept working and reachable (via
+// window.showConfirmCard either. Kept reachable (via
 // openSurface('approve', {cardJSON}) or window.showConfirmCard(cardJSON))
 // rather than deleted outright, per Task 7's behavior-preservation ruling:
 // silently dropping a working code path is worse than carrying dead weight.
+// "Reachable" only — it has no committed test coverage and, since nothing
+// calls it, has not been exercised end-to-end; treat it as unverified, not
+// as a safe fallback.
 import { esc } from '../activities.js';
 import { endActivity } from '../activities.js';
-import { syncAndRerender } from '../main.js';
+import { syncAndRerender, closeSurface, getSurface } from '../main.js';
 
 function renderText(t){
   return '<div>'+esc(t).replace(/\n/g,'<br/>').replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>')+'</div>';
@@ -65,9 +68,18 @@ export function render(payload){
 // ever resolves it; ending the activity here, rather than leaving it for the
 // next 'state'/'notify' event to clobber, is what keeps a denied/approved
 // plan from lingering expanded.
+//
+// The trust.approval activity path never touches store.surface (it renders
+// via activities.js's expanded() slot, not this module's render()), so
+// getSurface() there is whatever else happens to be open — never 'approve'.
+// Only when THIS sheet is what's open (store.surface === 'approve', set by
+// openSurface('approve', ...) / window.showConfirmCard) do we also close it;
+// otherwise the sheet used to have no way back to idle from its own buttons
+// (fixed round 1 finding — endActivity alone never touched store.surface).
 export function resolveConfirm(ok){
   window.confirmCallback && window.confirmCallback(ok);
   endActivity('trust.approval', syncAndRerender);
+  if(getSurface() === 'approve') closeSurface();
 }
 window.resolveConfirm = resolveConfirm;
 window.showConfirmCard = (cardJSON) => window.openSurface && window.openSurface('approve', { cardJSON });
