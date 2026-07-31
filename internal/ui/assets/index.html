@@ -3,163 +3,10 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
+<link rel="stylesheet" href="css/tokens.css"/>
 <link rel="stylesheet" href="css/island.css"/>
-<style>
-/* ─── Voice Agent · macOS-style frosted-glass overlay ─────────────────────── */
-:root{
-  --glass: rgba(24,25,31,0.66);
-  --glass-solid: #14151b;
-  --hi: rgba(255,255,255,0.10);      /* top inner highlight */
-  --stroke: rgba(255,255,255,0.12);
-  --ink:#f2f3f7; --ink-2:#a6abb8; --ink-3:#6b7180;
-  --accent:#0a84ff;                  /* macOS system blue */
-  --accent-soft: rgba(10,132,255,.16);
-  --good:#30d158; --warn:#ff9f0a; --danger:#ff453a;
-  --shadow: 0 22px 60px -18px rgba(0,0,0,.72), 0 6px 18px -8px rgba(0,0,0,.55);
-  --font:-apple-system,"SF Pro Text","SF Pro Display",system-ui,"Segoe UI",Roboto,sans-serif;
-  --ease:cubic-bezier(.22,.7,.3,1);
-}
-*{box-sizing:border-box;margin:0;padding:0}
-html,body{width:100%;height:100%;overflow:hidden;background:transparent;color:var(--ink);
-  font-family:var(--font);-webkit-font-smoothing:antialiased;letter-spacing:-0.01em;cursor:default}
-button,input,textarea,select{font:inherit;color:inherit}
-.hidden{display:none!important}
-
-/* one glass surface, used by pill + every panel/card */
-.glass{
-  background:var(--glass);
-  -webkit-backdrop-filter:blur(34px) saturate(180%); backdrop-filter:blur(34px) saturate(180%);
-  border:1px solid var(--stroke);
-  box-shadow:var(--shadow), inset 0 1px 0 var(--hi);
-}
-@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
-  .glass{background:var(--glass-solid)} /* fallback: opaque so nothing bleeds through */
-}
-
-#shell{position:fixed;inset:0}
-
-/* ─── Pill (compact, fixed height → always a capsule, never an ellipse) ───── */
-.pill{position:fixed;top:10px;left:50%;transform:translateX(-50%);
-  width:300px;height:52px;display:flex;align-items:center;gap:11px;
-  border-radius:26px;padding:0 8px 0 18px;cursor:pointer;overflow:hidden}
-.orb{width:9px;height:9px;border-radius:50%;flex:0 0 auto;background:#5a6070;
-  transition:background .2s,box-shadow .2s}
-.orb.on{background:radial-gradient(circle at 34% 30%,#bcd6ff,var(--accent));
-  box-shadow:0 0 0 3px var(--accent-soft),0 0 12px 1px rgba(10,132,255,.55)}
-.orb.pulse{animation:pulse 1.7s var(--ease) infinite}
-.orb.warm{background:radial-gradient(circle at 34% 30%,#ffe0ad,var(--warn));box-shadow:0 0 0 3px rgba(255,159,10,.16),0 0 12px 1px rgba(255,159,10,.5)}
-.orb.good{background:radial-gradient(circle at 34% 30%,#b6f7c6,var(--good));box-shadow:0 0 0 3px rgba(48,209,88,.16),0 0 12px 1px rgba(48,209,88,.5)}
-@keyframes pulse{0%,100%{box-shadow:0 0 0 3px var(--accent-soft),0 0 8px 1px rgba(10,132,255,.4)}50%{box-shadow:0 0 0 6px rgba(10,132,255,.05),0 0 16px 3px rgba(10,132,255,.6)}}
-.label{flex:1;min-width:0;font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink)}
-.label .mut{color:var(--ink-2);font-weight:400}
-.eq{display:inline-flex;align-items:center;gap:2.5px;height:15px;flex:0 0 auto}
-.eq i{width:2.5px;height:5px;border-radius:2px;background:var(--accent);animation:bounce 1s var(--ease) infinite}
-.eq i:nth-child(2){animation-delay:.15s}.eq i:nth-child(3){animation-delay:.3s}.eq i:nth-child(4){animation-delay:.45s}.eq i:nth-child(5){animation-delay:.1s}
-@keyframes bounce{0%,100%{height:4px;opacity:.5}50%{height:14px;opacity:1}}
-.shimmer{width:46px;height:5px;border-radius:3px;overflow:hidden;background:rgba(255,255,255,.08);position:relative;flex:0 0 auto}
-.shimmer::after{content:"";position:absolute;inset:0;transform:translateX(-100%);background:linear-gradient(90deg,transparent,rgba(10,132,255,.85),transparent);animation:sweep 1.25s var(--ease) infinite}
-@keyframes sweep{to{transform:translateX(100%)}}
-.iconbtn{width:28px;height:28px;border-radius:50%;border:0;cursor:pointer;display:grid;place-items:center;background:rgba(255,255,255,.06);color:var(--ink-2);transition:background .16s,color .16s;flex:0 0 auto;font-size:14px}
-.iconbtn:hover{background:var(--accent-soft);color:#cfe0ff}
-.iconbtn.stop{background:rgba(255,69,58,.12);color:var(--danger)}
-.iconbtn.stop:hover{background:rgba(255,69,58,.22)}
-
-/* ─── Panels (command / output / confirm) — larger frosted sheets ────────── */
-.panel{display:none;position:fixed;top:10px;left:50%;transform:translateX(-50%);
-  z-index:4;flex-direction:column;overflow:hidden;border-radius:26px}
-.panel.active{display:flex}
-#commandPanel{width:720px;height:440px}
-#outputPanel{width:720px;height:540px}
-#confirmPanel{width:680px;height:410px}
-.phead{padding:20px 22px 15px;display:flex;align-items:flex-start;justify-content:space-between;gap:16px;border-bottom:1px solid var(--stroke)}
-.eyebrow{font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);font-weight:700;margin:0 0 7px}
-.phead h1{font-size:21px;font-weight:640;letter-spacing:-0.03em;line-height:1.12;margin:0 0 6px}
-.phead p{font-size:12.5px;line-height:1.5;color:var(--ink-2);margin:0;max-width:46ch}
-.chip{padding:6px 11px;border-radius:999px;border:1px solid var(--stroke);background:rgba(255,255,255,.05);color:var(--ink-2);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;white-space:nowrap;flex:0 0 auto}
-#commandInput{flex:1;width:100%;min-height:0;border:none;outline:none;background:transparent;color:var(--ink);resize:none;padding:18px 22px;font-size:21px;font-weight:600;line-height:1.3;letter-spacing:-0.02em}
-#commandInput::placeholder{color:var(--ink-3)}
-.footer{border-top:1px solid var(--stroke);padding:14px 18px 16px;display:flex;flex-direction:column;gap:12px}
-.suggestions{display:flex;flex-wrap:wrap;gap:8px}
-.hint{display:flex;justify-content:space-between;color:var(--ink-3);font-size:11.5px}
-kbd{font:600 11px var(--font);color:var(--ink-2);background:rgba(255,255,255,.07);border:1px solid var(--stroke);border-radius:6px;padding:2px 6px}
-.obody{padding:18px 22px;overflow:auto;font-size:13.5px;line-height:1.62;color:#dfe2ea;flex:1}
-.list{display:grid;gap:10px}
-.item{padding:12px 14px;border-radius:14px;border:1px solid var(--stroke);background:rgba(255,255,255,.04)}
-.item-title{font-size:13px;font-weight:700;margin-bottom:4px}
-.item-meta{font-size:11.5px;color:var(--ink-2)}
-
-/* ─── Buttons ─────────────────────────────────────────────────────────────── */
-.btn{border:1px solid transparent;border-radius:11px;cursor:pointer;font:600 13px var(--font);padding:9px 16px;letter-spacing:-0.01em;transition:transform .1s var(--ease),background .16s,border-color .16s}
-.btn:active{transform:scale(.97)}
-.btn.primary{background:var(--accent);color:#fff}
-.btn.primary:hover{background:#3d9bff}
-.btn.ghost{background:rgba(255,255,255,.05);color:var(--ink);border-color:var(--stroke)}
-.btn.ghost:hover{background:rgba(255,255,255,.09)}
-.btn.danger{background:var(--danger);color:#fff}
-.btn.danger:hover{background:#ff655b}
-.actions{display:flex;gap:8px;margin-top:14px}
-.actions.right{justify-content:flex-end}
-
-/* ─── Suggestion / meeting card ───────────────────────────────────────────── */
-.card{position:fixed;top:10px;left:50%;transform:translateX(-50%);
-  width:400px;height:150px;z-index:4;border-radius:22px;padding:17px 19px;
-  text-align:left;display:none;flex-direction:column;justify-content:center}
-.card.shown{display:flex}
-.card .row{display:flex;align-items:center;gap:13px}
-.badge{flex:0 0 38px;height:38px;border-radius:11px;display:grid;place-items:center;background:var(--accent-soft);color:#cfe0ff;font-size:17px}
-.badge.warn{background:rgba(255,159,10,.16);color:#ffd699}
-.card .ttl{font-size:14.5px;font-weight:620;letter-spacing:-0.02em;margin:0 0 2px}
-.card .sub{font-size:12.5px;color:var(--ink-2);margin:0;line-height:1.45}
-
-/* ─── Settings dashboard (reskinned; structure preserved) ─────────────────── */
-#dashboard{position:fixed;top:20px;left:50%;transform:translateX(-50%);
-  width:1160px;height:760px;z-index:5;display:none;border-radius:26px;overflow:hidden}
-#dashboard.visible{display:grid;grid-template-columns:248px 1fr}
-.sidebar{padding:26px 20px;border-right:1px solid var(--stroke);display:flex;flex-direction:column;gap:22px;background:rgba(255,255,255,.02)}
-.sidebar h2{font-size:23px;font-weight:640;letter-spacing:-0.03em;line-height:1.05;margin-bottom:10px}
-.sidebar p{font-size:12.5px;line-height:1.5;color:var(--ink-2)}
-.nav{display:grid;gap:7px}
-.nav button{text-align:left;color:var(--ink-2);padding:10px 13px;border-radius:11px;border:1px solid transparent;background:transparent;cursor:pointer;transition:all .14s ease;font-weight:500}
-.nav button:hover{background:rgba(255,255,255,.05)}
-.nav button.active{background:var(--accent-soft);border-color:rgba(10,132,255,.28);color:#fff}
-.metric{padding:13px;border-radius:13px;border:1px solid var(--stroke);background:rgba(255,255,255,.03)}
-.metric .metriclabel{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:var(--ink-3);margin-bottom:6px}
-.metric .value{font-size:14px;font-weight:700}
-.content{display:flex;flex-direction:column;overflow:hidden}
-.content-head{padding:24px 28px 16px;border-bottom:1px solid var(--stroke);display:flex;justify-content:space-between;gap:18px}
-.content-head h3{font-size:19px;font-weight:640;letter-spacing:-0.03em}
-.content-head p{font-size:12.5px;color:var(--ink-2);line-height:1.5;margin-top:6px;max-width:52ch}
-.content-body{flex:1;overflow:auto;padding:22px 28px}
-.tab{display:none}.tab.active{display:block}
-.grid{display:grid;gap:16px}.two{grid-template-columns:repeat(2,minmax(0,1fr))}.three{grid-template-columns:repeat(3,minmax(0,1fr))}
-.surface{padding:18px;border-radius:16px;border:1px solid var(--stroke);background:rgba(255,255,255,.03)}
-.surface h4{font-size:15px;font-weight:700;margin-bottom:8px}
-.surface p{font-size:12.5px;color:var(--ink-2);line-height:1.5}
-.taglets{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px}
-.taglet{padding:5px 9px;border-radius:999px;border:1px solid var(--stroke);background:rgba(255,255,255,.04);font-size:11px;font-weight:600;color:var(--ink-2)}
-.integration{display:grid;grid-template-columns:1fr auto;gap:18px;align-items:center}
-.statusbadge{display:inline-flex;align-items:center;gap:8px;padding:6px 11px;border-radius:999px;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;border:1px solid var(--stroke);background:rgba(255,255,255,.03)}
-.statusbadge:before{content:'';width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.3)}
-.statusbadge.connected{background:rgba(48,209,88,.1);border-color:rgba(48,209,88,.24);color:#c7f5d3}
-.statusbadge.connected:before{background:var(--good);box-shadow:0 0 10px rgba(48,209,88,.5)}
-.statusbadge.disconnected{background:rgba(255,69,58,.08);border-color:rgba(255,69,58,.18);color:#ffcecb}
-.statusbadge.disconnected:before{background:var(--danger)}
-.fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:16px}
-.field{display:flex;flex-direction:column;gap:8px}.field.full{grid-column:1/-1}
-.field label{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:var(--ink-3)}
-.field input,.field select{width:100%;padding:11px 13px;border-radius:11px;border:1px solid var(--stroke);background:rgba(255,255,255,.05);color:var(--ink);outline:none}
-.field input:focus,.field select:focus{border-color:rgba(10,132,255,.5)}
-.switch-row{display:flex;justify-content:space-between;gap:16px;padding:16px 0;border-top:1px solid var(--stroke)}
-.switch-row:first-child{border-top:none;padding-top:4px}
-.switch-copy h5{font-size:14px;font-weight:700;margin-bottom:4px}
-.switch-copy p{font-size:12px;color:var(--ink-2)}
-.toggle{width:50px;height:30px;border-radius:999px;border:1px solid var(--stroke);background:rgba(255,255,255,.08);position:relative;cursor:pointer;flex:0 0 auto;transition:background .18s}
-.toggle:after{content:'';position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#fff;transition:transform .18s ease}
-.toggle.active{background:var(--accent);border-color:var(--accent)}
-.toggle.active:after{transform:translateX(20px)}
-#toast{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);min-width:200px;max-width:480px;padding:10px 14px;border-radius:12px;border:1px solid var(--stroke);background:rgba(20,21,27,.96);box-shadow:var(--shadow);display:none;font-size:12px;line-height:1.5;z-index:10}
-@media (prefers-reduced-motion:reduce){.orb.pulse,.eq i,.shimmer::after{animation:none!important}}
-</style>
+<link rel="stylesheet" href="css/surfaces.css"/>
+<link rel="stylesheet" href="css/controlcenter.css"/>
 </head>
 <body>
 <svg xmlns="http://www.w3.org/2000/svg" style="display:none">
@@ -196,33 +43,12 @@ kbd{font:600 11px var(--font);color:var(--ink-2);background:rgba(255,255,255,.07
     </span>
   </div>
 
-  <section class="panel glass" id="commandPanel">
-    <div class="phead"><div><div class="eyebrow">Command</div><h1>Ask anything.</h1><p>Type a request — apps, files, the web, or desktop actions. Prefix with “ai” for a free-form prompt.</p></div><div class="chip">⌘ Space</div></div>
-    <textarea id="commandInput" placeholder="Try: open notepad · summarize this · play focus music"></textarea>
-    <div class="footer">
-      <div class="suggestions">
-        <button class="btn ghost" type="button" onclick="fillSuggestion('ai give me my Google Workspace brief')">Workspace brief</button>
-        <button class="btn ghost" type="button" onclick="fillSuggestion('ai draft a Google Doc for sprint planning')">Draft a doc</button>
-        <button class="btn ghost" type="button" onclick="fillSuggestion('ai create a slide deck about quarterly goals')">Create slides</button>
-        <button class="btn ghost" type="button" onclick="fillSuggestion('ai play something for deep focus on spotify')">Spotify focus</button>
-      </div>
-      <div class="hint"><div>Enter to submit · Shift+Enter for a new line.</div><div><kbd>Esc</kbd> collapse</div></div>
-    </div>
-  </section>
-
-  <section class="panel glass" id="outputPanel">
-    <div class="phead"><div><div class="eyebrow">Response</div><h1>Result</h1><p>Answers and connected-app results appear here.</p></div><button class="btn ghost" type="button" onclick="copyOutput()">Copy</button></div>
-    <div class="obody" id="outputBody"></div>
-    <div class="footer"><div class="actions"><button class="btn ghost" type="button" onclick="showCommand()">Ask another</button></div></div>
-  </section>
-
-  <section class="panel glass" id="confirmPanel">
-    <div class="phead"><div><div class="eyebrow">Approval</div><h1 id="confirmTitle">Confirm before we proceed.</h1><p>Sensitive actions surface here so you stay in control.</p></div><div class="chip">Safety</div></div>
-    <div class="obody" id="confirmBody"></div>
-    <div class="footer"><div class="actions right"><button class="btn ghost" type="button" onclick="resolveConfirm(false)">Cancel</button><button class="btn primary" type="button" onclick="resolveConfirm(true)">Approve</button></div></div>
-  </section>
-
-  <div class="card glass" id="suggestion"></div>
+  <!-- Command/result/approve are rendered inline in #islandBody by their
+       surface modules (surfaces/{command,result,approve}.js) whenever
+       store.surface selects them — resolve() (state.js) sizes the island to
+       presence="sheet" for all three, so no separate panel markup lives here
+       anymore. Only the Control Center dashboard stays a standalone element
+       (see surfaces/controlcenter.js). -->
 
   <section id="dashboard" class="glass">
     <aside class="sidebar">
