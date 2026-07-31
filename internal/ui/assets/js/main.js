@@ -57,10 +57,22 @@ window.__agent.on('notify', d => {
   // round-2 finding: this used to just `return`, making that timer a no-op —
   // since agent.run has no ttl, any narration not followed by a real state
   // transition pinned the island to that text forever and blocked dormant).
-  // End the activity instead of leaving stale text on screen; this does NOT
-  // force agentState back to idle, so it can't fight a real transition the
-  // way the old updateUI('idle', ...) call here used to.
-  if(!d.text){ endActivity('agent.run', syncAndRerender); return }
+  //
+  // Only end the activity if the agent has actually gone idle by now (fix-
+  // round-3 finding: unconditionally ending it here fired even mid-operation
+  // — store.agentState still 'acting' — leaving no live entry for
+  // renderActivity to find, so the pill fell back to an empty <div> with
+  // blank caps for however long remained until the next event. A working
+  // agent should never go visually blank.) Otherwise keep the activity alive
+  // with an empty text so defaultLabelFor's generic phase label (e.g.
+  // "Working…") renders instead of the last, now-stale, narration line —
+  // still doesn't force agentState back to idle, so it can't fight a real
+  // transition the way the old updateUI('idle', ...) call here once did.
+  if(!d.text){
+    if(store.agentState === 'idle') endActivity('agent.run', syncAndRerender);
+    else updateActivity('agent.run', { phase: store.agentState, text: '' }, syncAndRerender);
+    return;
+  }
   updateActivity('agent.run', { phase: store.agentState, text: d.text }, syncAndRerender);
 });
 window.__agent.on('surface:open', d => {
@@ -119,7 +131,7 @@ const capTrail = document.getElementById('capTrail');
 
 const store = { surface:null, payload:null, activities:[], agentState:'idle',
                 hover:false, idleSince:Date.now(), now:Date.now() };
-let applied = { presence:null, contentId:null };
+let applied = { presence:null, contentId:null, payload:undefined };
 
 function defaultLabelFor(state){
   if(state==='listening') return 'Listening…';
@@ -230,18 +242,32 @@ export function rerender(){
     // presence is 'peek' UNLESS the idle cap already has its own gear.
     island.dataset.content = r.contentId;
     applied.contentId = r.contentId;
-  } else if(!surfaceRenderers[r.contentId]){
+    applied.payload = store.payload;
+  } else if(r.contentId !== 'command' &&
+            (!surfaceRenderers[r.contentId] || store.payload !== applied.payload)){
     // Same content id, but its underlying data (or the compact/expanded
     // slot) may have moved — the step ticker on agent.run, a spotify track
-    // change, a nudge's message. swapContent's fade+blur transition exists
-    // to sell an OBJECT changing, not a VALUE ticking, so refresh in place
-    // instead of re-running the morph animation on every notify event.
+    // change, a nudge's message, or (fix-round-3 finding) a second
+    // openSurface('result', {...}) landing while the result sheet was
+    // already open (e.g. a background timer's answer arriving while an
+    // earlier answer is still on screen — dispatch.go, executor.go,
+    // speak.go, productivity.go all route through here). swapContent's
+    // fade+blur transition exists to sell an OBJECT changing, not a VALUE
+    // ticking, so refresh in place instead of re-running the morph
+    // animation on every notify event.
     //
-    // Gated to non-surface (activity) content only (fix-round-2 finding):
-    // command/result/approve build their own DOM once and own it afterward —
-    // rebuilding them here on every tick (the 1s idle interval, hover
-    // enter/leave) destroyed and re-created the command sheet's <textarea>
-    // under the user's cursor, wiping anything typed roughly once a second.
+    // Gated to non-surface (activity) content, OR a surface whose payload
+    // reference actually changed (fix-round-2 + fix-round-3): 'command' is
+    // hard-excluded no matter what — its DOM holds live typed input that a
+    // payload check can't tell apart from "the user typed something", so
+    // rebuilding it here — even on a genuine payload change — would still
+    // wipe whatever's in the textarea. 'result'/'approve' have no such
+    // live-input state, so once fix-round-2 stopped them from rebuilding on
+    // every no-op tick (`store.payload !== applied.payload` was always
+    // false then, since nothing ever updated `applied.payload`), fix-round-3
+    // restores their ability to rebuild when openSurface() actually hands
+    // them new data — Copy was copying stale text otherwise, since
+    // result.js only assigns `latestOutput` inside render().
     //
     // Must NOT assume the outgoing swap's target is islandBody.firstElementChild:
     // for ~120ms after a contentId change, swapContent leaves BOTH the
@@ -257,6 +283,7 @@ export function rerender(){
     else islandBody.appendChild(fresh);
     islandBody.__current = fresh;
     updateCaps(r.contentId);
+    applied.payload = store.payload;
   }
   setSurface(r.surface);
   // See the `morphed` comment above: when a morph just started, its own

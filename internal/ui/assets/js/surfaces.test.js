@@ -15,6 +15,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { getShimEl } from './testutil.dom.js';
 import { openSurface, getSurface, rerender } from './main.js';
+import { updateActivity } from './activities.js';
 import { render as renderCommand } from './surfaces/command.js';
 import { render as renderResult } from './surfaces/result.js';
 import { render as renderApprove, resolveConfirm } from './surfaces/approve.js';
@@ -47,6 +48,11 @@ test('fix round 1: resolveConfirm leaves an unrelated open surface alone', () =>
   // resolveConfirm() but never sets store.surface — so if some other
   // surface (here: command) happens to be open at the same time, resolving
   // a trust.approval confirmation must not close it out from under the user.
+  // A live trust.approval entry is required for resolveConfirm to treat this
+  // as a real click rather than a stray one (fix-round-3's isLive guard) —
+  // exactly matching how activities.js only ever renders those buttons while
+  // the activity actually is live.
+  updateActivity('trust.approval', { title: 'Approve?', goal: 'test' }, () => {});
   openSurface('command');
   assert.equal(getSurface(), 'command');
   resolveConfirm(false);
@@ -76,3 +82,34 @@ test('fix round 2 (C2): rerender() does not rebuild the command surface root whe
   assert.equal(islandBody.__current, rootAfterOpen,
     'command sheet was rebuilt in place on a no-op rerender — this destroys whatever the user had typed');
 });
+
+test('fix round 3 (R1): a fresh openSurface("result", ...) replaces the rendered node, but a no-op rerender() does not', () => {
+  // The C2 fix (fix-round-2) stopped 'result' from being rebuilt on every
+  // no-op rerender() — but its guard (`!surfaceRenderers[r.contentId]`) also
+  // stopped it from EVER updating again, including when openSurface('result',
+  // {...}) legitimately handed it fresh data (a background timer's answer
+  // arriving while an earlier one is still on screen). Copy would then copy
+  // stale text, since result.js only assigns latestOutput inside render().
+  openSurface('result', { text: 'first answer' });
+  const islandBody = getShimEl('islandBody');
+  const firstNode = islandBody.__current;
+  assert.ok(firstNode, 'expected a root node after opening the result surface');
+
+  // A no-op rerender (idle tick / hover) with the SAME payload reference
+  // must still leave the surface alone — this is the fix-round-2 guarantee,
+  // and must not regress while fixing the payload-update case above it.
+  rerender();
+  rerender();
+  assert.equal(islandBody.__current, firstNode,
+    'result sheet was rebuilt on a no-op rerender with an unchanged payload');
+
+  // A genuinely new payload (a fresh object, exactly as the 'surface:open'
+  // bridge handler and every other openSurface('result', ...) caller
+  // constructs one) must replace the rendered node.
+  openSurface('result', { text: 'second answer' });
+  const secondNode = islandBody.__current;
+  assert.notEqual(secondNode, firstNode,
+    'result sheet did not update for a new payload — Copy would copy stale text');
+});
+
+// R3_TEST_PLACEHOLDER — restored in the next commit.
