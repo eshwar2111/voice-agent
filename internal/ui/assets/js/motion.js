@@ -57,7 +57,14 @@ export function swapContent(host, render) {
     return;
   }
 
-  const outgoing = host.firstElementChild;
+  // Must use currentSwapTarget(), not host.firstElementChild: when two
+  // content changes land within this 120ms fade window, a THIRD/second call
+  // would otherwise re-bind outgoing to the FIRST call's already-dying node
+  // (still firstElementChild while it fades) instead of the node actually
+  // showing right now (host.__current). That leaves the real current node —
+  // the previous call's incoming — never faded or removed: a permanent
+  // orphaned ghost, absolutely positioned over the real content.
+  const outgoing = currentSwapTarget(host);
   if (outgoing) {
     outgoing.style.transition = 'opacity 120ms linear, transform 120ms linear, filter 120ms linear';
     outgoing.style.opacity = '0';
