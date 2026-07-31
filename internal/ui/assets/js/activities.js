@@ -38,6 +38,17 @@ export function endActivity(id, onChange) {
   onChange && onChange();
 }
 
+// Whether `id` currently has a live entry. Exported for resolveConfirm
+// (surfaces/approve.js, fix-round-3): the registry entry for 'trust.approval'
+// is deleted, synchronously, the instant the FIRST click's endActivity()
+// runs — and a second click's handler cannot start executing until the
+// first one has fully returned (JS has one thread) — so checking this at the
+// top of resolveConfirm is what makes a stray double-click provably unable
+// to resolve a different, later prompt.
+export function isLive(id) {
+  return live.has(id);
+}
+
 // Shape consumed by state.js resolve(): [{id, priority}]
 export function activeActivities() {
   const out = [];

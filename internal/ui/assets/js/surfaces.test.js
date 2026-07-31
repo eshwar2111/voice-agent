@@ -112,4 +112,32 @@ test('fix round 3 (R1): a fresh openSurface("result", ...) replaces the rendered
     'result sheet did not update for a new payload — Copy would copy stale text');
 });
 
-// R3_TEST_PLACEHOLDER — restored in the next commit.
+test('fix round 3 (R3): a stray second resolveConfirm on the same prompt is dropped, not delivered', () => {
+  // Models double-clicking Approve: two resolveConfirm(true) calls land back
+  // to back. JS's single thread runs the first click's synchronous handler —
+  // including endActivity() below, which deletes the live registry entry —
+  // to completion before the second click's handler can even start, so by
+  // the time it runs, trust.approval is provably no longer live. Without
+  // this guard, overlay.go's confirmMutex (fix-round-2, I2) means that
+  // second click has a plausible receiver: the NEXT queued caller, answering
+  // a prompt the user never saw.
+  let calls = 0;
+  window.confirmCallback = () => { calls++; };
+
+  updateActivity('trust.approval', { title: 'Approve?', goal: 'test' }, () => {});
+  resolveConfirm(true); // the real click
+  assert.equal(calls, 1, 'the real click should reach confirmCallback exactly once');
+
+  resolveConfirm(true); // the stray echo of the same double-click
+  assert.equal(calls, 1,
+    'a stray second click on an already-resolved prompt must not reach confirmCallback again');
+
+  // The guard must not be a one-shot latch: a genuinely NEW prompt (a fresh
+  // updateActivity, as Go sends for every new RequestConfirmationCard) has
+  // to remain answerable afterward.
+  updateActivity('trust.approval', { title: 'Approve again?', goal: 'test 2' }, () => {});
+  resolveConfirm(false);
+  assert.equal(calls, 2, 'a real click on a genuinely new prompt must still reach confirmCallback');
+
+  delete window.confirmCallback;
+});

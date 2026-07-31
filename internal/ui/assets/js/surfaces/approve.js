@@ -12,7 +12,7 @@
 // calls it, has not been exercised end-to-end; treat it as unverified, not
 // as a safe fallback.
 import { esc } from '../activities.js';
-import { endActivity } from '../activities.js';
+import { endActivity, isLive } from '../activities.js';
 import { syncAndRerender, closeSurface, getSurface } from '../main.js';
 
 function renderText(t){
@@ -76,10 +76,33 @@ export function render(payload){
 // openSurface('approve', ...) / window.showConfirmCard) do we also close it;
 // otherwise the sheet used to have no way back to idle from its own buttons
 // (fixed round 1 finding — endActivity alone never touched store.surface).
+//
+// Guarded against a stray second resolve (fix-round-3 finding): overlay.go
+// now queues a second concurrent RequestConfirmation(Card) behind a mutex
+// (fix-round-2, I2) rather than letting it silently clobber the first's
+// prompt — which means a stray extra confirmCallback send (e.g. a
+// double-click on Approve) now has a PLAUSIBLE receiver: the next queued
+// caller, in the window between it acquiring the lock and its own prompt
+// actually rendering. A double-click must never be able to approve a plan
+// the user never saw. `activityLive`/`sheetOpen` are read once, at the top,
+// before anything is mutated; if NEITHER is true there is nothing left
+// open for this click to legitimately answer, so it's dropped without ever
+// calling window.confirmCallback — Go never even sees a second send. This
+// is airtight against the double-click case specifically because JS is
+// single-threaded: the first click's synchronous handler (which calls
+// endActivity/closeSurface below) always runs to completion — deleting the
+// registry entry / clearing store.surface — before a second click's handler
+// can start, even if the two clicks arrive within the same animation frame.
 export function resolveConfirm(ok){
+  const activityLive = isLive('trust.approval');
+  const sheetOpen = getSurface() === 'approve';
+  if(!activityLive && !sheetOpen){
+    window.jslog && window.jslog('[js] resolveConfirm: ignoring stray click — nothing pending to resolve');
+    return;
+  }
   window.confirmCallback && window.confirmCallback(ok);
-  endActivity('trust.approval', syncAndRerender);
-  if(getSurface() === 'approve') closeSurface();
+  if(activityLive) endActivity('trust.approval', syncAndRerender);
+  if(sheetOpen) closeSurface();
 }
 window.resolveConfirm = resolveConfirm;
 window.showConfirmCard = (cardJSON) => window.openSurface && window.openSurface('approve', { cardJSON });

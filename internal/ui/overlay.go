@@ -323,7 +323,25 @@ func StartOverlay(ctx context.Context, cfg *config.Config) {
 
 	setupAuthBindings(ctx, cfg, w)
 
-	w.Bind("confirmCallback", func(approved bool) { confirmChan <- approved })
+	// Fix-round-3 (R3) defense-in-depth: main.js's resolveConfirm now refuses
+	// to call this at all for a stray second click (isLive('trust.approval')
+	// false and no approve sheet open), so in normal operation this should
+	// never see an extra call. But confirmChan is unbuffered and shared
+	// across every serialized RequestConfirmation(Card) call (confirmMutex,
+	// fix-round-2 I2) — if an unexpected extra send ever DID happen here, a
+	// blocking send could silently land on the NEXT queued caller's receive
+	// instead of the one it was meant for, auto-answering a prompt the user
+	// never saw. A non-blocking send drops (and logs) anything that arrives
+	// with no receiver already waiting, rather than risk that delivery.
+	// Fail-closed: a dropped send never becomes an approval either way — the
+	// legitimate caller it was meant for just keeps waiting, unaffected.
+	w.Bind("confirmCallback", func(approved bool) {
+		select {
+		case confirmChan <- approved:
+		default:
+			log.Printf("[ui] confirmCallback(%v) had no pending confirmation to answer — dropped", approved)
+		}
+	})
 	w.Bind("suggestionAccept", func(id string) {
 		if OnSuggestionAccept != nil {
 			OnSuggestionAccept(id)
