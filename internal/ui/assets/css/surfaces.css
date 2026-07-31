@@ -1,0 +1,56 @@
+/* internal/ui/assets/css/surfaces.css */
+/* Rules for content rendered inside the island body by the command/result/
+   approve surface modules (surfaces/*.js) at presence="sheet"/"expanded", plus
+   the .orb/.eq/.iconbtn glyphs shared with live activities (activities.js). */
+
+.orb{width:9px;height:9px;border-radius:50%;flex:0 0 auto;background:#5a6070;
+  transition:background .2s,box-shadow .2s}
+.orb.on{background:radial-gradient(circle at 34% 30%,#bcd6ff,var(--accent));
+  box-shadow:0 0 0 3px var(--accent-soft),0 0 12px 1px rgba(10,132,255,.55)}
+.orb.pulse{animation:pulse 1.7s var(--ease) infinite}
+.orb.warm{background:radial-gradient(circle at 34% 30%,#ffe0ad,var(--warn));box-shadow:0 0 0 3px rgba(255,159,10,.16),0 0 12px 1px rgba(255,159,10,.5)}
+.orb.good{background:radial-gradient(circle at 34% 30%,#b6f7c6,var(--good));box-shadow:0 0 0 3px rgba(48,209,88,.16),0 0 12px 1px rgba(48,209,88,.5)}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 3px var(--accent-soft),0 0 8px 1px rgba(10,132,255,.4)}50%{box-shadow:0 0 0 6px rgba(10,132,255,.05),0 0 16px 3px rgba(10,132,255,.6)}}
+.eq{display:inline-flex;align-items:center;gap:2.5px;height:15px;flex:0 0 auto}
+.eq i{width:2.5px;height:5px;border-radius:2px;background:var(--accent);animation:bounce 1s var(--ease) infinite}
+.eq i:nth-child(2){animation-delay:.15s}.eq i:nth-child(3){animation-delay:.3s}.eq i:nth-child(4){animation-delay:.45s}.eq i:nth-child(5){animation-delay:.1s}
+@keyframes bounce{0%,100%{height:4px;opacity:.5}50%{height:14px;opacity:1}}
+.iconbtn{width:28px;height:28px;border-radius:50%;border:0;cursor:pointer;display:grid;place-items:center;background:rgba(255,255,255,.06);color:var(--ink-2);transition:background .16s,color .16s;flex:0 0 auto;font-size:14px}
+.iconbtn:hover{background:var(--accent-soft);color:#cfe0ff}
+.iconbtn.stop{background:rgba(255,69,58,.12);color:var(--danger)}
+.iconbtn.stop:hover{background:rgba(255,69,58,.22)}
+
+/* ─── Command / result / approve sheet content ────────────────────────────── */
+.phead{padding:20px 22px 15px;display:flex;align-items:flex-start;justify-content:space-between;gap:16px;border-bottom:1px solid var(--stroke);width:100%}
+.eyebrow{font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);font-weight:700;margin:0 0 7px}
+.phead h1{font-size:21px;font-weight:640;letter-spacing:-0.03em;line-height:1.12;margin:0 0 6px}
+.phead p{font-size:12.5px;line-height:1.5;color:var(--ink-2);margin:0;max-width:46ch}
+.chip{padding:6px 11px;border-radius:999px;border:1px solid var(--stroke);background:rgba(255,255,255,.05);color:var(--ink-2);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;white-space:nowrap;flex:0 0 auto}
+#commandInput{flex:1;width:100%;min-height:0;border:none;outline:none;background:transparent;color:var(--ink);resize:none;padding:18px 22px;font-size:21px;font-weight:600;line-height:1.3;letter-spacing:-0.02em}
+#commandInput::placeholder{color:var(--ink-3)}
+.footer{border-top:1px solid var(--stroke);padding:14px 18px 16px;display:flex;flex-direction:column;gap:12px;width:100%}
+.suggestions{display:flex;flex-wrap:wrap;gap:8px}
+.hint{display:flex;justify-content:space-between;color:var(--ink-3);font-size:11.5px}
+kbd{font:600 11px var(--font);color:var(--ink-2);background:rgba(255,255,255,.07);border:1px solid var(--stroke);border-radius:6px;padding:2px 6px}
+.obody{padding:18px 22px;overflow:auto;font-size:13.5px;line-height:1.62;color:#dfe2ea;flex:1;width:100%}
+.list{display:grid;gap:10px}
+.item{padding:12px 14px;border-radius:14px;border:1px solid var(--stroke);background:rgba(255,255,255,.04)}
+.item-title{font-size:13px;font-weight:700;margin-bottom:4px}
+.item-meta{font-size:11.5px;color:var(--ink-2)}
+.surface-command,.surface-result,.surface-approve{display:flex;flex-direction:column;width:100%;height:100%}
+
+/* ─── Buttons ─────────────────────────────────────────────────────────────── */
+.btn{border:1px solid transparent;border-radius:11px;cursor:pointer;font:600 13px var(--font);padding:9px 16px;letter-spacing:-0.01em;transition:transform .1s var(--ease),background .16s,border-color .16s}
+.btn:active{transform:scale(.97)}
+.btn.primary{background:var(--accent);color:#fff}
+.btn.primary:hover{background:#3d9bff}
+.btn.ghost{background:rgba(255,255,255,.05);color:var(--ink);border-color:var(--stroke)}
+.btn.ghost:hover{background:rgba(255,255,255,.09)}
+.btn.danger{background:var(--danger);color:#fff}
+.btn.danger:hover{background:#ff655b}
+.actions{display:flex;gap:8px;margin-top:14px}
+.actions.right{justify-content:flex-end}
+
+#toast{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);min-width:200px;max-width:480px;padding:10px 14px;border-radius:12px;border:1px solid var(--stroke);background:rgba(20,21,27,.96);box-shadow:var(--shadow);display:none;font-size:12px;line-height:1.5;z-index:10}
+
+@media (prefers-reduced-motion:reduce){.orb.pulse,.eq i{animation:none!important}}

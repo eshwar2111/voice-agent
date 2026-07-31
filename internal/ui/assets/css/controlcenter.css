@@ -1,0 +1,49 @@
+/* internal/ui/assets/css/controlcenter.css */
+/* Settings dashboard (reskinned; structure preserved) — driven by
+   surfaces/controlcenter.js, shown/hidden by main.js's setSurface() toggling
+   the 'visible' class in lockstep with store.surface==='controlcenter'. */
+#dashboard{position:fixed;top:20px;left:50%;transform:translateX(-50%);
+  width:1160px;height:760px;z-index:5;display:none;border-radius:26px;overflow:hidden}
+#dashboard.visible{display:grid;grid-template-columns:248px 1fr}
+.sidebar{padding:26px 20px;border-right:1px solid var(--stroke);display:flex;flex-direction:column;gap:22px;background:rgba(255,255,255,.02)}
+.sidebar h2{font-size:23px;font-weight:640;letter-spacing:-0.03em;line-height:1.05;margin-bottom:10px}
+.sidebar p{font-size:12.5px;line-height:1.5;color:var(--ink-2)}
+.nav{display:grid;gap:7px}
+.nav button{text-align:left;color:var(--ink-2);padding:10px 13px;border-radius:11px;border:1px solid transparent;background:transparent;cursor:pointer;transition:all .14s ease;font-weight:500}
+.nav button:hover{background:rgba(255,255,255,.05)}
+.nav button.active{background:var(--accent-soft);border-color:rgba(10,132,255,.28);color:#fff}
+.metric{padding:13px;border-radius:13px;border:1px solid var(--stroke);background:rgba(255,255,255,.03)}
+.metric .metriclabel{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:var(--ink-3);margin-bottom:6px}
+.metric .value{font-size:14px;font-weight:700}
+.content{display:flex;flex-direction:column;overflow:hidden}
+.content-head{padding:24px 28px 16px;border-bottom:1px solid var(--stroke);display:flex;justify-content:space-between;gap:18px}
+.content-head h3{font-size:19px;font-weight:640;letter-spacing:-0.03em}
+.content-head p{font-size:12.5px;color:var(--ink-2);line-height:1.5;margin-top:6px;max-width:52ch}
+.content-body{flex:1;overflow:auto;padding:22px 28px}
+.tab{display:none}.tab.active{display:block}
+.grid{display:grid;gap:16px}.two{grid-template-columns:repeat(2,minmax(0,1fr))}.three{grid-template-columns:repeat(3,minmax(0,1fr))}
+.surface{padding:18px;border-radius:16px;border:1px solid var(--stroke);background:rgba(255,255,255,.03)}
+.surface h4{font-size:15px;font-weight:700;margin-bottom:8px}
+.surface p{font-size:12.5px;color:var(--ink-2);line-height:1.5}
+.taglets{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px}
+.taglet{padding:5px 9px;border-radius:999px;border:1px solid var(--stroke);background:rgba(255,255,255,.04);font-size:11px;font-weight:600;color:var(--ink-2)}
+.integration{display:grid;grid-template-columns:1fr auto;gap:18px;align-items:center}
+.statusbadge{display:inline-flex;align-items:center;gap:8px;padding:6px 11px;border-radius:999px;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;border:1px solid var(--stroke);background:rgba(255,255,255,.03)}
+.statusbadge:before{content:'';width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.3)}
+.statusbadge.connected{background:rgba(48,209,88,.1);border-color:rgba(48,209,88,.24);color:#c7f5d3}
+.statusbadge.connected:before{background:var(--good);box-shadow:0 0 10px rgba(48,209,88,.5)}
+.statusbadge.disconnected{background:rgba(255,69,58,.08);border-color:rgba(255,69,58,.18);color:#ffcecb}
+.statusbadge.disconnected:before{background:var(--danger)}
+.fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:16px}
+.field{display:flex;flex-direction:column;gap:8px}.field.full{grid-column:1/-1}
+.field label{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:var(--ink-3)}
+.field input,.field select{width:100%;padding:11px 13px;border-radius:11px;border:1px solid var(--stroke);background:rgba(255,255,255,.05);color:var(--ink);outline:none}
+.field input:focus,.field select:focus{border-color:rgba(10,132,255,.5)}
+.switch-row{display:flex;justify-content:space-between;gap:16px;padding:16px 0;border-top:1px solid var(--stroke)}
+.switch-row:first-child{border-top:none;padding-top:4px}
+.switch-copy h5{font-size:14px;font-weight:700;margin-bottom:4px}
+.switch-copy p{font-size:12px;color:var(--ink-2)}
+.toggle{width:50px;height:30px;border-radius:999px;border:1px solid var(--stroke);background:rgba(255,255,255,.08);position:relative;cursor:pointer;flex:0 0 auto;transition:background .18s}
+.toggle:after{content:'';position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#fff;transition:transform .18s ease}
+.toggle.active{background:var(--accent);border-color:var(--accent)}
+.toggle.active:after{transform:translateX(20px)}
