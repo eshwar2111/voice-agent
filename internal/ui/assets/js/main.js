@@ -25,7 +25,12 @@ import { loadSettings } from './surfaces/controlcenter.js';
 /* ─── logging: everything goes to Go (voice-agent.log) ────────────────────── */
 export function jlog(m){try{window.jslog&&window.jslog('[js] '+m)}catch(e){}}
 
-export function toast(t){const el=document.getElementById('toast');el.textContent=t;el.style.display='block';clearTimeout(toast.tm);toast.tm=setTimeout(()=>el.style.display='none',2200)}
+// Republishes on show AND hide (fix-round-2 finding): #toast sits below the
+// island/sheet region entirely (bottom:16px, well outside e.g. the result
+// sheet's y 10-530), so without a fresh publish while it's visible it was
+// never actually part of the clickable/paintable window region — toast('Copied')
+// produced no visible feedback at all, silently.
+export function toast(t){const el=document.getElementById('toast');el.textContent=t;el.style.display='block';publishRegionRects();clearTimeout(toast.tm);toast.tm=setTimeout(()=>{el.style.display='none';publishRegionRects()},2200)}
 
 /* Single entry point for everything Go pushes. Handlers are registered by
    feature modules; unknown kinds are logged and dropped, never thrown, so a
@@ -65,16 +70,19 @@ window.__agent.on('activity:end', d => endActivity(d.id, syncAndRerender));
 
 export function syncAndRerender(){ store.activities = activeActivities(); rerender() }
 
-/* Every surface EXCEPT the island itself: today just the Control Center
-   dashboard, which stays a separately positioned/sized element (see
-   controlcenter.css) rather than rendering inside islandBody, because
-   resolve() deliberately keeps the island compact while it's open. Shared by
-   both the settle-phase publish (publishRegionRects) and the widen-phase
-   publish (the union rect in rerender) so neither one can drop a surface the
-   other accounts for. */
+/* Every surface EXCEPT the island itself: the Control Center dashboard,
+   which stays a separately positioned/sized element (see controlcenter.css)
+   rather than rendering inside islandBody, because resolve() deliberately
+   keeps the island compact while it's open — plus the toast, which sits
+   well outside the island/sheet area entirely (fix-round-2: it was never
+   included here, so it was never actually part of the published region and
+   was invisible no matter what toast() itself did). Shared by both the
+   settle-phase publish (publishRegionRects) and the widen-phase publish (the
+   union rect in rerender) so neither one can drop a surface the other
+   accounts for. */
 function collectOtherSurfaceRects(){
   const rects=[];
-  document.querySelectorAll('#dashboard.visible').forEach(el=>{
+  document.querySelectorAll('#dashboard.visible, #toast').forEach(el=>{
     const cs=getComputedStyle(el);
     if(cs.display==='none') return;
     const r=el.getBoundingClientRect();
@@ -164,6 +172,13 @@ function updateCaps(id){
 export function rerender(){
   store.now = Date.now();
   const r = resolve(store);
+  // Tracks whether the presence branch below started a morph THIS call. Its
+  // settle callback (morphTo's third arg) is what publishes the exact shape
+  // once the transition finishes; the tail publish at the bottom of this
+  // function must not ALSO run when that's pending — see the widen-phase
+  // union comment below (fix-round-2 finding: the unconditional tail publish
+  // was overwriting the widen-phase union microseconds after publishing it).
+  let morphed = false;
   if(r.presence !== applied.presence){
     /* The region must never be smaller than what CSS is painting at any
        instant of a morph, or the island gets visibly clipped mid-animation.
@@ -182,7 +197,13 @@ export function rerender(){
        replace the whole region with an island-only rect for the ~380-460ms
        morph duration — visibly clipping an open Control Center, for example,
        if a presence change (e.g. idle->dormant on the 1s tick) fires while
-       the island itself is hidden (display:none) behind it. */
+       the island itself is hidden (display:none) behind it.
+
+       Just as critical: nothing below this branch may publish again until
+       morphTo's settle callback does, or that settle-phase publish (the
+       exact shape) is immediately clobbered right back to a snapshot of
+       mid-transition geometry taken microseconds after the transition
+       started — which is what `morphed` guards against, below. */
     const rects = collectOtherSurfaceRects();
     const ir = island.getBoundingClientRect();
     const u = unionIslandRect(ir, applied.presence || r.presence, r.presence);
@@ -191,6 +212,7 @@ export function rerender(){
     // ...then narrow it to the exact shape once the morph settles.
     morphTo(island, r.presence, publishRegionRects);
     applied.presence = r.presence;
+    morphed = true;
   }
   if(r.contentId !== applied.contentId){
     swapContent(islandBody, () => renderContentFor(r.contentId, r.presence));
@@ -200,12 +222,18 @@ export function rerender(){
     // presence is 'peek' UNLESS the idle cap already has its own gear.
     island.dataset.content = r.contentId;
     applied.contentId = r.contentId;
-  } else {
+  } else if(!surfaceRenderers[r.contentId]){
     // Same content id, but its underlying data (or the compact/expanded
     // slot) may have moved — the step ticker on agent.run, a spotify track
     // change, a nudge's message. swapContent's fade+blur transition exists
     // to sell an OBJECT changing, not a VALUE ticking, so refresh in place
     // instead of re-running the morph animation on every notify event.
+    //
+    // Gated to non-surface (activity) content only (fix-round-2 finding):
+    // command/result/approve build their own DOM once and own it afterward —
+    // rebuilding them here on every tick (the 1s idle interval, hover
+    // enter/leave) destroyed and re-created the command sheet's <textarea>
+    // under the user's cursor, wiping anything typed roughly once a second.
     //
     // Must NOT assume the outgoing swap's target is islandBody.firstElementChild:
     // for ~120ms after a contentId change, swapContent leaves BOTH the
@@ -223,7 +251,13 @@ export function rerender(){
     updateCaps(r.contentId);
   }
   setSurface(r.surface);
-  publishRegionRects();
+  // See the `morphed` comment above: when a morph just started, its own
+  // settle callback (morphTo's third arg, always publishRegionRects) is
+  // responsible for the next publish, once the transition actually finishes.
+  // Publishing here too would immediately overwrite the widen-phase union
+  // with a snapshot of mid-transition geometry, defeating the two-phase
+  // design entirely.
+  if(!morphed) publishRegionRects();
 }
 
 // Toggles the Control Center dashboard's visibility in lockstep with
@@ -272,7 +306,13 @@ window.dismissRunDisplay = () => { endActivity('agent.run', syncAndRerender) };
 
 island.addEventListener('mouseenter', () => { store.hover = true;  rerender() });
 island.addEventListener('mouseleave', () => { store.hover = false; rerender() });
-setInterval(() => { if(store.agentState==='idle' && !store.activities.length) rerender() }, 1000);
+// !store.surface (fix-round-2 finding): without this, the command/result/
+// approve sheets — which never change agentState or activities — kept
+// re-entering rerender() every second while open, which (before the
+// surfaceRenderers guard above) rebuilt their DOM out from under the user.
+// Kept even now that the guard exists, since there's nothing for this tick
+// to do while a surface owns the island's content regardless.
+setInterval(() => { if(store.agentState==='idle' && !store.activities.length && !store.surface) rerender() }, 1000);
 
 // Esc closes whichever surface (if any) is open — command, result, approve,
 // or the Control Center — uniformly, per Task 7.

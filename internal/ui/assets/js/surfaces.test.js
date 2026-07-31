@@ -13,7 +13,8 @@
 import './testutil.dom.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { openSurface, getSurface } from './main.js';
+import { getShimEl } from './testutil.dom.js';
+import { openSurface, getSurface, rerender } from './main.js';
 import { render as renderCommand } from './surfaces/command.js';
 import { render as renderResult } from './surfaces/result.js';
 import { render as renderApprove, resolveConfirm } from './surfaces/approve.js';
@@ -50,4 +51,28 @@ test('fix round 1: resolveConfirm leaves an unrelated open surface alone', () =>
   assert.equal(getSurface(), 'command');
   resolveConfirm(false);
   assert.equal(getSurface(), 'command');
+});
+
+test('fix round 2 (C2): rerender() does not rebuild the command surface root when nothing changed', () => {
+  // Before this fix, every rerender() with an unchanged contentId — the 1s
+  // idle-tick interval, hover enter/leave on the island itself, which AT
+  // sheet size IS the panel being typed into — fell into the in-place
+  // "activity value ticked" refresh branch regardless of whether contentId
+  // was a live activity or a stateful surface. For 'command' that meant
+  // command.js's render() ran again, building a brand-new <textarea> and
+  // replacing the old one via replaceChild — wiping anything typed, roughly
+  // once a second, and impossible to type a command longer than that.
+  openSurface('command');
+  const islandBody = getShimEl('islandBody');
+  const rootAfterOpen = islandBody.__current;
+  assert.ok(rootAfterOpen, 'expected a root node after opening the command surface');
+
+  // Simulates the 1s idle tick / a mouseenter+mouseleave pair: contentId and
+  // presence are both still 'command'/'sheet' (state.js's resolve() ignores
+  // hover once a surface is open), so nothing SHOULD change.
+  rerender();
+  rerender();
+
+  assert.equal(islandBody.__current, rootAfterOpen,
+    'command sheet was rebuilt in place on a no-op rerender — this destroys whatever the user had typed');
 });

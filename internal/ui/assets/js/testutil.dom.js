@@ -29,9 +29,9 @@ function makeEl(tag) {
     _listeners: {},
     addEventListener(type, fn){ (el._listeners[type] ||= []).push(fn) },
     removeEventListener(){},
-    appendChild(c){ el.children.push(c); return c },
-    replaceChild(n, o){ const i = el.children.indexOf(o); if(i>=0) el.children[i]=n; else el.children.push(n); return o },
-    remove(){},
+    appendChild(c){ el.children.push(c); c.parentNode = el; return c },
+    replaceChild(n, o){ const i = el.children.indexOf(o); if(i>=0) el.children[i]=n; else el.children.push(n); n.parentNode = el; o.parentNode = null; return o },
+    remove(){ if(el.parentNode){ const i = el.parentNode.children.indexOf(el); if(i>=0) el.parentNode.children.splice(i,1); el.parentNode = null; } },
     replaceChildren(...cs){ el.children = cs },
     querySelector(){ return makeEl('div') },
     querySelectorAll(){ return [] },
@@ -46,8 +46,23 @@ function makeEl(tag) {
   return el;
 }
 
+// Memoized by id (fix-round-2 addition): a regression test needs to observe
+// the SAME islandBody the app code holds onto (main.js captures it once, at
+// module top level, into a private const) — a fresh stand-in on every call
+// would make "is this still the same DOM node across two rerender() calls"
+// unanswerable from outside main.js.
+const byId = new Map();
+function elById(id) {
+  if (!byId.has(id)) byId.set(id, makeEl('div'));
+  return byId.get(id);
+}
+// Exposed for tests that need to inspect a specific element by id (e.g.
+// document.getElementById('islandBody').__current) without importing
+// main.js's private module state.
+export function getShimEl(id) { return elById(id) }
+
 globalThis.document = {
-  getElementById(){ return makeEl('div') },
+  getElementById: elById,
   querySelectorAll(){ return [] },
   addEventListener(){},
   createElement(tag){ return makeEl(tag) },
