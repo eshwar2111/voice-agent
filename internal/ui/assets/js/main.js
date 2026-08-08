@@ -12,10 +12,11 @@
 // (state.js) is the sole authority on island geometry, so no surface module
 // calls morphTo or sets a size directly.
 
-import { resolve } from './state.js';
+import { resolve, WAKE_MS } from './state.js';
 import { morphTo, swapContent, currentSwapTarget } from './motion.js';
 import { unionIslandRect } from './geometry.js';
-import { registerActivity, updateActivity, endActivity, activeActivities, renderActivity }
+import { registerActivity, updateActivity, endActivity, activeActivities, renderActivity,
+  syncProviderActivities, hasSignificantUpdate }
   from './activities.js';
 import { render as renderCommand } from './surfaces/command.js';
 import { render as renderResult } from './surfaces/result.js';
@@ -87,6 +88,17 @@ window.__agent.on('surface:open', d => {
 });
 window.__agent.on('activity:update', d => updateActivity(d.id, d.data, syncAndRerender));
 window.__agent.on('activity:end', d => endActivity(d.id, syncAndRerender));
+// Provider-driven snapshot (island.Registry -> ui.PublishActivities). Replaces
+// the separate `provided` store in activities.js only — never touches `live`
+// (trust.approval/agent.run/ambient.nudge), so a snapshot can't clear a
+// pending approval. A significant update in the snapshot wakes the island
+// out of dormant, same as a push-driven significant update would.
+window.__agent.on('activity:sync', d => {
+  syncProviderActivities(d.activities, () => {
+    if(hasSignificantUpdate()) store.wakeUntil = Date.now() + WAKE_MS;
+    syncAndRerender();
+  });
+});
 
 export function syncAndRerender(){ store.activities = activeActivities(); rerender() }
 

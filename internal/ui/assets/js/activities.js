@@ -10,6 +10,11 @@
 const defs = new Map();   // id -> definition
 const live = new Map();   // id -> { data, since, timer }
 
+// Provider-driven activities arrive as a full snapshot and REPLACE this set.
+// They are deliberately separate from `live` (push-driven): a provider snapshot
+// must never be able to clear a pending trust.approval.
+const provided = new Map(); // id -> { data, priority, kind, significant }
+
 export function registerActivity(def) {
   if (!def || !def.id) return;
   defs.set(def.id, {
@@ -49,14 +54,55 @@ export function isLive(id) {
   return live.has(id);
 }
 
-// Shape consumed by state.js resolve(): [{id, priority}]
+// Shape consumed by state.js resolve(): [{id, priority}]. Returns the union
+// of the push-driven `live` map and the provider-driven `provided` map so a
+// long agent.job (push-driven) sorts alongside provider activities (timer,
+// meeting) for bubble eligibility — see syncProviderActivities below.
 export function activeActivities() {
   const out = [];
   for (const [id] of live) {
     const def = defs.get(id);
     if (def) out.push({ id, priority: def.priority });
   }
+  for (const [id, v] of provided) {
+    out.push({ id, priority: v.priority, kind: v.kind });
+  }
   return out;
+}
+
+// Provider-driven activities arrive as a full snapshot from Go
+// (island.Registry -> ui.PublishActivities -> 'activity:sync') and REPLACE
+// the entire `provided` set. `live` (push-driven: trust.approval, agent.run,
+// ambient.nudge) is untouched, so a provider snapshot can never clear a
+// pending approval the user is still looking at.
+export function syncProviderActivities(list, onChange) {
+  provided.clear();
+  for (const a of (list || [])) {
+    if (!a || !a.id) continue;
+    provided.set(a.id, {
+      data: a.data || {}, priority: a.priority | 0,
+      kind: a.kind || '', significant: !!a.significant,
+    });
+  }
+  onChange && onChange();
+}
+
+// Any provider activity marked significant in the latest snapshot.
+export function hasSignificantUpdate() {
+  for (const [, v] of provided) if (v.significant) return true;
+  return false;
+}
+
+// kindRenderers is populated in Task 9 (timer + meeting slots). Declared
+// empty here so this task compiles and runs standalone — renderProvided
+// simply returns null until Task 9 fills it in.
+export const kindRenderers = {};
+
+export function renderProvided(id, slot) {
+  const v = provided.get(id);
+  if (!v) return null;
+  const r = kindRenderers[v.kind];
+  return r && r[slot] ? r[slot](v.data) : null;
 }
 
 export function renderActivity(id, slot) {

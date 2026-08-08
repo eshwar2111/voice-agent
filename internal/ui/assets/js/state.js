@@ -12,6 +12,10 @@ export const PRESENCE_SIZES = {
 
 export const DORMANT_AFTER_MS = 6000;
 
+// Defined here ahead of Task 7 (bubble/wake scheduling), which is the task
+// that actually consumes it beyond the activity:sync handler wired in Task 6.
+export const WAKE_MS = 2500;
+
 // Highest priority wins; ties resolve to whichever registered first, so a
 // steady stream of same-priority updates can't make the island flicker.
 export function topActivity(activities) {
