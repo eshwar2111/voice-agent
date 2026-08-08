@@ -73,9 +73,20 @@
 }
 #bubble.shown{display:grid; transform:scale(1); opacity:1}
 /* Arrive with a slight overshoot so it reads as physical; leave without one,
-   because a bouncing departure reads as unstable. Same asymmetry as the pill. */
+   because a bouncing departure reads as unstable. Same asymmetry as the pill.
+   #bubble.leaving keeps display:grid for the duration of the exit (fix-round-2
+   finding: the base #bubble{display:none} — an id selector — otherwise beats
+   this transition the instant `.shown` is removed, since display isn't
+   animatable without transition-behavior:allow-discrete; the box vanished
+   in the same frame the class changed rather than scaling out. The id+class
+   specificity here (#bubble.leaving) outranks the bare #bubble rule, so the
+   box stays rendered — at scale(0)/opacity:0 once the transition finishes —
+   until main.js's transitionend handler removes .leaving and lets display
+   revert to none. A new bubble arriving mid-leave removes .leaving itself
+   (main.js), which un-strands it immediately rather than waiting on this
+   transitionend at all. */
 #bubble.entering{transition:transform 380ms cubic-bezier(.22,1.16,.36,1), opacity 200ms linear}
-#bubble.leaving {transition:transform 260ms cubic-bezier(.36,0,.24,1), opacity 180ms linear}
+#bubble.leaving {display:grid; transition:transform 260ms cubic-bezier(.36,0,.24,1), opacity 180ms linear}
 #bubble img{width:100%;height:100%;object-fit:cover}
 @media (prefers-reduced-motion:reduce){ #bubble{transition:none!important} }
 

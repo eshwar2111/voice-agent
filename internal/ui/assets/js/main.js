@@ -100,7 +100,25 @@ window.__agent.on('activity:sync', d => {
   });
 });
 
-export function syncAndRerender(){ store.activities = activeActivities(); rerender() }
+// syncAndRerender is the onChange callback for EVERY path that can end an
+// activity — endActivity(...) call sites (agent.run, ambient.nudge,
+// dismissActivity) and the provider-driven activity:sync handler below
+// (syncProviderActivities REPLACES the whole `provided` set, so a timer that
+// simply stopped being sent disappears here too, with no explicit
+// endActivity call at all). Centralizing the store.promoted cleanup here,
+// rather than at each call site, is what closes the id-reuse hole (fix-
+// round-2 finding): timer ids are caller-supplied (internal/island/timers.go
+// prefixes with "timer." but the rest is caller text), so a NEW activity can
+// reuse an id that was previously promoted and then ended. resolve() itself
+// must stay pure and never clears a stale promoted id (fix-round-1) — this
+// is the mutation site fix-round-1's own comment pointed at instead.
+export function syncAndRerender(){
+  store.activities = activeActivities();
+  if(store.promoted && !store.activities.some(a => a.id === store.promoted)){
+    store.promoted = null;
+  }
+  rerender();
+}
 
 /* Every surface EXCEPT the island itself: the Control Center dashboard,
    which stays a separately positioned/sized element (see controlcenter.css)
@@ -337,13 +355,20 @@ export function rerender(){
     bubble.style.height = lay.bubbleSize + 'px';
   }
   // Publish immediately on becoming shown, now that its geometry is set —
-  // not just via the tail publish below, so a bubble entrance that coincides
-  // with an island presence morph (whose own tail publish is deferred to
-  // morphTo's settle callback) still gets region coverage right away rather
-  // than waiting out the full morph duration invisible/unclickable. The
-  // transitionend listener below covers the settle side, same two-touch rule
-  // the pill's own morph follows.
-  if(bubbleEntered) publishRegionRects();
+  // not just via the tail publish below. Gated on !morphed for exactly the
+  // reason the tail publish two lines down is: when a presence morph ALSO
+  // started this tick, the widen-phase union published moments ago is what
+  // keeps the region >= the island's in-flight size for the whole ~460ms —
+  // forcing a fresh publish here would query island.getBoundingClientRect()
+  // synchronously, before any animation frame has run, which returns the
+  // PRE-transition box and re-narrows the region for the rest of the morph,
+  // clipping the island as it grows (fix-round-2 finding: this exact call
+  // originally lacked the guard and reintroduced the bug the `morphed` gate
+  // below exists to prevent). Nothing is lost when morphed is true —
+  // morphTo's settle callback republishes everything once the transition
+  // finishes, and collectOtherSurfaceRects() queries #bubble.shown, so the
+  // bubble is included then.
+  if(bubbleEntered && !morphed) publishRegionRects();
 
   setSurface(r.surface);
   // See the `morphed` comment above: when a morph just started, its own
@@ -358,8 +383,20 @@ export function rerender(){
 // The bubble animates in/out (island.css .entering/.leaving), so its rect
 // changes for the duration of that transition — publish on enter (the
 // 'shown' class landing, above) and again here on settle, never per frame,
-// same two-touch rule the pill's own morph follows.
-bubble.addEventListener('transitionend', () => { publishRegionRects() });
+// same two-touch rule the pill's own morph follows. Also finalizes an exit:
+// island.css keeps #bubble.leaving at display:grid for the whole transition
+// (display isn't animatable on its own), so once the leave settles here,
+// dropping the 'leaving' class is what actually removes the bubble from
+// display/layout/the region — genuinely gone, not just transparent. A new
+// bubble arriving mid-leave never reaches this handler in that state: the
+// entering branch above removes 'leaving' itself first, so an interrupted
+// exit can't strand the old bubble half-faded.
+bubble.addEventListener('transitionend', () => {
+  if(bubble.classList.contains('leaving') && !bubble.classList.contains('shown')){
+    bubble.classList.remove('leaving');
+  }
+  publishRegionRects();
+});
 
 // Toggles the Control Center dashboard's visibility in lockstep with
 // store.surface. Every other surface (command/result/approve) renders
