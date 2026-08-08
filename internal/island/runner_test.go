@@ -94,6 +94,104 @@ func TestRunnerStopsOnContextCancel(t *testing.T) {
 	}
 }
 
+// nextBackoff must double from base on each consecutive failure and cap at
+// maxBackoff, so a permanently-down provider settles into a slow, bounded
+// retry rate instead of retrying (and logging) forever at the base interval.
+func TestNextBackoffEscalatesAndCaps(t *testing.T) {
+	base := time.Second
+	cases := []struct {
+		failures int
+		want     time.Duration
+	}{
+		{0, time.Second},
+		{1, time.Second},
+		{2, 2 * time.Second},
+		{3, 4 * time.Second},
+		{4, 8 * time.Second},
+	}
+	for _, c := range cases {
+		if got := nextBackoff(base, c.failures); got != c.want {
+			t.Errorf("nextBackoff(%s, %d) = %s, want %s", base, c.failures, got, c.want)
+		}
+	}
+	if got := nextBackoff(time.Second, 20); got != maxBackoff {
+		t.Errorf("nextBackoff(%s, 20) = %s, want cap %s", time.Second, got, maxBackoff)
+	}
+}
+
+// stubFlaky fails a fixed number of times, then returns a single successful
+// (non-blocking) run, then fails again — letting a test observe escalation,
+// the reset on success, and re-escalation from base afterward, without ever
+// sleeping through a real backoff.
+type stubFlaky struct {
+	name      string
+	mu        sync.Mutex
+	runs      int
+	failUntil int
+}
+
+func (s *stubFlaky) Name() string { return s.name }
+
+func (s *stubFlaky) Run(ctx context.Context, emit func(Activity), end func(string)) error {
+	s.mu.Lock()
+	s.runs++
+	n := s.runs
+	s.mu.Unlock()
+	if n == s.failUntil+1 {
+		return nil // one clean, non-blocking success: must reset the ladder
+	}
+	return errors.New("still down")
+}
+
+// A provider that fails repeatedly must see its retry delay escalate; a
+// successful run must reset the delay to base so a provider that recovers
+// does not stay slow; and a subsequent failure must re-escalate from base,
+// not continue where the old ladder left off. Asserted on the recorded delay
+// sequence via afterAttempt rather than by sleeping through real backoffs.
+func TestRunnerBackoffEscalatesThenResetsOnSuccess(t *testing.T) {
+	r, _, _ := newTestRegistry()
+	p := &stubFlaky{name: "flaky", failUntil: 3}
+
+	rn := NewRunner(r, p)
+	rn.backoff = time.Millisecond
+
+	var mu sync.Mutex
+	var delays []time.Duration
+	rn.afterAttempt = func(name string, failures int, delay time.Duration) {
+		mu.Lock()
+		delays = append(delays, delay)
+		mu.Unlock()
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	rn.Start(ctx)
+
+	waitFor(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(delays) >= 5
+	})
+	cancel()
+
+	mu.Lock()
+	got := append([]time.Duration(nil), delays[:5]...)
+	mu.Unlock()
+
+	want := []time.Duration{
+		time.Millisecond,     // failure 1
+		2 * time.Millisecond, // failure 2
+		4 * time.Millisecond, // failure 3
+		time.Millisecond,     // success: reset to base
+		time.Millisecond,     // failure 1 again post-reset, not a continued escalation
+	}
+	for i, w := range want {
+		if got[i] != w {
+			t.Errorf("delay[%d] = %s, want %s (full sequence: %v)", i, got[i], w, got)
+		}
+	}
+}
+
 func waitFor(t *testing.T, cond func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
