@@ -141,11 +141,25 @@ function collectOtherSurfaceRects(){
   return rects;
 }
 
+// While a morph is running the region must stay at the widened union — any
+// publish in that window would snapshot mid-transition geometry and clip the
+// island. morphTo's settle callback owns the next publish. Enforced HERE,
+// inside publishRegionRects itself, rather than at each call site (fix-round
+// 3 finding): this is the third distinct occurrence of this bug class in
+// this project, each time at a NEW call site (the bubble's transitionend
+// handler, toast()) that had no way to see rerender()'s local `morphed`
+// variable and so never inherited the `&& !morphed` guard. A per-call-site
+// gate can't work for callbacks that fire asynchronously from outside
+// rerender() — making it safe by construction here is what stops a fourth
+// call site from repeating it.
+let morphInFlight = false;
+
 /* Publish every visible surface to Go, which unions them into the window
    region. Anything not covered by these rects is not part of the window at all,
    so clicks there land on the desktop. Called on visibility changes, and on
    morph start/settle from the island's render loop — never per animation frame. */
 export function publishRegionRects(){
+  if(morphInFlight) return;
   const rects = collectOtherSurfaceRects();
   const ir = island.getBoundingClientRect();
   if(ir.width>0 && ir.height>0) rects.push({x:ir.left,y:ir.top,w:ir.width,h:ir.height});
@@ -230,13 +244,6 @@ function updateCaps(id){
 export function rerender(){
   store.now = Date.now();
   const r = resolve(store);
-  // Tracks whether the presence branch below started a morph THIS call. Its
-  // settle callback (morphTo's third arg) is what publishes the exact shape
-  // once the transition finishes; the tail publish at the bottom of this
-  // function must not ALSO run when that's pending — see the widen-phase
-  // union comment below (fix-round-2 finding: the unconditional tail publish
-  // was overwriting the widen-phase union microseconds after publishing it).
-  let morphed = false;
   if(r.presence !== applied.presence){
     /* The region must never be smaller than what CSS is painting at any
        instant of a morph, or the island gets visibly clipped mid-animation.
@@ -261,16 +268,28 @@ export function rerender(){
        morphTo's settle callback does, or that settle-phase publish (the
        exact shape) is immediately clobbered right back to a snapshot of
        mid-transition geometry taken microseconds after the transition
-       started — which is what `morphed` guards against, below. */
+       started. Enforced by `morphInFlight` inside publishRegionRects()
+       itself (see its definition above) — NOT by a local flag checked at
+       each call site, so an async callback outside this function (a toast,
+       the bubble's transitionend) can't slip a mid-transition snapshot
+       through by simply not knowing a morph is running (fix-round-3
+       finding: this was the third distinct occurrence of that bug class,
+       each time at a new call site that hadn't inherited an earlier `&&
+       !morphed` guard). */
     const rects = collectOtherSurfaceRects();
     const ir = island.getBoundingClientRect();
     const u = unionIslandRect(ir, applied.presence || r.presence, r.presence);
     if(u) rects.push(u); // island rect omitted entirely when it isn't visible
     if(rects.length) window.setRegionRects && window.setRegionRects(rects);
-    // ...then narrow it to the exact shape once the morph settles.
-    morphTo(island, r.presence, publishRegionRects);
+    // ...then narrow it to the exact shape once the morph settles. morphTo
+    // always schedules its settle callback via setTimeout (even the
+    // reduced-motion dur:0 path) and clears/reinstalls that timer per call,
+    // so a second morph starting before the first settles still clears
+    // morphInFlight exactly once — from whichever morphTo call is the last
+    // one standing — never zero times and never stuck true.
+    morphInFlight = true;
+    morphTo(island, r.presence, () => { morphInFlight = false; publishRegionRects(); });
     applied.presence = r.presence;
-    morphed = true;
   }
   if(r.contentId !== applied.contentId){
     swapContent(islandBody, () => renderContentFor(r.contentId, r.presence));
@@ -355,29 +374,21 @@ export function rerender(){
     bubble.style.height = lay.bubbleSize + 'px';
   }
   // Publish immediately on becoming shown, now that its geometry is set —
-  // not just via the tail publish below. Gated on !morphed for exactly the
-  // reason the tail publish two lines down is: when a presence morph ALSO
-  // started this tick, the widen-phase union published moments ago is what
-  // keeps the region >= the island's in-flight size for the whole ~460ms —
-  // forcing a fresh publish here would query island.getBoundingClientRect()
-  // synchronously, before any animation frame has run, which returns the
-  // PRE-transition box and re-narrows the region for the rest of the morph,
-  // clipping the island as it grows (fix-round-2 finding: this exact call
-  // originally lacked the guard and reintroduced the bug the `morphed` gate
-  // below exists to prevent). Nothing is lost when morphed is true —
-  // morphTo's settle callback republishes everything once the transition
-  // finishes, and collectOtherSurfaceRects() queries #bubble.shown, so the
-  // bubble is included then.
-  if(bubbleEntered && !morphed) publishRegionRects();
+  // not just via the tail publish below. No `morphed`/`!morphInFlight` check
+  // needed here: publishRegionRects() itself no-ops while a morph is running
+  // (fix-round-3), so this call is always safe to make, whether or not a
+  // presence morph also started this tick. If one did, morphTo's settle
+  // callback republishes everything once it finishes, and
+  // collectOtherSurfaceRects() queries #bubble.shown, so the bubble is
+  // included then regardless.
+  if(bubbleEntered) publishRegionRects();
 
   setSurface(r.surface);
-  // See the `morphed` comment above: when a morph just started, its own
-  // settle callback (morphTo's third arg, always publishRegionRects) is
-  // responsible for the next publish, once the transition actually finishes.
-  // Publishing here too would immediately overwrite the widen-phase union
-  // with a snapshot of mid-transition geometry, defeating the two-phase
-  // design entirely.
-  if(!morphed) publishRegionRects();
+  // publishRegionRects() itself is the single point that decides whether a
+  // publish is safe right now (see its definition and `morphInFlight`,
+  // above) — this call is unconditional on purpose; it is a no-op for the
+  // duration of an in-flight morph and otherwise always correct.
+  publishRegionRects();
 }
 
 // The bubble animates in/out (island.css .entering/.leaving), so its rect
