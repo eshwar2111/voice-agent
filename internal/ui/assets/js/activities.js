@@ -111,12 +111,31 @@ export function syncProviderActivities(list, onChange) {
   onChange && onChange(newlySignificant);
 }
 
+// A dismiss control shared by every provider-driven (kindRenderers) trailing
+// slot (I4, whole-branch review — the spec's decision 4, "the user can
+// dismiss a running activity," was otherwise unreachable: window.dismissActivity
+// existed but nothing rendered a control that called it). Copies the
+// agent.run trailing pattern (above): a chevron, not a stop glyph, because
+// per spec dismissing HIDES the activity — it does not stop the underlying
+// timer/meeting, which keeps running and still fires/starts on schedule.
+// stopPropagation keeps the click from also bubbling to the island's own
+// onclick (triggerListen) or the bubble's (promoteBubble).
+function dismissButton(id) {
+  const b = el('button', 'iconbtn', icon('chevron'));
+  b.title = 'Dismiss';
+  b.onclick = (ev) => { ev.stopPropagation(); window.dismissActivity(id) };
+  return b;
+}
+
 // kindRenderers is keyed by Activity.Kind (the provider path uses `kind`,
-// not `id`, so one renderer serves every timer / every meeting).
+// not `id`, so one renderer serves every timer / every meeting). Slots
+// receive (data, id) — renderProvided passes both — so `trailing` can wire a
+// dismiss control to the right id without needing it baked into `data`.
 export const kindRenderers = {
   timer: {
     bubble:  (d) => el('span', 'ring', ringSVG(d.remaining, d.total)),
     leading: (d) => el('span', 'ring', ringSVG(d.remaining, d.total)),
+    trailing: (d, id) => dismissButton(id),
     compact: (d) => el('div', null,
       `<span class="ttl">${mmss(d.remaining)}</span>` +
       `<span class="sub">${esc(d.label || 'Timer')}</span>`),
@@ -127,6 +146,7 @@ export const kindRenderers = {
   meeting: {
     bubble:  () => el('span', null, icon('calendar')),
     leading: () => el('span', null, icon('calendar')),
+    trailing: (d, id) => dismissButton(id),
     compact: (d) => el('div', null,
       `<span class="ttl">${esc(d.title || 'Meeting')}</span>` +
       `<span class="sub">in ${d.minutes|0}m</span>`),
@@ -165,13 +185,30 @@ export function renderProvided(id, slot) {
   const v = provided.get(id);
   if (!v) return null;
   const r = kindRenderers[v.kind];
-  return r && r[slot] ? r[slot](v.data) : null;
+  return r && r[slot] ? r[slot](v.data, id) : null;
 }
 
 export function renderActivity(id, slot) {
   const def = defs.get(id), e = live.get(id);
   if (!def || !e || !def[slot]) return null;
   return def[slot](e.data);
+}
+
+// The single point main.js should call for the island's OWN cap/body content
+// (as opposed to the bubble, which has its own explicit renderProvided(...,
+// 'bubble') || renderActivity(..., 'leading') fallback chain in rerender()).
+// Tries push-driven `live`/defs first, then provider-driven `provided`/
+// kindRenderers — the two stores use disjoint id namespaces (trust.approval/
+// agent.run/ambient.nudge/spotify.nowplaying vs. timer.*/meeting.*), so at
+// most one ever answers. Without this fallback (I4, whole-branch review: this
+// is what made the fix reachable at all), main.js's renderContentFor()/
+// updateCaps() called renderActivity() exclusively — which only knows the
+// `live` map — so a timer or meeting that became the island's TOP activity
+// (contentId), not just the bubble's second one, rendered as a blank pill:
+// no ring/calendar glyph, no title, and — the immediate reason this mattered
+// for I4 — no trailing dismiss button, since capTrail is built the same way.
+export function renderForSlot(id, slot) {
+  return renderActivity(id, slot) || renderProvided(id, slot);
 }
 
 /* ─── esc lives here, not on window: activities.js is an ES module and must

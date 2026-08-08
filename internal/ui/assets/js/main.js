@@ -16,7 +16,7 @@ import { resolve, WAKE_MS } from './state.js';
 import { morphTo, swapContent, currentSwapTarget } from './motion.js';
 import { pairUnionRect, pairLayout } from './geometry.js';
 import { registerActivity, updateActivity, endActivity, activeActivities, renderActivity,
-  renderProvided, syncProviderActivities }
+  renderProvided, renderForSlot, syncProviderActivities }
   from './activities.js';
 import { render as renderCommand } from './surfaces/command.js';
 import { render as renderResult } from './surfaces/result.js';
@@ -230,7 +230,14 @@ const surfaceRenderers = { command: renderCommand, result: renderResult, approve
 // Content beyond 'idle' is otherwise owned by whichever activity is on top
 // (see activities.js). Returning an empty div for an id with no renderer
 // (or no live entry — e.g. it just ttl'd out between resolve() and render)
-// keeps the render loop alive rather than throwing.
+// keeps the render loop alive rather than throwing. renderForSlot (not
+// renderActivity directly — I4, whole-branch review) tries the push-driven
+// `live` map first, then falls back to the provider-driven `provided` map:
+// without the fallback, a timer or meeting that became the island's TOP
+// activity (contentId), not just the bubble's second one, rendered as a
+// blank pill — renderActivity only ever knows about registerActivity-based
+// defs (trust.approval/agent.run/ambient.nudge/spotify.nowplaying), never
+// kindRenderers.
 function renderContentFor(id, presence){
   if(id === 'idle'){
     const d=document.createElement('div');
@@ -238,7 +245,7 @@ function renderContentFor(id, presence){
     return d;
   }
   if(surfaceRenderers[id]) return surfaceRenderers[id](store.payload) || document.createElement('div');
-  return renderActivity(id, slotFor(presence)) || document.createElement('div');
+  return renderForSlot(id, slotFor(presence)) || document.createElement('div');
 }
 
 // Caps are content-driven: each live activity's `leading`/`trailing` render
@@ -261,8 +268,12 @@ function updateCaps(id){
     // at the same time as opening the Control Center.
     capTrail.innerHTML = '<button type="button" class="cap-btn" title="Open Control Center" aria-label="Open Control Center" onclick="event.stopPropagation();window.openSettings(\'overview\')"><svg class="ico"><use href="#i-gear"/></svg></button>';
   } else {
-    capLead.replaceChildren(renderActivity(id,'leading')  || document.createTextNode(''));
-    capTrail.replaceChildren(renderActivity(id,'trailing') || document.createTextNode(''));
+    // renderForSlot, not renderActivity directly — see renderContentFor's
+    // comment above; this is the same gap, and the one that actually made
+    // I4's dismiss button unreachable: renderActivity alone never finds
+    // kindRenderers.timer/meeting's new 'trailing' slot.
+    capLead.replaceChildren(renderForSlot(id,'leading')  || document.createTextNode(''));
+    capTrail.replaceChildren(renderForSlot(id,'trailing') || document.createTextNode(''));
   }
 }
 
