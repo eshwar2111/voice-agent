@@ -542,6 +542,28 @@ func TestEndBypassesCoalescing(t *testing.T) {
 	}
 }
 
+// Data is shared by reference between the caller of emit and whatever Snapshot
+// hands the UI. Task 3 has providers emitting from their own goroutines while
+// the UI reads snapshots, so a provider reusing a scratch map between ticks
+// would be an unsynchronized data race. Copy at the boundary rather than
+// relying on every future provider author remembering a contract.
+func TestUpsertCopiesDataSoCallerMutationCannotRace(t *testing.T) {
+	r, clk, _ := newTestRegistry()
+	shared := map[string]any{"remaining": 60}
+	a := act("timer", 50, clk.t)
+	a.Data = shared
+	r.Upsert(a)
+
+	shared["remaining"] = 999 // provider reuses its scratch map
+
+	got := r.Snapshot()
+	if got[0].Data["remaining"] != 60 {
+		t.Errorf("Snapshot reflected a post-Upsert mutation of the caller's map "+
+			"(got %v, want 60) — Data must be copied at the boundary",
+			got[0].Data["remaining"])
+	}
+}
+
 func TestDismissBypassesCoalescing(t *testing.T) {
 	r, clk, pushes := newTestRegistry()
 	r.Upsert(act("timer", 50, clk.t))
@@ -619,6 +641,25 @@ func (r *Registry) publishSnapshot() {
 ```
 
 Note the lock discipline: `notify` and `Tick` release `r.mu` **before** calling `publishSnapshot`, and `Snapshot` takes the lock itself. Publishing under the lock would deadlock the moment a publisher calls back into the registry.
+
+**Also add the `Data` copy** that `TestUpsertCopiesDataSoCallerMutationCannotRace` requires. At the top of `Upsert`, before anything else:
+
+```go
+	// Copy Data at the boundary. Providers emit from their own goroutines while
+	// the UI reads Snapshot(); a provider reusing a scratch map between ticks
+	// would otherwise be an unsynchronized race. Copying here means the registry
+	// is safe regardless of provider behavior, instead of depending on every
+	// future provider author remembering a contract.
+	if a.Data != nil {
+		cp := make(map[string]any, len(a.Data))
+		for k, v := range a.Data {
+			cp[k] = v
+		}
+		a.Data = cp
+	}
+```
+
+This is a shallow copy — sufficient here because activity `Data` holds scalars and strings. If a future provider nests a mutable value inside `Data`, it must emit a fresh one; note that in the provider's own doc comment rather than deep-copying every tick.
 
 - [ ] **Step 4: Run all island tests**
 
