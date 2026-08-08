@@ -10,7 +10,10 @@ import (
 const LookaheadMinutes = 60
 
 // wakeThresholds are the remaining-minute values worth interrupting for.
-var wakeThresholds = []int{5, 1, 0}
+// Ascending, so the first match is the SMALLEST applicable threshold.
+// Descending would match 5 for a meeting 0 minutes away and record the wrong
+// bookkeeping, re-firing forever.
+var wakeThresholds = []int{0, 1, 5}
 
 type NextMeeting struct {
 	Title    string
@@ -49,9 +52,14 @@ func (m *MeetingProvider) activityFor(n *NextMeeting) (Activity, bool) {
 
 	significant := false
 	for _, th := range wakeThresholds {
-		if mins == th && m.lastWake != th {
-			significant = true
-			m.lastWake = th
+		if mins <= th {
+			// Wake only on crossing into a NEARER threshold. This also handles a
+			// poll that skips a minute (6 -> 4 never sees exactly 5): the first
+			// poll at or under 5 still fires.
+			if m.lastWake < 0 || th < m.lastWake {
+				significant = true
+				m.lastWake = th
+			}
 			break
 		}
 	}

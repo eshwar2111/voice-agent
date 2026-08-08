@@ -31,6 +31,10 @@ func TestMeetingActivityFields(t *testing.T) {
 	}
 }
 
+// TestMeetingSignificantOnlyAtThresholds runs a genuine descending sequence
+// against ONE provider, exactly as a real countdown would poll. It does not
+// reset m.lastWake between cases: that reset previously masked a re-fire bug
+// (see TestMeetingWakesOncePerThreshold) by making every case start fresh.
 func TestMeetingSignificantOnlyAtThresholds(t *testing.T) {
 	clk := &fakeClock{t: time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)}
 	m := NewMeetingProvider(clk, nil)
@@ -47,7 +51,6 @@ func TestMeetingSignificantOnlyAtThresholds(t *testing.T) {
 		{0, true},  // starting now
 	}
 	for _, tc := range cases {
-		m.lastWake = -1 // reset between cases
 		a, ok := m.activityFor(&NextMeeting{
 			Title: "Standup", StartsAt: clk.t.Add(time.Duration(tc.minutes) * time.Minute),
 		})
@@ -57,6 +60,53 @@ func TestMeetingSignificantOnlyAtThresholds(t *testing.T) {
 		if a.Significant != tc.want {
 			t.Errorf("%dm: Significant = %v, want %v", tc.minutes, a.Significant, tc.want)
 		}
+	}
+}
+
+// TestMeetingWakesOnSkippedThreshold covers a poll that jumps past T-5m (e.g.
+// the machine was briefly busy or asleep, so the first observation lands at
+// 4 minutes rather than exactly 5). The T-5 warning must still fire — late
+// rather than never — for a fresh provider.
+func TestMeetingWakesOnSkippedThreshold(t *testing.T) {
+	clk := &fakeClock{t: time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)}
+	m := NewMeetingProvider(clk, nil)
+
+	a, ok := m.activityFor(&NextMeeting{
+		Title: "Standup", StartsAt: clk.t.Add(4 * time.Minute),
+	})
+	if !ok {
+		t.Fatal("activityFor returned ok=false")
+	}
+	if !a.Significant {
+		t.Error("a poll that skips T-5m and first observes at 4m should still be Significant")
+	}
+}
+
+// TestMeetingNoRepeatAtZero covers the bug the old test's per-case lastWake
+// reset was hiding: with a descending wakeThresholds slice and a first-match
+// loop, a meeting sitting at 0 minutes could re-fire Significant forever,
+// because 0 <= 5 matches the 5-minute threshold first on every poll after the
+// 0/1 thresholds were already consumed. Two consecutive observations at 0
+// minutes must wake only once.
+func TestMeetingNoRepeatAtZero(t *testing.T) {
+	clk := &fakeClock{t: time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)}
+	m := NewMeetingProvider(clk, nil)
+	n := &NextMeeting{Title: "Standup", StartsAt: clk.t}
+
+	first, ok := m.activityFor(n)
+	if !ok {
+		t.Fatal("first: activityFor returned ok=false")
+	}
+	if !first.Significant {
+		t.Error("first observation at 0 minutes should be Significant")
+	}
+
+	second, ok := m.activityFor(n)
+	if !ok {
+		t.Fatal("second: activityFor returned ok=false")
+	}
+	if second.Significant {
+		t.Error("second observation at 0 minutes must NOT re-wake the island")
 	}
 }
 
