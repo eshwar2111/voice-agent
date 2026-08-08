@@ -247,8 +247,14 @@ registerActivity({
 
 registerActivity({
   id: 'agent.run', priority: 90, ttl: 0,
-  leading: (d) => el('span', d.phase === 'listening' ? 'orb on pulse' : 'orb on warm', icon(
-    d.phase === 'listening' ? 'mic' : 'sparkle')),
+  // NOT `.orb` — that is a 9px status DOT with its own gradient and glow,
+  // designed to BE the indicator, not to contain one. Wrapping a 20px .ico
+  // inside it made the SVG overflow the dot in every direction and crowd the
+  // label ("Listening…" appearing to sit on top of the mic). `.cap-glyph`
+  // sizes to the cap and colours the icon; the pulse rides on it.
+  leading: (d) => el('span',
+    d.phase === 'listening' ? 'cap-glyph accent glyph-pulse' : 'cap-glyph warm',
+    icon(d.phase === 'listening' ? 'mic' : 'sparkle')),
   trailing: (d) => {
     if (d.phase === 'listening') return el('span', 'eq', '<i></i><i></i><i></i><i></i><i></i>');
     // NOTE: this dismisses the island's progress display; it does NOT abort the

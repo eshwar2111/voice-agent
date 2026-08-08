@@ -18,6 +18,15 @@
   display:grid; place-items:center; border-radius:50%;
   transition:transform 460ms cubic-bezier(.22,1.16,.36,1), opacity 200ms linear;
 }
+/* A cap-sized icon container. Distinct from `.orb` (surfaces.css), which is a
+   9px dot with its own background and glow — putting a 20px .ico inside that
+   made the glyph overflow the dot and collide with the label. */
+#island .cap-glyph{display:grid;place-items:center;width:100%;height:100%;color:var(--ink-2)}
+#island .cap-glyph.accent{color:var(--accent)}
+#island .cap-glyph.warm{color:var(--warn)}
+#island .cap-glyph.glyph-pulse{animation:glyphPulse 1.7s var(--ease) infinite}
+@keyframes glyphPulse{0%,100%{opacity:.55;transform:scale(.94)}50%{opacity:1;transform:scale(1)}}
+@media (prefers-reduced-motion:reduce){#island .cap-glyph.glyph-pulse{animation:none}}
 #island .cap.lead{margin-left:8px}
 #island .cap.trail{margin-right:8px;margin-left:auto}
 /* Settings affordance rendered into the trailing cap for idle content (see

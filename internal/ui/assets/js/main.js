@@ -600,12 +600,21 @@ document.addEventListener('keydown', e => {
 });
 
 /* ─── island state driven by Go pushes ────────────────────────────────────── */
-function handleIslandClick(){
+function handleIslandClick(ev){
   // Clicking the island while the Control Center is open is a no-op — only
   // Esc or its own Close button dismiss it, matching the pre-Task-7 dashboard
   // behavior of ignoring island clicks entirely while it was visible.
   if(store.surface === 'controlcenter') return;
-  if(store.surface){ closeSurface(); return }
+  if(store.surface){
+    // Surfaces render INSIDE #island (the sheet IS the island at 720x520), so
+    // a click on the command textarea bubbles up to this handler. Collapsing
+    // on that click made the sheet impossible to type in: click the field,
+    // the sheet closes. Only a click on the island's own chrome — outside the
+    // content area — should dismiss it.
+    if(ev && ev.target && ev.target.closest && ev.target.closest('#islandBody')) return;
+    closeSurface();
+    return;
+  }
   jlog('island click -> triggerListen');
   window.triggerListen && window.triggerListen();
 }
