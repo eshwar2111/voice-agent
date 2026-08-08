@@ -424,7 +424,8 @@ Expected: PASS (7 tests)
 
 ```bash
 export PATH="$PATH:/c/w64devkit/bin"
-go list -deps ./internal/island/ | grep -v "^internal/\|^[a-z]*$\|^[a-z]*/" | grep "yourname\|github.com" || echo "stdlib only - correct"
+go list -f '{{join .Imports "
+"}}' ./internal/island/ | grep -E "\.|/" | grep -v "^[a-z/]*$" || echo "stdlib only - correct"
 ```
 
 Expected: `stdlib only - correct`. If anything from `github.com/yourname/voice-agent/...` or a third-party module appears, the inward-coupling rule is broken — fix before committing.
@@ -2130,7 +2131,8 @@ export PATH="$PATH:/c/w64devkit/bin"
 go test ./internal/... -race
 node --test internal/ui/assets/js/state.test.js internal/ui/assets/js/geometry.test.js internal/ui/assets/js/activities.test.js internal/ui/assets/js/motion.test.js internal/ui/assets/js/surfaces.test.js
 go build ./... && go build -ldflags="-s -w -H windowsgui" -o voice-agent.exe ./cmd/app
-go list -deps ./internal/island/ | grep "yourname/voice-agent" && echo "DEPENDENCY VIOLATION" || echo "island is stdlib-only - correct"
+go list -f '{{join .Imports "
+"}}' ./internal/island/ | grep -E "\.|/" | grep -v "^[a-z/]*$" && echo "DEPENDENCY VIOLATION" || echo "island is stdlib-only - correct"
 ```
 
 - [ ] **Step 4: Write the QA checklist**
