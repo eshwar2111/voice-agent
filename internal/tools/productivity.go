@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/yourname/voice-agent/internal/island"
 	"github.com/yourname/voice-agent/internal/ui"
 )
 
@@ -54,10 +55,14 @@ func (t *TimerTool) Execute(ctx context.Context, rawParams json.RawMessage) (str
 		msg = "Timer finished!"
 	}
 
-	go func(duration int, message string) {
+	timerID := fmt.Sprintf("%d", time.Now().UnixNano())
+	island.DefaultTimers.Add(timerID, msg, time.Now().Add(time.Duration(params.DurationMinutes)*time.Minute))
+
+	go func(id string, duration int, message string) {
 		time.Sleep(time.Duration(duration) * time.Minute)
+		island.DefaultTimers.Remove(id)
 		ui.ShowOutputOverlay(fmt.Sprintf("⏰ Timer Complete: %s", message))
-	}(params.DurationMinutes, msg)
+	}(timerID, params.DurationMinutes, msg)
 
 	return fmt.Sprintf("Started a timer for %d minute(s).", params.DurationMinutes), nil
 }
