@@ -410,6 +410,9 @@ func StartOverlay(ctx context.Context, cfg *config.Config) {
 	w.Bind("setRegionRects", func(rects []Rect) {
 		w.Dispatch(func() { canvasGlobal.SetRects(rects) })
 	})
+	w.Bind("dismissIslandActivity", func(id string) {
+		DismissIslandActivity(id)
+	})
 
 	assets, err := startAssetServer()
 	if err != nil {

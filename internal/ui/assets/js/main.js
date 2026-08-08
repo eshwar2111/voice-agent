@@ -14,9 +14,9 @@
 
 import { resolve, WAKE_MS } from './state.js';
 import { morphTo, swapContent, currentSwapTarget } from './motion.js';
-import { unionIslandRect } from './geometry.js';
+import { unionIslandRect, pairLayout } from './geometry.js';
 import { registerActivity, updateActivity, endActivity, activeActivities, renderActivity,
-  syncProviderActivities, hasSignificantUpdate }
+  renderProvided, syncProviderActivities, hasSignificantUpdate }
   from './activities.js';
 import { render as renderCommand } from './surfaces/command.js';
 import { render as renderResult } from './surfaces/result.js';
@@ -114,7 +114,7 @@ export function syncAndRerender(){ store.activities = activeActivities(); rerend
    accounts for. */
 function collectOtherSurfaceRects(){
   const rects=[];
-  document.querySelectorAll('#dashboard.visible, #toast').forEach(el=>{
+  document.querySelectorAll('.panel.active, .card.shown, #dashboard.visible, #toast, #bubble.shown').forEach(el=>{
     const cs=getComputedStyle(el);
     if(cs.display==='none') return;
     const r=el.getBoundingClientRect();
@@ -140,10 +140,18 @@ const island = document.getElementById('island');
 const islandBody = document.getElementById('islandBody');
 const capLead = document.getElementById('capLead');
 const capTrail = document.getElementById('capTrail');
+const bubble = document.getElementById('bubble');
 
 const store = { surface:null, payload:null, activities:[], agentState:'idle',
-                hover:false, idleSince:Date.now(), now:Date.now() };
-let applied = { presence:null, contentId:null, payload:undefined };
+                hover:false, idleSince:Date.now(), now:Date.now(), promoted:null };
+let applied = { presence:null, contentId:null, payload:undefined, bubbleId:null };
+
+// getCanvasSize (overlay.go) is a webview binding — async, and Go's source of
+// truth for the canvas' CSS size. Called once, cached here, rather than on
+// every rerender()/pairLayout() call: canvasCSSWidth() below just reads the
+// cache. 1200 mirrors canvas.go's default until the real value resolves.
+let cachedCanvasWidth = 1200;
+function canvasCSSWidth(){ return cachedCanvasWidth }
 
 function defaultLabelFor(state){
   if(state==='listening') return 'Listening…';
@@ -297,6 +305,46 @@ export function rerender(){
     updateCaps(r.contentId);
     applied.payload = store.payload;
   }
+  // ── bubble ────────────────────────────────────────────────────────────────
+  // The detached second activity. resolve() decides bubbleId; this block only
+  // renders/positions it — it never touches the island's own presence/size,
+  // so resolve() stays the sole authority on island geometry.
+  let bubbleEntered = false;
+  if(r.bubbleId !== applied.bubbleId){
+    if(r.bubbleId){
+      bubble.replaceChildren(renderProvided(r.bubbleId,'bubble') ||
+                             renderActivity(r.bubbleId,'leading') ||
+                             document.createTextNode(''));
+      bubble.classList.remove('leaving'); bubble.classList.add('entering','shown');
+      bubbleEntered = true;
+    } else {
+      bubble.classList.remove('entering'); bubble.classList.add('leaving');
+      bubble.classList.remove('shown');
+    }
+    applied.bubbleId = r.bubbleId;
+  } else if(r.bubbleId){
+    // Same activity, new data — refresh in place, no re-entry animation.
+    bubble.replaceChildren(renderProvided(r.bubbleId,'bubble') ||
+                           document.createTextNode(''));
+  }
+
+  // Position the pair. pairLayout centers the ASSEMBLY, not the pill.
+  const lay = pairLayout(r.presence, !!r.bubbleId, canvasCSSWidth());
+  island.style.left = lay.pillLeft + 'px';
+  if(r.bubbleId){
+    bubble.style.left = lay.bubbleLeft + 'px';
+    bubble.style.width = lay.bubbleSize + 'px';
+    bubble.style.height = lay.bubbleSize + 'px';
+  }
+  // Publish immediately on becoming shown, now that its geometry is set —
+  // not just via the tail publish below, so a bubble entrance that coincides
+  // with an island presence morph (whose own tail publish is deferred to
+  // morphTo's settle callback) still gets region coverage right away rather
+  // than waiting out the full morph duration invisible/unclickable. The
+  // transitionend listener below covers the settle side, same two-touch rule
+  // the pill's own morph follows.
+  if(bubbleEntered) publishRegionRects();
+
   setSurface(r.surface);
   // See the `morphed` comment above: when a morph just started, its own
   // settle callback (morphTo's third arg, always publishRegionRects) is
@@ -306,6 +354,12 @@ export function rerender(){
   // design entirely.
   if(!morphed) publishRegionRects();
 }
+
+// The bubble animates in/out (island.css .entering/.leaving), so its rect
+// changes for the duration of that transition — publish on enter (the
+// 'shown' class landing, above) and again here on settle, never per frame,
+// same two-touch rule the pill's own morph follows.
+bubble.addEventListener('transitionend', () => { publishRegionRects() });
 
 // Toggles the Control Center dashboard's visibility in lockstep with
 // store.surface. Every other surface (command/result/approve) renders
@@ -415,6 +469,28 @@ window.dismissSuggestion = (id) => {
   endActivity('ambient.nudge', syncAndRerender);
 };
 
+/* ─── bubble promote/dismiss ────────────────────────────────────────────── */
+// Clicking the bubble swaps it into the main pill. Implemented as a priority
+// nudge rather than a separate "pinned" concept: resolve() stays the only
+// thing that decides slots.
+window.promoteBubble = () => {
+  if(!applied.bubbleId) return;
+  store.promoted = applied.bubbleId;
+  rerender();
+};
+
+window.dismissActivity = (id) => {
+  window.dismissIslandActivity && window.dismissIslandActivity(id);
+  endActivity(id, syncAndRerender);
+};
+
 jlog('overlay loaded'); loadSettings(); updateUI('idle','Ready');
 window.uiReady && window.uiReady();
+// getCanvasSize is async (webview binding) — fetched once here rather than
+// per-frame; canvasCSSWidth() above just reads the cache pairLayout consumes.
+if(window.getCanvasSize){
+  window.getCanvasSize().then(s => {
+    if(s && s.w){ cachedCanvasWidth = s.w; rerender() }
+  }).catch(() => {});
+}
 requestAnimationFrame(publishRegionRects);

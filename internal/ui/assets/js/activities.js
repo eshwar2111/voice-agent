@@ -93,10 +93,55 @@ export function hasSignificantUpdate() {
   return false;
 }
 
-// kindRenderers is populated in Task 9 (timer + meeting slots). Declared
-// empty here so this task compiles and runs standalone — renderProvided
-// simply returns null until Task 9 fills it in.
-export const kindRenderers = {};
+// kindRenderers is keyed by Activity.Kind (the provider path uses `kind`,
+// not `id`, so one renderer serves every timer / every meeting).
+export const kindRenderers = {
+  timer: {
+    bubble:  (d) => el('span', 'ring', ringSVG(d.remaining, d.total)),
+    leading: (d) => el('span', 'ring', ringSVG(d.remaining, d.total)),
+    compact: (d) => el('div', null,
+      `<span class="ttl">${mmss(d.remaining)}</span>` +
+      `<span class="sub">${esc(d.label || 'Timer')}</span>`),
+    expanded: (d) => el('div', null,
+      `<span class="ttl">${esc(d.label || 'Timer')}</span>` +
+      `<span class="sub">${mmss(d.remaining)} remaining</span>`),
+  },
+  meeting: {
+    bubble:  () => el('span', null, icon('calendar')),
+    leading: () => el('span', null, icon('calendar')),
+    compact: (d) => el('div', null,
+      `<span class="ttl">${esc(d.title || 'Meeting')}</span>` +
+      `<span class="sub">in ${d.minutes|0}m</span>`),
+    expanded: (d) => {
+      const n = el('div', null,
+        `<span class="ttl">${esc(d.title || 'Meeting')}</span>` +
+        `<span class="sub">starts in ${d.minutes|0}m</span>`);
+      if(d.joinURL){
+        const b = el('button', 'btn primary', 'Join');
+        b.onclick = (ev) => { ev.stopPropagation(); window.openExternal &&
+                              window.openExternal(d.joinURL) };
+        n.appendChild(b);
+      }
+      return n;
+    },
+  },
+};
+
+function mmss(sec){
+  const s = Math.max(0, sec|0);
+  return String((s/60)|0).padStart(2,'0') + ':' + String(s%60).padStart(2,'0');
+}
+
+// A countdown ring drawn with stroke-dashoffset. r=9 gives circumference ~56.5.
+function ringSVG(remaining, total){
+  const frac = total > 0 ? Math.max(0, Math.min(1, remaining/total)) : 0;
+  const c = 2 * Math.PI * 9;
+  return `<svg class="ico" viewBox="0 0 24 24">` +
+    `<circle cx="12" cy="12" r="9" stroke="rgba(255,255,255,.18)"/>` +
+    `<circle cx="12" cy="12" r="9" stroke="currentColor" ` +
+    `stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${(c*(1-frac)).toFixed(1)}" ` +
+    `transform="rotate(-90 12 12)"/></svg>`;
+}
 
 export function renderProvided(id, slot) {
   const v = provided.get(id);

@@ -2,6 +2,16 @@ package ui
 
 import "github.com/yourname/voice-agent/internal/island"
 
+// ActivityRegistry is the live island.Registry instance, set by main.go once
+// it constructs one (Task 10). A package-level var — rather than internal/ui
+// importing whatever owns the registry's lifecycle — keeps the dependency
+// direction the same as PublishActivities' injected-Publish-func pattern
+// above: internal/ui never imports the package that wires main.go together,
+// so there is no import cycle. nil until main.go sets it (e.g. before
+// TrustedExecution is configured, or in tests), so DismissIslandActivity
+// below must treat that as a no-op, not a panic.
+var ActivityRegistry *island.Registry
+
 // UpdateActivity pushes or refreshes a live activity in the island.
 // Unknown ids are dropped by the JS registry with a log line, never thrown.
 func UpdateActivity(id string, data any) {
@@ -40,4 +50,15 @@ func PublishActivities(as []island.Activity) {
 		})
 	}
 	bridge.Push("activity:sync", map[string]any{"activities": out})
+}
+
+// DismissIslandActivity dismisses a provider-driven activity (timer, meeting)
+// by id. Bound as the JS-callable dismissIslandActivity in overlay.go; nil
+// ActivityRegistry (Task 10 not yet wired, or a build predating it) is a
+// silent no-op rather than a panic.
+func DismissIslandActivity(id string) {
+	if ActivityRegistry == nil {
+		return
+	}
+	ActivityRegistry.Dismiss(id)
 }

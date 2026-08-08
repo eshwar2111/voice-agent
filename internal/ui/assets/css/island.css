@@ -1,11 +1,15 @@
 /* internal/ui/assets/css/island.css */
+/* Horizontal position is owned entirely by pairLayout (geometry.js), which
+   sets #island.style.left every rerender() — the translateX(-50%) centering
+   this rule used to carry is gone so there is exactly one source of truth
+   for where the pill sits; setting `left` from JS while that transform was
+   still applied double-offset the island. */
 #island{
   position:fixed; top:10px; left:50%; margin-left:0;
-  transform:translateX(-50%);
   width:260px; height:40px; border-radius:20px;
   display:flex; align-items:center; overflow:hidden;
   cursor:pointer; z-index:6;
-  will-change:width,height,border-radius;
+  will-change:width,height,border-radius,left;
 }
 /* Caps translate, never cross-fade — that is what gives the island object
    permanence when its content changes underneath. */
@@ -51,6 +55,30 @@
 .risk-safe{color:var(--good)}
 .risk-risky{color:var(--warn)}
 .risk-danger{color:var(--danger)}
+/* At dormant the island is 168x32 and text does not fit — but the leading
+   glyph must survive, or shy-by-default becomes hidden-by-default. */
+#island[data-presence="dormant"] .body{display:none}
+#island[data-presence="dormant"] .cap.lead{margin:0 auto}
+#island[data-presence="dormant"] .cap.trail{display:none}
+
+/* The detached second activity. Positioned from JS via pairLayout so the
+   pill+bubble pair stays centered; CSS owns only appearance and transition. */
+#bubble{
+  position:fixed; top:10px; left:0;
+  width:32px; height:32px; border-radius:50%;
+  display:none; place-items:center; overflow:hidden;
+  cursor:pointer; z-index:6;
+  transform:scale(0); opacity:0;
+  will-change:transform,opacity,left,width,height;
+}
+#bubble.shown{display:grid; transform:scale(1); opacity:1}
+/* Arrive with a slight overshoot so it reads as physical; leave without one,
+   because a bouncing departure reads as unstable. Same asymmetry as the pill. */
+#bubble.entering{transition:transform 380ms cubic-bezier(.22,1.16,.36,1), opacity 200ms linear}
+#bubble.leaving {transition:transform 260ms cubic-bezier(.36,0,.24,1), opacity 180ms linear}
+#bubble img{width:100%;height:100%;object-fit:cover}
+@media (prefers-reduced-motion:reduce){ #bubble{transition:none!important} }
+
 @media (prefers-reduced-motion:reduce){
   #island,#island .cap{transition:none!important}
 }

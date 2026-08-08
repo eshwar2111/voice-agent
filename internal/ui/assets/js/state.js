@@ -42,7 +42,22 @@ function rankActivities(activities) {
 // the geometry.
 export function resolve(store) {
   const { surface, agentState, hover, idleSince, now } = store;
-  const ranked = rankActivities(store.activities);
+  let ranked = rankActivities(store.activities);
+
+  // A promoted activity is a priority nudge, not a separate slot concept:
+  // resolve() remains the only thing that assigns contentId/bubbleId. If the
+  // promoted id still names a live activity, move it to the front of the
+  // ranked list before slots are read off; otherwise clear the stale nudge.
+  if (store.promoted) {
+    const idx = ranked.findIndex((a) => a.id === store.promoted);
+    if (idx > 0) {
+      const [promoted] = ranked.splice(idx, 1);
+      ranked = [promoted, ...ranked];
+    } else if (idx === -1) {
+      store.promoted = null;
+    }
+  }
+
   const bubbleId = ranked[1] ? ranked[1].id : null;
 
   // 1. User intent outranks everything the agent wants to say.
