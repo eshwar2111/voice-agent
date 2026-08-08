@@ -63,8 +63,10 @@ export function resolve(store) {
 
   // 3. Any other live activity: peek on hover, otherwise compact.
   if (top) {
+    // This branch only ever yields 'peek' or 'compact' (never 'dormant'), so
+    // the wake check only needs the 'compact' half.
     let presence = hover ? 'peek' : 'compact';
-    if (woken && (presence === 'dormant' || presence === 'compact')) presence = 'peek';
+    if (woken && presence === 'compact') presence = 'peek';
     return { presence, contentId: top.id, bubbleId, surface: null };
   }
 

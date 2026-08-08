@@ -115,13 +115,26 @@ test('an approval takes the pill and demotes music to the bubble', () => {
   assert.equal(r.bubbleId, 'spotify.nowplaying');
 });
 
-test('wakeUntil lifts a dormant island to peek', () => {
-  const dormant = s2({ now: 60000, idleSince: 0,
+test('wakeUntil lifts a compact island (live activity) to peek', () => {
+  const compact = s2({ now: 60000, idleSince: 0,
                        activities: [{ id: 'timer.t1', priority: 60 }] });
-  assert.equal(resolve(dormant).presence, 'compact');
+  assert.equal(resolve(compact).presence, 'compact');
+
+  const woken = { ...compact, wakeUntil: 60000 + 1000 };
+  assert.equal(resolve(woken).presence, 'peek');
+});
+
+test('wakeUntil lifts a genuinely dormant island (no activities) to peek', () => {
+  const dormant = s2({ now: 60000, idleSince: 0, activities: [] });
+  assert.equal(resolve(dormant).presence, 'dormant');
 
   const woken = { ...dormant, wakeUntil: 60000 + 1000 };
   assert.equal(resolve(woken).presence, 'peek');
+});
+
+test('without wakeUntil, an idle island past the threshold stays dormant', () => {
+  const r = resolve(s2({ now: 60000, idleSince: 0, activities: [] }));
+  assert.equal(r.presence, 'dormant');
 });
 
 test('an expired wakeUntil does not hold the island open', () => {
