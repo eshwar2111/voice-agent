@@ -1,7 +1,23 @@
 /* internal/ui/assets/css/tokens.css */
 /* ─── Voice Agent · macOS-style frosted-glass overlay ─────────────────────── */
 :root{
-  --glass: rgba(24,25,31,0.66);
+  /* NOT actually translucent-over-desktop. `backdrop-filter` cannot blur the
+     desktop from inside a transparent WebView2 page — there is nothing behind
+     the element *in the document* to sample, and the compositor does not feed
+     it the screen. At 0.66 alpha that produced a see-through hole with the
+     desktop fully legible through it: tolerable on a 300px pill, unreadable on
+     a 720x520 sheet or the Control Center.
+
+     So the surfaces are opaque, and the "glass" reads from the 1px stroke, the
+     inset top highlight, and the drop shadow instead. The island keeps a hair
+     of translucency because it is small and sits over a single background;
+     large surfaces are effectively solid so text is always legible.
+
+     Real frosted glass is still possible — the window is region-shaped, so DWM
+     acrylic can be applied within the region via SetWindowCompositionAttribute.
+     That is a Win32 change, not a CSS one, and it is deliberately not v1. */
+  --glass: rgba(21,22,28,0.95);          /* island / small caps */
+  --glass-surface: rgba(17,18,23,0.985); /* sheets, cards, Control Center */
   --glass-solid: #14151b;
   --hi: rgba(255,255,255,0.10);      /* top inner highlight */
   --stroke: rgba(255,255,255,0.12);
@@ -22,12 +38,15 @@ button,input,textarea,select{font:inherit;color:inherit}
 /* one glass surface, used by the island + every panel/card/dashboard */
 .glass{
   background:var(--glass);
-  -webkit-backdrop-filter:blur(34px) saturate(180%); backdrop-filter:blur(34px) saturate(180%);
   border:1px solid var(--stroke);
   box-shadow:var(--shadow), inset 0 1px 0 var(--hi);
 }
-@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
-  .glass{background:var(--glass-solid)} /* fallback: opaque so nothing bleeds through */
-}
+/* Anything large enough to read paragraphs on gets the near-solid fill.
+   The command/result/approve sheets are not separate elements — they render
+   INSIDE the island, so the sheet IS the island at 720x520. Key off presence
+   rather than a panel class, which no longer exists after the surface split. */
+#island[data-presence="sheet"],
+#island[data-presence="expanded"],
+#dashboard.glass{ background:var(--glass-surface) }
 
 #shell{position:fixed;inset:0}
