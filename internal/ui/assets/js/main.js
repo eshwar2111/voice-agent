@@ -198,6 +198,7 @@ const islandBody = document.getElementById('islandBody');
 const capLead = document.getElementById('capLead');
 const capTrail = document.getElementById('capTrail');
 const bubble = document.getElementById('bubble');
+let bubbleLeaveTimer = null;
 
 const store = { surface:null, payload:null, activities:[], agentState:'idle',
                 hover:false, idleSince:Date.now(), now:Date.now(), promoted:null };
@@ -403,11 +404,27 @@ export function rerender(){
       bubble.replaceChildren(renderProvided(r.bubbleId,'bubble') ||
                              renderActivity(r.bubbleId,'leading') ||
                              document.createTextNode(''));
+      clearTimeout(bubbleLeaveTimer);
       bubble.classList.remove('leaving'); bubble.classList.add('entering','shown');
       bubbleEntered = true;
     } else {
       bubble.classList.remove('entering'); bubble.classList.add('leaving');
       bubble.classList.remove('shown');
+      // Minor (whole-branch review): prefers-reduced-motion sets
+      // transition:none on #bubble (island.css), so the transitionend
+      // handler below never fires for a reduced-motion leave — .leaving
+      // would dangle at display:grid/scale(0)/opacity:0 for the rest of the
+      // session (visually harmless, since it's excluded from the region,
+      // which only queries #bubble.shown, but the same stale-state-across-
+      // lifecycles shape flagged elsewhere in this project). Fall back to a
+      // timeout past the longest possible leave transition; cleared/reset on
+      // every leave and on the next entrance so it can't race a later cycle.
+      clearTimeout(bubbleLeaveTimer);
+      bubbleLeaveTimer = setTimeout(() => {
+        if(bubble.classList.contains('leaving') && !bubble.classList.contains('shown')){
+          bubble.classList.remove('leaving');
+        }
+      }, 300);
     }
     applied.bubbleId = r.bubbleId;
   } else if(r.bubbleId){
@@ -456,6 +473,7 @@ export function rerender(){
 bubble.addEventListener('transitionend', () => {
   if(bubble.classList.contains('leaving') && !bubble.classList.contains('shown')){
     bubble.classList.remove('leaving');
+    clearTimeout(bubbleLeaveTimer); // the reduced-motion fallback is now moot
   }
   publishRegionRects();
 });
