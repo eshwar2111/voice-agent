@@ -61,6 +61,17 @@ var (
 // each call is a full replacement of the provider-driven set, never a delta,
 // so there is nothing to queue — an older buffered snapshot would just be
 // overwritten by the next one anyway.
+//
+// The bridge==nil check and the buffer write happen under the same pendingMu
+// that FlushPendingActivities holds while checking havePending — deliberately,
+// to close a TOCTOU: a bridge==nil check made outside the lock could read nil,
+// then lose the CPU for as long as it takes JS to finish loading and Flush to
+// run and find nothing pending yet, and only then acquire the lock and store a
+// snapshot nobody will ever flush (Flush runs exactly once). Doing the check
+// and the store as one atomic step under pendingMu makes that interleaving
+// impossible: either the store lands before Flush's check (and gets flushed),
+// or bridge is already visible as non-nil by the time this runs (and it is
+// pushed directly instead of buffered).
 func PublishActivities(as []island.Activity) {
 	out := make([]map[string]any, 0, len(as))
 	for _, a := range as {
@@ -73,13 +84,14 @@ func PublishActivities(as []island.Activity) {
 		})
 	}
 
+	pendingMu.Lock()
 	if bridge == nil {
-		pendingMu.Lock()
 		pendingActivities = out
 		havePending = true
 		pendingMu.Unlock()
 		return
 	}
+	pendingMu.Unlock()
 	bridge.Push("activity:sync", map[string]any{"activities": out})
 }
 
