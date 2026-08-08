@@ -6,7 +6,7 @@
 // Node does not define by default, so we stub a minimal one for that case.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { registerActivity, updateActivity, endActivity, activeActivities } from './activities.js';
+import { registerActivity, updateActivity, endActivity, activeActivities, syncProviderActivities, isLive } from './activities.js';
 import { topActivity } from './state.js';
 
 test('activeActivities reports the priorities registered for the four v1 activities', () => {
@@ -97,4 +97,69 @@ test('updateActivity on an unregistered id logs and is dropped, never throws int
 test('registerActivity ignores a definition with no id', () => {
   assert.doesNotThrow(() => registerActivity({ priority: 5 }));
   assert.doesNotThrow(() => registerActivity(null));
+});
+
+// ─── Two-store invariant (SP6): `live` (push, from Go's updateActivity/
+// endActivity — trust.approval, agent.run, ambient.nudge) and `provided`
+// (provider snapshots via syncProviderActivities — timer.*, meeting.next)
+// must stay separate stores. trust.approval has no ttl and blocks the
+// executor on a channel waiting for the user's answer; if a provider
+// snapshot could ever clear `live`, a routine timer tick would silently
+// wipe a pending approval off the screen while the agent stays hung with
+// no visible cause. These tests exist to catch a future "simplify to one
+// map" refactor that would pass `go build` and every other test.
+
+test('a provider snapshot does not clear a pending trust.approval (two-store invariant)', () => {
+  updateActivity('trust.approval', { title: 'Approve action?' });
+  syncProviderActivities([
+    { id: 'timer.1', priority: 60, kind: 'timer' },
+    { id: 'meeting.next', priority: 70, kind: 'meeting' },
+  ]);
+  assert.equal(isLive('trust.approval'), true,
+    'syncProviderActivities (provider-driven, replaces `provided` wholesale) must never ' +
+    'touch `live` (push-driven) — trust.approval has no ttl and the executor is blocked ' +
+    'waiting on it; if this goes false, the two stores have been merged and a routine ' +
+    'provider tick can silently disappear a pending approval while the agent stays hung.');
+  assert.equal(
+    activeActivities().some(a => a.id === 'trust.approval'), true,
+    'trust.approval must still be present in the union returned by activeActivities() ' +
+    'after a provider snapshot arrives');
+  endActivity('trust.approval');
+  syncProviderActivities([]);
+});
+
+test('an empty provider snapshot does not clear the push store (the registry legitimately publishes [] when idle)', () => {
+  updateActivity('trust.approval', { title: 'Approve action?' });
+  syncProviderActivities([]); // exact shape of the real bug: no timers/meetings running
+  assert.equal(isLive('trust.approval'), true,
+    'an empty provider snapshot is the normal, frequent case (no timers or meetings ' +
+    'active) — it must be a no-op for `live`, not an implicit "clear everything"');
+  assert.equal(activeActivities().some(a => a.id === 'trust.approval'), true);
+  endActivity('trust.approval');
+});
+
+test('trust.approval still outranks provider-driven activities in the merged ordering', () => {
+  updateActivity('trust.approval', { title: 'Approve action?' }); // priority 100
+  syncProviderActivities([
+    { id: 'meeting.next', priority: 70, kind: 'meeting' },
+    { id: 'timer.1', priority: 60, kind: 'timer' },
+  ]);
+  assert.equal(topActivity(activeActivities()).id, 'trust.approval',
+    'a pending approval (priority 100) must still win topActivity() over provider ' +
+    'entries (meeting.next 70, timer.* 60) once the two stores are unioned — losing this ' +
+    'ordering would let a meeting or timer bump the approval prompt out of the island');
+  endActivity('trust.approval');
+  syncProviderActivities([]);
+});
+
+test('a provider snapshot fully replaces the previous provider set (provided semantics, pinned alongside the rest)', () => {
+  syncProviderActivities([{ id: 'timer.1', priority: 60, kind: 'timer' }]);
+  assert.equal(activeActivities().some(a => a.id === 'timer.1'), true);
+  syncProviderActivities([{ id: 'meeting.next', priority: 70, kind: 'meeting' }]);
+  const active = activeActivities();
+  assert.equal(active.some(a => a.id === 'timer.1'), false,
+    'a new provider snapshot must wholesale-replace `provided` — timer.1 from the ' +
+    'previous snapshot should be gone, not merged with the new list');
+  assert.equal(active.some(a => a.id === 'meeting.next'), true);
+  syncProviderActivities([]);
 });
