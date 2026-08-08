@@ -24,9 +24,20 @@ export function morphTo(el, presence, onSettled) {
   const growing = to.w * to.h > el.offsetWidth * el.offsetHeight;
   const t = prefersReducedMotion() ? { dur: 0, ease: 'linear' } : (growing ? GROW : SHRINK);
 
+  // `left` is included here (I5, whole-branch review) even though this
+  // function never touches el.style.left itself — main.js's rerender() sets
+  // it, synchronously, later in the same tick (pairLayout's pillLeft), and
+  // relies on this transition string already being applied to the element
+  // for that later assignment to animate rather than teleport. Without it,
+  // the bubble arrived over ~380ms while the pill's ~20-26px shift to make
+  // room for it (pairLayout re-centers the ASSEMBLY, not the pill alone)
+  // happened in a single frame — visibly two uncoordinated movements instead
+  // of one. Do this only once I1 (the widen-phase union, geometry.js) is
+  // fixed: animating `left` makes the union-rect-vs-settled-position gap
+  // span the WHOLE animation instead of resolving after the first frame.
   el.style.transition =
     `width ${t.dur}ms ${t.ease}, height ${t.dur}ms ${t.ease}, ` +
-    `border-radius ${t.dur}ms ${t.ease}, opacity 200ms linear`;
+    `border-radius ${t.dur}ms ${t.ease}, left ${t.dur}ms ${t.ease}, opacity 200ms linear`;
   el.style.width = to.w + 'px';
   el.style.height = to.h + 'px';
   el.style.borderRadius = to.r + 'px';

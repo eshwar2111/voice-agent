@@ -14,7 +14,7 @@
 
 import { resolve, WAKE_MS } from './state.js';
 import { morphTo, swapContent, currentSwapTarget } from './motion.js';
-import { unionIslandRect, pairLayout } from './geometry.js';
+import { pairUnionRect, pairLayout } from './geometry.js';
 import { registerActivity, updateActivity, endActivity, activeActivities, renderActivity,
   renderProvided, syncProviderActivities, hasSignificantUpdate }
   from './activities.js';
@@ -275,11 +275,26 @@ export function rerender(){
        through by simply not knowing a morph is running (fix-round-3
        finding: this was the third distinct occurrence of that bug class,
        each time at a new call site that hadn't inherited an earlier `&&
-       !morphed` guard). */
+       !morphed` guard).
+
+       The union itself is derived from pairLayout (I1, whole-branch review),
+       not from island.getBoundingClientRect(). A measured rect reflects the
+       pill's CURRENT centre — but pairLayout shifts that centre whenever
+       hasBubble flips (up to (gap+bubbleSize)/2 = 20-26px), and this branch
+       can run in the SAME tick a bubble appears or disappears. Centering the
+       widen box on the pre-shift measured centre left a strip of the
+       SETTLED pill outside the published region for the whole ~460ms morph
+       (morphInFlight suppresses every corrective publish until settle) —
+       clicks in that strip fell through to the desktop. pairUnionRect takes
+       the from/to hasBubble state explicitly (applied.bubbleId is still the
+       PRE-this-render value here, since the bubble block below hasn't run
+       yet) and unions both assemblies using the same pairLayout math that
+       will actually position the DOM, so there is one source of truth for
+       horizontal position instead of two that can disagree. */
     const rects = collectOtherSurfaceRects();
-    const ir = island.getBoundingClientRect();
-    const u = unionIslandRect(ir, applied.presence || r.presence, r.presence);
-    if(u) rects.push(u); // island rect omitted entirely when it isn't visible
+    const u = pairUnionRect(applied.presence || r.presence, !!applied.bubbleId,
+                             r.presence, !!r.bubbleId, canvasCSSWidth());
+    if(u) rects.push(u); // null only for an unrecognized presence string
     if(rects.length) window.setRegionRects && window.setRegionRects(rects);
     // ...then narrow it to the exact shape once the morph settles. morphTo
     // always schedules its settle callback via setTimeout (even the

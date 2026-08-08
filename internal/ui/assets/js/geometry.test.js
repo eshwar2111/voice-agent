@@ -1,35 +1,49 @@
 // internal/ui/assets/js/geometry.test.js
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { unionIslandRect, pairLayout, BUBBLE } from './geometry.js';
+import { pairUnionRect, pairLayout, BUBBLE } from './geometry.js';
 import { PRESENCE_SIZES } from './state.js';
 
-test('unionIslandRect covers the larger of the two presence sizes, centered under the measured rect', () => {
-  const measured = { left: 100, top: 10, width: 260, height: 40 }; // compact, on screen
-  const u = unionIslandRect(measured, 'compact', 'peek');
+test('pairUnionRect covers the larger of two no-bubble presence sizes, centered on the canvas', () => {
+  const u = pairUnionRect('compact', false, 'peek', false, 1200);
   assert.equal(u.w, 420); // peek is the wider of the two
   assert.equal(u.h, 52);
   assert.equal(u.y, 10);
-  assert.equal(u.x, 100 + 260 / 2 - 420 / 2);
+  assert.equal(u.x, (1200 - 420) / 2);
 });
 
-test('unionIslandRect is order-independent for the max-bounds box', () => {
-  const measured = { left: 0, top: 0, width: 420, height: 52 };
-  const grow = unionIslandRect(measured, 'compact', 'peek');
-  const shrink = unionIslandRect(measured, 'peek', 'compact');
+test('pairUnionRect is order-independent for the max-bounds box', () => {
+  const grow = pairUnionRect('compact', false, 'peek', false, 1200);
+  const shrink = pairUnionRect('peek', false, 'compact', false, 1200);
   assert.equal(grow.w, shrink.w);
   assert.equal(grow.h, shrink.h);
+  assert.equal(grow.x, shrink.x);
 });
 
-test('unionIslandRect returns null when the island is not actually visible', () => {
-  assert.equal(unionIslandRect({ left: 0, top: 0, width: 0, height: 0 }, 'compact', 'peek'), null);
-  assert.equal(unionIslandRect(null, 'compact', 'peek'), null);
+test('pairUnionRect returns null for an unknown presence', () => {
+  assert.equal(pairUnionRect('compact', false, 'bogus', false, 1200), null);
+  assert.equal(pairUnionRect('bogus', false, 'compact', false, 1200), null);
 });
 
-test('unionIslandRect returns null for an unknown presence', () => {
-  const measured = { left: 0, top: 0, width: 260, height: 40 };
-  assert.equal(unionIslandRect(measured, 'compact', 'bogus'), null);
-  assert.equal(unionIslandRect(measured, 'bogus', 'compact'), null);
+// I1 (whole-branch review): the widen-phase union used to be centered on
+// island.getBoundingClientRect() — the CURRENT measured position — rather
+// than derived from pairLayout, so it disagreed with where pairLayout was
+// about to place the settled pill+bubble assembly whenever hasBubble flipped
+// in the same tick as a presence change. This is the regression test: a
+// bubble arriving alongside a dormant->compact morph must publish a widen
+// rect that already covers the FULLY SETTLED assembly (pill right edge AND
+// bubble right edge), not just the old bubble-less pill's extent.
+test('pairUnionRect covers the settled pill+bubble assembly when a bubble arrives mid-morph', () => {
+  const canvasWidth = 1200;
+  const u = pairUnionRect('dormant', false, 'compact', true, canvasWidth);
+
+  const settled = pairLayout('compact', true, canvasWidth);
+  const pillRight = settled.pillLeft + PRESENCE_SIZES.compact.w;
+  const bubbleRight = settled.bubbleLeft + settled.bubbleSize;
+
+  assert.ok(u.x <= settled.pillLeft, 'union left edge must not exceed the settled pill');
+  assert.ok(u.x + u.w >= bubbleRight, 'union right edge must reach past the settled bubble');
+  assert.ok(u.x + u.w >= pillRight);
 });
 
 test('without a bubble the pill is plain-centered', () => {
