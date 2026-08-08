@@ -56,7 +56,17 @@ export function resolve(store) {
   // once its activity ends, that belongs in main.js, where mutation is
   // already expected (alongside the rest of the activity bookkeeping) — not
   // here.
-  if (store.promoted) {
+  //
+  // C1 (whole-branch review): a live trust.approval must NEVER be reordered
+  // out of the top slot by a promotion. Approve/Cancel only exist in the
+  // 'expanded' renderer (activities.js) — the 'leading' slot a promoted
+  // approval would fall back to in the bubble is just the shield glyph, with
+  // no way to resolve it, while RequestConfirmationCard blocks on
+  // <-confirmChan indefinitely (overlay.go) and confirmMutex queues any
+  // second confirmation behind it. So the approval check below MUST see the
+  // true top-priority activity, unaffected by promotion, whether or not
+  // trust.approval itself happens to be the promoted id.
+  if (store.promoted && !(ranked[0] && ranked[0].id === 'trust.approval')) {
     const idx = ranked.findIndex((a) => a.id === store.promoted);
     if (idx > 0) {
       const [promoted] = ranked.splice(idx, 1);

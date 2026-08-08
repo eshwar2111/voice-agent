@@ -184,3 +184,13 @@ test('promoting the activity already first is a no-op, not a reorder', () => {
   assert.equal(r.contentId, 'agent.job');
   assert.equal(r.bubbleId, 'timer.t1');
 });
+
+test('C1: a stale promotion cannot demote a live approval out of the top slot', () => {
+  const r = resolve(s2({ promoted: 'timer.t1', activities: [
+    { id: 'timer.t1',      priority: 60 },
+    { id: 'trust.approval', priority: 100 },
+  ]}));
+  assert.equal(r.presence, 'expanded');
+  assert.equal(r.contentId, 'trust.approval');
+  assert.equal(r.bubbleId, 'timer.t1');
+});
