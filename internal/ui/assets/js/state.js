@@ -47,14 +47,20 @@ export function resolve(store) {
   // A promoted activity is a priority nudge, not a separate slot concept:
   // resolve() remains the only thing that assigns contentId/bubbleId. If the
   // promoted id still names a live activity, move it to the front of the
-  // ranked list before slots are read off; otherwise clear the stale nudge.
+  // ranked list before slots are read off. A stale id (idx === -1) is
+  // already inert — findIndex fails and this is a no-op on every call — so
+  // there is nothing to clear here. resolve() must stay pure: it is the sole
+  // authority on island geometry, and a function that mutates its argument
+  // on some paths but not others is exactly what later produces "it only
+  // misbehaves on the second render." If store.promoted ever needs tidying
+  // once its activity ends, that belongs in main.js, where mutation is
+  // already expected (alongside the rest of the activity bookkeeping) — not
+  // here.
   if (store.promoted) {
     const idx = ranked.findIndex((a) => a.id === store.promoted);
     if (idx > 0) {
       const [promoted] = ranked.splice(idx, 1);
       ranked = [promoted, ...ranked];
-    } else if (idx === -1) {
-      store.promoted = null;
     }
   }
 

@@ -114,7 +114,7 @@ export function syncAndRerender(){ store.activities = activeActivities(); rerend
    accounts for. */
 function collectOtherSurfaceRects(){
   const rects=[];
-  document.querySelectorAll('.panel.active, .card.shown, #dashboard.visible, #toast, #bubble.shown').forEach(el=>{
+  document.querySelectorAll('#dashboard.visible, #toast, #bubble.shown').forEach(el=>{
     const cs=getComputedStyle(el);
     if(cs.display==='none') return;
     const r=el.getBoundingClientRect();

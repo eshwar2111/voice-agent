@@ -152,3 +152,35 @@ test('wakeUntil never overrides an open surface', () => {
 test('WAKE_MS is a sane wake duration', () => {
   assert.ok(WAKE_MS >= 1500 && WAKE_MS <= 4000);
 });
+
+test('promoting the second activity swaps it into the pill; the previous first becomes the bubble', () => {
+  const r = resolve(s2({ promoted: 'timer.t1', activities: [
+    { id: 'agent.job', priority: 90 },
+    { id: 'timer.t1',  priority: 60 },
+  ]}));
+  assert.equal(r.contentId, 'timer.t1');
+  assert.equal(r.bubbleId, 'agent.job');
+});
+
+test('promoting an id that is not live changes nothing, and resolve() leaves the store untouched', () => {
+  const store = s2({ promoted: 'ghost', activities: [
+    { id: 'agent.job', priority: 90 },
+    { id: 'timer.t1',  priority: 60 },
+  ]});
+  const r = resolve(store);
+  assert.equal(r.contentId, 'agent.job');
+  assert.equal(r.bubbleId, 'timer.t1');
+  // resolve() is the sole authority on island geometry and must stay pure —
+  // a stale promoted id is already inert (findIndex fails, so it's a no-op
+  // on every subsequent call too) and must not be cleared as a side effect.
+  assert.equal(store.promoted, 'ghost');
+});
+
+test('promoting the activity already first is a no-op, not a reorder', () => {
+  const r = resolve(s2({ promoted: 'agent.job', activities: [
+    { id: 'agent.job', priority: 90 },
+    { id: 'timer.t1',  priority: 60 },
+  ]}));
+  assert.equal(r.contentId, 'agent.job');
+  assert.equal(r.bubbleId, 'timer.t1');
+});
