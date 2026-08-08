@@ -114,6 +114,12 @@ func (r *Registry) Dismiss(id string) {
 // Snapshot returns the live activities ordered by priority descending, with
 // ties broken by insertion order so equal-priority activities never flicker
 // between the pill and the bubble.
+//
+// Callers must not mutate the returned Data maps: each Activity.Data header
+// points at the same map instance stored in the registry. That is safe today
+// only because Upsert always replaces the map wholesale rather than mutating
+// it in place — a caller (e.g. a UI bridge) writing into a returned Data map
+// would race with a future Upsert.
 func (r *Registry) Snapshot() []Activity {
 	r.mu.Lock()
 	defer r.mu.Unlock()
