@@ -1,6 +1,7 @@
 package island
 
 import (
+	"context"
 	"testing"
 	"time"
 )
@@ -229,5 +230,161 @@ func TestMeetingIgnoresPastAndFarFuture(t *testing.T) {
 	}
 	if _, ok := m.activityFor(&NextMeeting{Title: "Later", StartsAt: clk.t.Add(3 * time.Hour)}); ok {
 		t.Errorf("a meeting 3h away produced an activity — the island is not a calendar")
+	}
+}
+
+// TestMeetingLookaheadBoundaryInclusive pins the LookaheadMinutes edge: a
+// meeting exactly 60 minutes out is still shown (the guard is `mins >
+// LookaheadMinutes`, which excludes only strictly-above-60).
+func TestMeetingLookaheadBoundaryInclusive(t *testing.T) {
+	clk := &fakeClock{t: time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)}
+	m := NewMeetingProvider(clk, nil)
+
+	if _, ok := m.activityFor(&NextMeeting{Title: "Edge", StartsAt: clk.t.Add(60 * time.Minute)}); !ok {
+		t.Error("a meeting exactly 60 minutes out (the lookahead boundary) should be included")
+	}
+}
+
+// The following tests drive Run's transition logic through the poll method
+// directly (repeated calls, no real ticker), per the coordinator's guidance
+// that either driving Run with a short context or factoring poll out is
+// acceptable as long as it's deterministic and doesn't sleep.
+
+// TestRunBlipDoesNotReplaySequence is the regression test for the bug where
+// Run's end() branch reset lastWake/lastMeeting on ANY ok=false, including a
+// single transient poll failure (e.g. MeetingSource returning nil due to a
+// flaky calendar sync). That reset made the very next poll of the SAME
+// meeting look like a brand new instance and replay the whole T-5/T-1/T-0
+// sequence. Sequence: meeting at T-5 (wakes) -> source blips to nil (end
+// called) -> same meeting reappears at T-5 again -> must NOT re-wake.
+func TestRunBlipDoesNotReplaySequence(t *testing.T) {
+	clk := &fakeClock{t: time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)}
+	n := &NextMeeting{Title: "Standup", StartsAt: clk.t.Add(5 * time.Minute)}
+
+	calls := 0
+	src := func(ctx context.Context) (*NextMeeting, error) {
+		calls++
+		switch calls {
+		case 1:
+			return n, nil // first poll: wakes at T-5
+		case 2:
+			return nil, nil // blip: source has nothing this round
+		default:
+			return n, nil // same meeting reappears
+		}
+	}
+	m := NewMeetingProvider(clk, MeetingSource(src))
+
+	var significants []bool
+	var ended []string
+	emit := func(a Activity) { significants = append(significants, a.Significant) }
+	end := func(id string) { ended = append(ended, id) }
+	ctx := context.Background()
+
+	if err := m.poll(ctx, emit, end); err != nil {
+		t.Fatalf("poll 1: %v", err)
+	}
+	if err := m.poll(ctx, emit, end); err != nil {
+		t.Fatalf("poll 2 (blip): %v", err)
+	}
+	if err := m.poll(ctx, emit, end); err != nil {
+		t.Fatalf("poll 3 (same meeting returns): %v", err)
+	}
+
+	if len(significants) != 2 {
+		t.Fatalf("expected 2 emits (poll 1 and poll 3), got %d: %v", len(significants), significants)
+	}
+	if !significants[0] {
+		t.Error("poll 1 should be Significant (T-5 crossing)")
+	}
+	if significants[1] {
+		t.Error("poll 3 (same meeting after a blip) must NOT replay the T-5 wake")
+	}
+	if len(ended) != 1 || ended[0] != "meeting.next" {
+		t.Errorf("expected exactly one end(\"meeting.next\") for the blip, got %v", ended)
+	}
+}
+
+// TestRunGenuineReplacementStillWakes drives the back-to-back-meetings case
+// through Run's poll method (rather than activityFor directly) to confirm
+// the fix holds at the Run layer too: no intervening nil poll, source just
+// hands the provider a different meeting.
+func TestRunGenuineReplacementStillWakes(t *testing.T) {
+	clk := &fakeClock{t: time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)}
+	a := &NextMeeting{Title: "A", StartsAt: clk.t}
+	b := &NextMeeting{Title: "B", StartsAt: clk.t.Add(5 * time.Minute)}
+
+	calls := 0
+	src := func(ctx context.Context) (*NextMeeting, error) {
+		calls++
+		if calls == 1 {
+			return a, nil
+		}
+		return b, nil // different StartsAt, no nil in between
+	}
+	m := NewMeetingProvider(clk, MeetingSource(src))
+
+	var significants []bool
+	emit := func(act Activity) { significants = append(significants, act.Significant) }
+	end := func(string) {}
+	ctx := context.Background()
+
+	if err := m.poll(ctx, emit, end); err != nil {
+		t.Fatalf("poll 1 (A at 0m): %v", err)
+	}
+	if err := m.poll(ctx, emit, end); err != nil {
+		t.Fatalf("poll 2 (B at 5m): %v", err)
+	}
+
+	if len(significants) != 2 {
+		t.Fatalf("expected 2 emits, got %d", len(significants))
+	}
+	if !significants[0] {
+		t.Error("A at 0 minutes should be Significant")
+	}
+	if !significants[1] {
+		t.Error("B, a genuinely different meeting at T-5m, must wake even with no intervening nil poll")
+	}
+}
+
+// TestRunJitterDoesNotRewake covers sub-minute StartsAt jitter across polls
+// for what is logically the same meeting (timezone re-normalization, source
+// precision differences). It must not be treated as a new instance.
+func TestRunJitterDoesNotRewake(t *testing.T) {
+	clk := &fakeClock{t: time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)}
+	base := clk.t.Add(5 * time.Minute)
+	jittered := base.Add(300 * time.Millisecond)
+
+	calls := 0
+	src := func(ctx context.Context) (*NextMeeting, error) {
+		calls++
+		startsAt := base
+		if calls > 1 {
+			startsAt = jittered
+		}
+		return &NextMeeting{Title: "Standup", StartsAt: startsAt}, nil
+	}
+	m := NewMeetingProvider(clk, MeetingSource(src))
+
+	var significants []bool
+	emit := func(a Activity) { significants = append(significants, a.Significant) }
+	end := func(string) {}
+	ctx := context.Background()
+
+	if err := m.poll(ctx, emit, end); err != nil {
+		t.Fatalf("poll 1: %v", err)
+	}
+	if err := m.poll(ctx, emit, end); err != nil {
+		t.Fatalf("poll 2 (jittered StartsAt): %v", err)
+	}
+
+	if len(significants) != 2 {
+		t.Fatalf("expected 2 emits, got %d", len(significants))
+	}
+	if !significants[0] {
+		t.Error("poll 1 (T-5 crossing) should be Significant")
+	}
+	if significants[1] {
+		t.Error("a few hundred ms of StartsAt jitter must not look like a new meeting and re-wake")
 	}
 }

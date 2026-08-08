@@ -30,11 +30,19 @@ type MeetingProvider struct {
 	src   MeetingSource
 	// lastWake is the threshold already woken for, so a 60s poll does not
 	// re-wake the island every minute at the same threshold. Scoped to
-	// lastMeeting: a new meeting instance (different StartsAt) gets its own
-	// full T-5/T-1/start sequence, so back-to-back meetings each still warn.
+	// lastMeeting: a new meeting instance (different StartsAt, at minute
+	// granularity) gets its own full T-5/T-1/start sequence, so back-to-back
+	// meetings each still warn. It is intentionally NOT reset when the
+	// activity ends in Run (see poll) — a transient source blip (a single
+	// nil/empty poll) must not replay the alert sequence for a meeting
+	// already warned about.
 	lastWake int
-	// lastMeeting is the StartsAt of the meeting lastWake refers to.
+	// lastMeeting is the minute-truncated StartsAt of the meeting lastWake
+	// refers to.
 	lastMeeting time.Time
+	// live tracks whether the last poll produced a visible activity, so Run
+	// knows when to call end().
+	live bool
 }
 
 func NewMeetingProvider(clock Clock, src MeetingSource) *MeetingProvider {
@@ -57,9 +65,14 @@ func (m *MeetingProvider) activityFor(n *NextMeeting) (Activity, bool) {
 	// previous meeting just ended and the source handed us the next one, or a
 	// meeting was added/rescheduled ahead of what we were tracking). Give it
 	// a fresh threshold sequence rather than inheriting stale bookkeeping.
-	if !n.StartsAt.Equal(m.lastMeeting) {
+	// Truncated to minute granularity: the countdown itself only has minute
+	// resolution, so sub-minute jitter in StartsAt across polls (timezone
+	// re-normalization, source precision differences) must not look like a
+	// new meeting and replay the sequence.
+	key := n.StartsAt.Truncate(time.Minute)
+	if !key.Equal(m.lastMeeting) {
 		m.lastWake = -1
-		m.lastMeeting = n.StartsAt
+		m.lastMeeting = key
 	}
 
 	significant := false
@@ -91,32 +104,43 @@ func (m *MeetingProvider) activityFor(n *NextMeeting) (Activity, bool) {
 	}, true
 }
 
+// poll fetches the next meeting and emits/ends as appropriate. Factored out
+// of Run as a method (rather than a closure) so tests can drive Run's
+// transition logic deterministically — repeated direct calls — without
+// waiting on a real one-minute ticker.
+func (m *MeetingProvider) poll(ctx context.Context, emit func(Activity), end func(string)) error {
+	if m.src == nil {
+		return nil
+	}
+	n, err := m.src(ctx)
+	if err != nil {
+		return err
+	}
+	a, ok := m.activityFor(n)
+	if ok {
+		emit(a)
+		m.live = true
+	} else if m.live {
+		end("meeting.next")
+		m.live = false
+		// Deliberately NOT resetting lastWake/lastMeeting here. A transient
+		// source blip (a single poll returning nil, e.g. a flaky calendar
+		// sync) also takes this branch; if it cleared the bookkeeping, the
+		// very next poll returning the SAME meeting would look like a brand
+		// new instance and replay the entire T-5/T-1/T-0 sequence for a
+		// meeting already warned about. Genuine replacement by a different
+		// meeting is already handled by activityFor's own instance check
+		// (StartsAt, minute-truncated), which does not depend on this branch
+		// running first.
+	}
+	return nil
+}
+
 // Run polls once a minute.
 func (m *MeetingProvider) Run(ctx context.Context, emit func(Activity), end func(string)) error {
 	tick := time.NewTicker(time.Minute)
 	defer tick.Stop()
-	live := false
-	poll := func() error {
-		if m.src == nil {
-			return nil
-		}
-		n, err := m.src(ctx)
-		if err != nil {
-			return err
-		}
-		a, ok := m.activityFor(n)
-		if ok {
-			emit(a)
-			live = true
-		} else if live {
-			end("meeting.next")
-			live = false
-			m.lastWake = -1
-			m.lastMeeting = time.Time{}
-		}
-		return nil
-	}
-	if err := poll(); err != nil {
+	if err := m.poll(ctx, emit, end); err != nil {
 		return err
 	}
 	for {
@@ -124,7 +148,7 @@ func (m *MeetingProvider) Run(ctx context.Context, emit func(Activity), end func
 		case <-ctx.Done():
 			return nil
 		case <-tick.C:
-			if err := poll(); err != nil {
+			if err := m.poll(ctx, emit, end); err != nil {
 				return err
 			}
 		}
