@@ -403,6 +403,11 @@ func StartOverlay(ctx context.Context, cfg *config.Config) {
 	w.Bind("uiReady", func() {
 		log.Printf("[ui] uiReady — JS finished loading")
 		bridge.Ready()
+		// Flush any provider-driven activity snapshot that arrived before bridge
+		// existed (island providers can start publishing before this point — see
+		// FlushPendingActivities). Must run after Ready() so it drains through the
+		// same buffered path as everything queued before uiReady.
+		FlushPendingActivities()
 	})
 	w.Bind("getCanvasSize", func() map[string]float64 {
 		return map[string]float64{"w": canvasCSSWidth, "h": canvasCSSHeight}

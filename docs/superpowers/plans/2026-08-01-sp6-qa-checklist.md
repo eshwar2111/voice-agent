@@ -36,12 +36,14 @@ Connections → Google`, or however OAuth linking is exposed in this build). Fil
 | 11 | Meeting provider backoff on outage | With a meeting active/pending, disconnect network access (disable Wi-Fi/adapter) and wait about 2 minutes, then reconnect. | No crash. No activity gets stuck in a broken state. `voice-agent.log` shows retry log lines from the `meeting` provider with escalating backoff (not one line every few seconds indefinitely). Reconnecting lets it recover and resume normal polling. | |
 | 12 | Registry cap at 8 | Start more than 8 concurrent timers (or otherwise trigger 8+ simultaneous provider-driven activities) in quick succession. | The island shows at most 8 live activities at once (`island.MaxLive`). `voice-agent.log` records a line for each drop past the cap. The UI stays responsive — no freeze, no runaway animation. | |
 | 13 | Log hygiene | After exercising checks 1–12, review the full `voice-agent.log` for this session. | No `unhandled event`, no `unknown activity`, no JS console errors surfaced in the log. | |
+| 14 | Click-through **during** a morph, not before/after | Trigger a pill↔bubble morph (e.g. start music while a timer is showing, so the island morphs from a single pill into the pill+bubble pair — or click the bubble to trigger the promotion swap). While the ~460ms animation is **visibly still moving** (not once it has settled), click on the desktop just outside the island's current on-screen footprint, near where the shape is expanding or contracting toward. | The click reaches the desktop underneath — it must not be swallowed by a stale (too-wide or too-narrow) click-eating region left over from before the morph started. This is the region-clipping bug that recurred three separate times in this project (a new `publishRegionRects()` call site not inheriting the morph gate); it's now centrally guarded by `morphInFlight`, and this check is the only place that guard gets exercised by a human. | |
+| 15 | Toast during a morph doesn't clip | Trigger a morph (as in check 14) and, while it is still animating, cause a toast to appear — e.g. click **Copy** on a result, or **Save** in Control Center, timed to land mid-animation. | The toast is fully visible, not visually clipped at the island's edge, and the island's shape is not visibly cut off or glitched by the toast's region publish landing mid-morph. | |
 
 ---
 
 ## Outcome
 
-- [ ] All 13 checks pass → branch is mergeable
+- [ ] All 15 checks pass → branch is mergeable
 - [ ] Any failures logged below with repro steps
 
 ### Failures found
