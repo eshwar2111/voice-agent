@@ -16,7 +16,7 @@ import { resolve, WAKE_MS } from './state.js';
 import { morphTo, swapContent, currentSwapTarget } from './motion.js';
 import { pairUnionRect, pairLayout } from './geometry.js';
 import { registerActivity, updateActivity, endActivity, activeActivities, renderActivity,
-  renderProvided, syncProviderActivities, hasSignificantUpdate }
+  renderProvided, syncProviderActivities }
   from './activities.js';
 import { render as renderCommand } from './surfaces/command.js';
 import { render as renderResult } from './surfaces/result.js';
@@ -88,14 +88,39 @@ window.__agent.on('surface:open', d => {
 });
 window.__agent.on('activity:update', d => updateActivity(d.id, d.data, syncAndRerender));
 window.__agent.on('activity:end', d => endActivity(d.id, syncAndRerender));
+// Fires rerender() once, WAKE_MS after the most recent wake, so the island
+// actually recedes from 'peek' when wakeUntil expires (I3, whole-branch
+// review). The 1s idle tick (setInterval below) is explicitly gated OFF
+// whenever any activity is live — exactly the situation a wake happens in —
+// so without this, nothing re-ran resolve() until the NEXT unrelated publish;
+// with only a meeting live (60s cadence), the island sat at peek for up to a
+// minute independent of the I2 latching bug. A one-shot timer (cleared and
+// reinstalled on every new wake) avoids running a permanent 1Hz tick for the
+// entire time any activity is live, which gating the setInterval condition
+// instead would have required.
+let wakeTimer = null;
+function scheduleWakeExpiry(){
+  clearTimeout(wakeTimer);
+  wakeTimer = setTimeout(rerender, WAKE_MS);
+}
+
 // Provider-driven snapshot (island.Registry -> ui.PublishActivities). Replaces
 // the separate `provided` store in activities.js only — never touches `live`
 // (trust.approval/agent.run/ambient.nudge), so a snapshot can't clear a
-// pending approval. A significant update in the snapshot wakes the island
-// out of dormant, same as a push-driven significant update would.
+// pending approval. A NEWLY significant id in the snapshot wakes the island
+// out of dormant, same as a push-driven significant update would (I2,
+// whole-branch review: `newlySignificant` is an edge, unlike the old
+// hasSignificantUpdate() scan, which re-fired on every republish of an
+// already-significant activity — e.g. a concurrent 1Hz timer emit
+// republishing a meeting still marked significant from its own last poll up
+// to 60s ago — and kept resetting store.wakeUntil every tick, holding the
+// island at peek for up to a minute instead of WAKE_MS).
 window.__agent.on('activity:sync', d => {
-  syncProviderActivities(d.activities, () => {
-    if(hasSignificantUpdate()) store.wakeUntil = Date.now() + WAKE_MS;
+  syncProviderActivities(d.activities, (newlySignificant) => {
+    if(newlySignificant.length){
+      store.wakeUntil = Date.now() + WAKE_MS;
+      scheduleWakeExpiry();
+    }
     syncAndRerender();
   });
 });

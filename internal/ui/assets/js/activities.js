@@ -70,27 +70,45 @@ export function activeActivities() {
   return out;
 }
 
+// Tracks which provider ids were significant as of the LAST snapshot, so
+// syncProviderActivities can tell a genuinely new significant event (I2,
+// whole-branch review) from the same one being re-announced. The registry
+// publishes a full snapshot on ANY provider's change, and a threshold-crossing
+// Activity stays `significant: true` in that snapshot until its own next poll
+// (a meeting: up to 60s) — so a concurrent 1Hz timer emit was re-triggering
+// "significant" on every tick, latching the wake far past WAKE_MS.
+let prevSignificant = new Set();
+
 // Provider-driven activities arrive as a full snapshot from Go
 // (island.Registry -> ui.PublishActivities -> 'activity:sync') and REPLACE
 // the entire `provided` set. `live` (push-driven: trust.approval, agent.run,
 // ambient.nudge) is untouched, so a provider snapshot can never clear a
 // pending approval the user is still looking at.
+//
+// `onChange` is called with the array of ids that are significant in THIS
+// snapshot but were NOT in the previous one — an edge, not the latched state
+// `significant` itself represents. main.js wakes the island only when that
+// array is non-empty, so a meeting's threshold-cross wakes it once, for
+// WAKE_MS, regardless of how many unrelated timer snapshots keep republishing
+// the same still-significant meeting in between.
 export function syncProviderActivities(list, onChange) {
+  const nextSignificant = new Set();
+  const newlySignificant = [];
   provided.clear();
   for (const a of (list || [])) {
     if (!a || !a.id) continue;
+    const significant = !!a.significant;
     provided.set(a.id, {
       data: a.data || {}, priority: a.priority | 0,
-      kind: a.kind || '', significant: !!a.significant,
+      kind: a.kind || '', significant,
     });
+    if (significant) {
+      nextSignificant.add(a.id);
+      if (!prevSignificant.has(a.id)) newlySignificant.push(a.id);
+    }
   }
-  onChange && onChange();
-}
-
-// Any provider activity marked significant in the latest snapshot.
-export function hasSignificantUpdate() {
-  for (const [, v] of provided) if (v.significant) return true;
-  return false;
+  prevSignificant = nextSignificant;
+  onChange && onChange(newlySignificant);
 }
 
 // kindRenderers is keyed by Activity.Kind (the provider path uses `kind`,

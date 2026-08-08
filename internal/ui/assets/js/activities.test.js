@@ -163,3 +163,50 @@ test('a provider snapshot fully replaces the previous provider set (provided sem
   assert.equal(active.some(a => a.id === 'meeting.next'), true);
   syncProviderActivities([]);
 });
+
+// I2 (whole-branch review): `significant` in a provider snapshot is a
+// LATCHED field — an Activity stays `significant: true` in every republished
+// snapshot until its own provider's next poll (a meeting: up to 60s), and the
+// registry republishes a FULL snapshot on any provider's change. So a
+// concurrent 1Hz timer emit was re-triggering "significant" every tick for up
+// to a minute. onChange's `newlySignificant` argument must be an edge — only
+// the tick where an id FIRST becomes significant — so main.js's wake-on-
+// significant only fires once per actual threshold-cross.
+test('syncProviderActivities reports a newly-significant id only on the tick it first becomes significant', () => {
+  let seen;
+  syncProviderActivities(
+    [{ id: 'meeting.next', priority: 70, kind: 'meeting', significant: true }],
+    (newlySignificant) => { seen = newlySignificant; });
+  assert.deepEqual(seen, ['meeting.next']);
+
+  // A concurrent timer's 1Hz emit republishes the FULL snapshot, including
+  // the still-significant meeting from the (up to 60s) call above — this
+  // must NOT be reported as newly significant again.
+  syncProviderActivities(
+    [{ id: 'meeting.next', priority: 70, kind: 'meeting', significant: true },
+     { id: 'timer.1',      priority: 60, kind: 'timer',   significant: false }],
+    (newlySignificant) => { seen = newlySignificant; });
+  assert.deepEqual(seen, []);
+
+  syncProviderActivities([]);
+});
+
+test('a re-crossed threshold (significant -> false -> true) is reported as newly significant again', () => {
+  let seen;
+  syncProviderActivities(
+    [{ id: 'meeting.next', priority: 70, kind: 'meeting', significant: true }],
+    (n) => { seen = n; });
+  assert.deepEqual(seen, ['meeting.next']);
+
+  syncProviderActivities(
+    [{ id: 'meeting.next', priority: 70, kind: 'meeting', significant: false }],
+    (n) => { seen = n; });
+  assert.deepEqual(seen, []);
+
+  syncProviderActivities(
+    [{ id: 'meeting.next', priority: 70, kind: 'meeting', significant: true }],
+    (n) => { seen = n; });
+  assert.deepEqual(seen, ['meeting.next']);
+
+  syncProviderActivities([]);
+});
