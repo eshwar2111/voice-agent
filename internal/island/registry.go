@@ -31,6 +31,9 @@ type Registry struct {
 	// timer tick carries the same Started, so it stays dismissed, while a
 	// genuinely new timer carries a new Started and reappears.
 	dismissed map[string]time.Time
+
+	lastPush time.Time
+	pending  bool
 }
 
 func NewRegistry(clock Clock, publish func([]Activity)) *Registry {
@@ -44,6 +47,19 @@ func NewRegistry(clock Clock, publish func([]Activity)) *Registry {
 
 // Upsert adds or replaces an activity.
 func (r *Registry) Upsert(a Activity) {
+	// Copy Data at the boundary. Providers emit from their own goroutines while
+	// the UI reads Snapshot(); a provider reusing a scratch map between ticks
+	// would otherwise be an unsynchronized race. Copying here means the registry
+	// is safe regardless of provider behavior, instead of depending on every
+	// future provider author remembering a contract.
+	if a.Data != nil {
+		cp := make(map[string]any, len(a.Data))
+		for k, v := range a.Data {
+			cp[k] = v
+		}
+		a.Data = cp
+	}
+
 	r.mu.Lock()
 	if d, ok := r.dismissed[a.ID]; ok {
 		if d.Equal(a.Started) {
@@ -116,9 +132,43 @@ func (r *Registry) Snapshot() []Activity {
 	return out
 }
 
-// notify is replaced with coalescing logic in Task 2. For now every change
-// publishes immediately.
+// CoalesceWindow bounds how often routine updates reach the UI. Significant
+// updates and terminal events (End, Dismiss) bypass it.
+const CoalesceWindow = 250 * time.Millisecond
+
+// notify publishes, or defers to the next Tick if a routine update lands inside
+// the coalescing window. force is set for Significant updates and terminal
+// events — a timer hitting zero must never wait 250ms.
 func (r *Registry) notify(force bool) {
+	r.mu.Lock()
+	now := r.clock.Now()
+	if !force && !r.lastPush.IsZero() && now.Sub(r.lastPush) < CoalesceWindow {
+		r.pending = true
+		r.mu.Unlock()
+		return
+	}
+	r.lastPush = now
+	r.pending = false
+	r.mu.Unlock()
+	r.publishSnapshot()
+}
+
+// Tick flushes a deferred update once the window has elapsed. The runner calls
+// it periodically; tests call it directly, which is why the registry owns no
+// timer goroutine of its own.
+func (r *Registry) Tick() {
+	r.mu.Lock()
+	if !r.pending || r.clock.Now().Sub(r.lastPush) < CoalesceWindow {
+		r.mu.Unlock()
+		return
+	}
+	r.lastPush = r.clock.Now()
+	r.pending = false
+	r.mu.Unlock()
+	r.publishSnapshot()
+}
+
+func (r *Registry) publishSnapshot() {
 	if r.publish != nil {
 		r.publish(r.Snapshot())
 	}

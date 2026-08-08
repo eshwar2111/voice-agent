@@ -142,3 +142,114 @@ func TestCapDropsNewActivitiesButAllowsUpdates(t *testing.T) {
 	}
 	t.Errorf("update to an existing activity was rejected at the cap")
 }
+
+func TestRoutineUpdatesAreCoalesced(t *testing.T) {
+	r, clk, pushes := newTestRegistry()
+
+	r.Upsert(act("timer", 50, clk.t)) // first publish is immediate
+	if len(*pushes) != 1 {
+		t.Fatalf("first Upsert published %d times, want 1", len(*pushes))
+	}
+
+	// Three routine updates inside the window must not publish.
+	for i := 0; i < 3; i++ {
+		clk.advance(50 * time.Millisecond)
+		r.Upsert(act("timer", 50, clk.t.Add(-time.Duration(i+1)*50*time.Millisecond)))
+	}
+	if len(*pushes) != 1 {
+		t.Errorf("routine updates inside the 250ms window published %d times, want 1", len(*pushes))
+	}
+}
+
+func TestTickPublishesDeferredChangeAfterWindow(t *testing.T) {
+	r, clk, pushes := newTestRegistry()
+	started := clk.t
+	r.Upsert(act("timer", 50, started)) // publish 1
+
+	clk.advance(50 * time.Millisecond)
+	a := act("timer", 50, started)
+	a.Data = map[string]any{"remaining": 10}
+	r.Upsert(a) // deferred
+
+	r.Tick() // still inside the window
+	if len(*pushes) != 1 {
+		t.Fatalf("Tick published early: %d pushes, want 1", len(*pushes))
+	}
+
+	clk.advance(CoalesceWindow)
+	r.Tick()
+	if len(*pushes) != 2 {
+		t.Fatalf("Tick did not flush the deferred change: %d pushes, want 2", len(*pushes))
+	}
+	if (*pushes)[1][0].Data["remaining"] != 10 {
+		t.Errorf("flushed stale data: %v", (*pushes)[1][0].Data)
+	}
+
+	// Nothing pending now — Tick must not publish again.
+	clk.advance(CoalesceWindow)
+	r.Tick()
+	if len(*pushes) != 2 {
+		t.Errorf("Tick published with nothing pending: %d pushes, want 2", len(*pushes))
+	}
+}
+
+// A timer reaching zero is the update that matters most. It must never wait
+// for the coalescing window.
+func TestSignificantUpdateBypassesCoalescing(t *testing.T) {
+	r, clk, pushes := newTestRegistry()
+	started := clk.t
+	r.Upsert(act("timer", 50, started)) // publish 1
+
+	clk.advance(10 * time.Millisecond)
+	a := act("timer", 50, started)
+	a.Significant = true
+	r.Upsert(a)
+
+	if len(*pushes) != 2 {
+		t.Errorf("Significant update was coalesced: %d pushes, want 2", len(*pushes))
+	}
+}
+
+func TestEndBypassesCoalescing(t *testing.T) {
+	r, clk, pushes := newTestRegistry()
+	r.Upsert(act("timer", 50, clk.t))
+	clk.advance(10 * time.Millisecond)
+	r.End("timer")
+
+	if len(*pushes) != 2 {
+		t.Errorf("End was coalesced: %d pushes, want 2 — a terminal event must never be delayed", len(*pushes))
+	}
+}
+
+// Data is shared by reference between the caller of emit and whatever Snapshot
+// hands the UI. Task 3 has providers emitting from their own goroutines while
+// the UI reads snapshots, so a provider reusing a scratch map between ticks
+// would be an unsynchronized data race. Copy at the boundary rather than
+// relying on every future provider author remembering a contract.
+func TestUpsertCopiesDataSoCallerMutationCannotRace(t *testing.T) {
+	r, clk, _ := newTestRegistry()
+	shared := map[string]any{"remaining": 60}
+	a := act("timer", 50, clk.t)
+	a.Data = shared
+	r.Upsert(a)
+
+	shared["remaining"] = 999 // provider reuses its scratch map
+
+	got := r.Snapshot()
+	if got[0].Data["remaining"] != 60 {
+		t.Errorf("Snapshot reflected a post-Upsert mutation of the caller's map "+
+			"(got %v, want 60) — Data must be copied at the boundary",
+			got[0].Data["remaining"])
+	}
+}
+
+func TestDismissBypassesCoalescing(t *testing.T) {
+	r, clk, pushes := newTestRegistry()
+	r.Upsert(act("timer", 50, clk.t))
+	clk.advance(10 * time.Millisecond)
+	r.Dismiss("timer")
+
+	if len(*pushes) != 2 {
+		t.Errorf("Dismiss was coalesced: %d pushes, want 2 — the UI must respond to a click immediately", len(*pushes))
+	}
+}
