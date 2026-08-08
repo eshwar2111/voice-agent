@@ -13,7 +13,7 @@
 // calls morphTo or sets a size directly.
 
 import { resolve, WAKE_MS } from './state.js';
-import { morphTo, swapContent, currentSwapTarget } from './motion.js';
+import { morphTo, shiftLeftTo, swapContent, currentSwapTarget } from './motion.js';
 import { pairUnionRect, pairLayout } from './geometry.js';
 import { registerActivity, updateActivity, endActivity, activeActivities, renderActivity,
   renderProvided, renderForSlot, syncProviderActivities }
@@ -192,6 +192,42 @@ export function publishRegionRects(){
   window.setRegionRects && window.setRegionRects(rects);
 }
 
+// The ONE place that starts a geometry transition of the island. Publishes
+// the widen-phase hull (pairUnionRect, covering both the from- and to-state
+// pill+bubble assemblies), sets morphInFlight so nothing else can publish a
+// mid-transition snapshot, runs `animate` (the actual DOM mutation — either
+// morphTo for a presence change, or shiftLeftTo for a bubble-flip at a
+// constant presence), and owns the settle: clears morphInFlight and
+// republishes the exact shape once `animate` calls back.
+//
+// Factored out (whole-branch review, fifth occurrence of the region-geometry
+// bug class) after I5 (animating `left`) reopened I1's clipping bug on a
+// path I1's own fix didn't cover: a bubble arriving/departing at a CONSTANT
+// presence also moves the pill's `left` by 20-26px, but only the presence
+// branch called pairUnionRect — a bubble flip with no presence change
+// published nothing extra, so island.style.left (written unconditionally,
+// every render) now animated past the settled-shape region published for the
+// OLD state. Every prior fix in this family added a guard at the ONE call
+// site that had just broken; this is the fourth different call site to need
+// one. The fix here is structural instead: any code path that moves the
+// island MUST go through this function, so a future path that moves
+// geometry has one obvious correct thing to call rather than a pattern to
+// re-derive and inevitably get slightly wrong.
+function beginGeometryTransition(fromPresence, fromHasBubble, toPresence, toHasBubble, animate){
+  const rects = collectOtherSurfaceRects();
+  const u = pairUnionRect(fromPresence, fromHasBubble, toPresence, toHasBubble, canvasCSSWidth());
+  if(u) rects.push(u); // null only for an unrecognized presence string
+  if(rects.length) window.setRegionRects && window.setRegionRects(rects);
+  // morphTo/shiftLeftTo always schedule their settle callback via setTimeout
+  // (even the reduced-motion dur:0 path) and clear/reinstall that timer on
+  // every call to the SAME element, so two transitions starting back to back
+  // (e.g. a presence change immediately followed by a bubble flip) still
+  // clear morphInFlight exactly once — from whichever call is the last one
+  // standing — never zero times and never stuck true.
+  morphInFlight = true;
+  animate(() => { morphInFlight = false; publishRegionRects(); });
+}
+
 /* ─── island store + render loop ──────────────────────────────────────────── */
 const island = document.getElementById('island');
 const islandBody = document.getElementById('islandBody');
@@ -249,6 +285,46 @@ function renderContentFor(id, presence){
   return renderForSlot(id, slotFor(presence)) || document.createElement('div');
 }
 
+// Swaps `host`'s content for `newNode` — UNLESS the newly rendered markup is
+// byte-identical to what's already mounted, in which case the EXISTING
+// node (and critically, its identity) is left alone (whole-branch review,
+// scoped re-review finding 2). updateCaps() below runs on every
+// same-contentId refresh tick, not just on a genuine contentId change — a
+// ticking timer/meeting or agent.run's narration re-renders leading/trailing
+// roughly once a second — and capTrail can hold a CLICKABLE control (the I4
+// dismiss button; agent.run's hide-progress chevron). Unconditionally
+// rebuilding it via replaceChildren destroys and recreates the actual DOM
+// node every tick; a mousedown+mouseup pair straddling that rebuild lands on
+// two different elements, so no 'click' event fires at all — dismiss would
+// work intermittently depending on timing, which reads as user error rather
+// than a bug.
+//
+// Comparing rendered MARKUP (via a scratch container's innerHTML), not the
+// underlying data object, is what makes this correct in both directions at
+// once: kindRenderers.timer/meeting's trailing slot ignores its data
+// argument entirely, so its markup is byte-identical every tick regardless
+// of how often it's asked to re-render — this keeps the SAME button node
+// mounted indefinitely, fixing the reported bug. agent.run's trailing DOES
+// depend on d.phase (an equalizer while listening, a chevron otherwise) —
+// when that flips, the markup differs and the swap still happens, so that
+// legitimate visual change is not lost; `.onclick` is a JS property
+// assignment, not an HTML attribute, so it never appears in innerHTML —
+// two functionally different closures over the same id/markup compare equal
+// here, which is exactly what's wanted, since the id itself is unchanged
+// while this same-contentId path runs.
+function replaceIfChanged(host, newNode){
+  // newNode.outerHTML is undefined under testutil.dom.js's minimal shim
+  // (deliberately — see that file's header comment: it is not a markup-
+  // accurate DOM), which makes `newHTML` falsy there and this always falls
+  // through to the real replaceChildren, same as the pre-fix behavior — so
+  // this optimization degrades to a no-op rather than crashing under test,
+  // and existing control-flow tests that exercise rerender()/updateCaps()
+  // (surfaces.test.js, via openSurface) are unaffected.
+  const newHTML = newNode && newNode.outerHTML;
+  if(newHTML && newHTML === host.innerHTML) return;
+  host.replaceChildren(newNode || document.createTextNode(''));
+}
+
 // Caps are content-driven: each live activity's `leading`/`trailing` render
 // slots own #capLead/#capTrail while it's on top. Only 'idle' gets the
 // Control Center gear here — BUT see the #island .peek-actions element in
@@ -272,9 +348,11 @@ function updateCaps(id){
     // renderForSlot, not renderActivity directly — see renderContentFor's
     // comment above; this is the same gap, and the one that actually made
     // I4's dismiss button unreachable: renderActivity alone never finds
-    // kindRenderers.timer/meeting's new 'trailing' slot.
-    capLead.replaceChildren(renderForSlot(id,'leading')  || document.createTextNode(''));
-    capTrail.replaceChildren(renderForSlot(id,'trailing') || document.createTextNode(''));
+    // kindRenderers.timer/meeting's new 'trailing' slot. replaceIfChanged
+    // (not a bare replaceChildren) is what keeps that button clickable
+    // across the ticks that follow.
+    replaceIfChanged(capLead,  renderForSlot(id,'leading'));
+    replaceIfChanged(capTrail, renderForSlot(id,'trailing'));
   }
 }
 
@@ -287,61 +365,44 @@ export function rerender(){
        Rather than animating the region in lockstep (which needs per-frame
        IPC or the easing curve duplicated in Go), publish the BOUNDING BOX of
        the from- and to-shapes for the duration, then the exact shape once it
-       settles. Two calls, not sixty.
+       settles. Two calls, not sixty. Cost: for the ~460ms of a grow, the
+       surplus area is transparent window that eats clicks. Bounded, brief,
+       and confined to where the island is about to be.
 
-       Cost: for the ~460ms of a grow, the surplus area is transparent window
-       that eats clicks. Bounded, brief, and confined to where the island is
-       about to be.
-
-       Critical: this widen-phase publish must include the SAME non-island
-       surfaces the settle phase does (the Control Center dashboard), not
-       just the island. A bare `setRegionRects([u])` here would silently
-       replace the whole region with an island-only rect for the ~380-460ms
-       morph duration — visibly clipping an open Control Center, for example,
-       if a presence change (e.g. idle->dormant on the 1s tick) fires while
-       the island itself is hidden (display:none) behind it.
-
-       Just as critical: nothing below this branch may publish again until
-       morphTo's settle callback does, or that settle-phase publish (the
-       exact shape) is immediately clobbered right back to a snapshot of
-       mid-transition geometry taken microseconds after the transition
-       started. Enforced by `morphInFlight` inside publishRegionRects()
-       itself (see its definition above) — NOT by a local flag checked at
-       each call site, so an async callback outside this function (a toast,
-       the bubble's transitionend) can't slip a mid-transition snapshot
-       through by simply not knowing a morph is running (fix-round-3
-       finding: this was the third distinct occurrence of that bug class,
-       each time at a new call site that hadn't inherited an earlier `&&
-       !morphed` guard).
-
-       The union itself is derived from pairLayout (I1, whole-branch review),
-       not from island.getBoundingClientRect(). A measured rect reflects the
-       pill's CURRENT centre — but pairLayout shifts that centre whenever
-       hasBubble flips (up to (gap+bubbleSize)/2 = 20-26px), and this branch
-       can run in the SAME tick a bubble appears or disappears. Centering the
-       widen box on the pre-shift measured centre left a strip of the
-       SETTLED pill outside the published region for the whole ~460ms morph
-       (morphInFlight suppresses every corrective publish until settle) —
-       clicks in that strip fell through to the desktop. pairUnionRect takes
-       the from/to hasBubble state explicitly (applied.bubbleId is still the
-       PRE-this-render value here, since the bubble block below hasn't run
-       yet) and unions both assemblies using the same pairLayout math that
-       will actually position the DOM, so there is one source of truth for
-       horizontal position instead of two that can disagree. */
-    const rects = collectOtherSurfaceRects();
-    const u = pairUnionRect(applied.presence || r.presence, !!applied.bubbleId,
-                             r.presence, !!r.bubbleId, canvasCSSWidth());
-    if(u) rects.push(u); // null only for an unrecognized presence string
-    if(rects.length) window.setRegionRects && window.setRegionRects(rects);
-    // ...then narrow it to the exact shape once the morph settles. morphTo
-    // always schedules its settle callback via setTimeout (even the
-    // reduced-motion dur:0 path) and clears/reinstalls that timer per call,
-    // so a second morph starting before the first settles still clears
-    // morphInFlight exactly once — from whichever morphTo call is the last
-    // one standing — never zero times and never stuck true.
-    morphInFlight = true;
-    morphTo(island, r.presence, () => { morphInFlight = false; publishRegionRects(); });
+       beginGeometryTransition (see its definition above) owns the widen
+       publish, morphInFlight, and the settle — the union is derived from
+       pairLayout (I1, whole-branch review), not a measured rect, since
+       pairLayout shifts the pill's centre whenever hasBubble flips and this
+       branch can run in the SAME tick a bubble appears or disappears.
+       applied.bubbleId is still the PRE-this-render value here (the bubble
+       block below hasn't run yet), so it's the correct "from" state. */
+    beginGeometryTransition(applied.presence || r.presence, !!applied.bubbleId,
+                             r.presence, !!r.bubbleId,
+                             (onSettled) => morphTo(island, r.presence, onSettled));
     applied.presence = r.presence;
+  } else if(!!r.bubbleId !== !!applied.bubbleId){
+    /* Presence is NOT changing, but the pill still moves: pairLayout
+       re-centers the whole pill+bubble ASSEMBLY whenever hasBubble flips, so
+       the pill's `left` shifts by (gap+bubbleSize)/2 (20-26px) even here —
+       and this is the COMMON case for a bubble appearing/disappearing, not
+       an edge case, since a provider activity's routine (non-Significant)
+       update never wakes the island or changes its presence.
+       island.style.left is written unconditionally below, every render, and
+       (since I5) that write now animates — so without a widen publish of its
+       own, the published region stayed at the pre-shift box for the whole
+       transition while the pill moved 20-26px outside it (whole-branch
+       review, fifth occurrence of this bug class: presence changes and
+       bubble-arrival-during-a-morph both got their own fix already; a bubble
+       flip at a CONSTANT presence had not). Uses shiftLeftTo (motion.js),
+       not morphTo — width/height/border-radius/opacity aren't moving, and
+       reusing morphTo's PRESENCE-based growing/shrinking comparison would
+       misclassify a same-size left-only move. `growing` is `!!r.bubbleId`:
+       true when the bubble is ARRIVING (the pill's shift reads as part of
+       that arrival, so it gets the same overshoot), false when departing. */
+    beginGeometryTransition(r.presence, !!applied.bubbleId, r.presence, !!r.bubbleId,
+                             (onSettled) => shiftLeftTo(island,
+                               pairLayout(r.presence, !!r.bubbleId, canvasCSSWidth()).pillLeft,
+                               !!r.bubbleId, onSettled));
   }
   if(r.contentId !== applied.contentId){
     swapContent(islandBody, () => renderContentFor(r.contentId, r.presence));

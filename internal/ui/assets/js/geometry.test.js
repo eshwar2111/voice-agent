@@ -46,6 +46,33 @@ test('pairUnionRect covers the settled pill+bubble assembly when a bubble arrive
   assert.ok(u.x + u.w >= pillRight);
 });
 
+// Scoped re-review finding 1: a bubble arriving/departing at a CONSTANT
+// presence also moves the pill's `left` — pairLayout re-centers the whole
+// assembly whenever hasBubble flips, regardless of whether presence changes
+// alongside it. main.js's rerender() must call pairUnionRect for this case
+// too (fromPresence === toPresence, only hasBubble differs), not just for a
+// presence change; this pins the geometry math itself is correct for that
+// call shape, independent of whether main.js actually makes it (that half
+// is verified by inspection/hand-trace, not a test — main.js's DOM shim
+// cannot assert on WHICH rects got published, only that nothing throws).
+test('pairUnionRect covers both extents when only hasBubble flips (presence constant)', () => {
+  const canvasWidth = 1200;
+  const u = pairUnionRect('compact', false, 'compact', true, canvasWidth);
+
+  const before = pairLayout('compact', false, canvasWidth);
+  const after  = pairLayout('compact', true, canvasWidth);
+  const beforeRight = before.pillLeft + PRESENCE_SIZES.compact.w;
+  const afterPillRight   = after.pillLeft + PRESENCE_SIZES.compact.w;
+  const afterBubbleRight = after.bubbleLeft + after.bubbleSize;
+
+  assert.ok(u.x <= after.pillLeft, 'must not clip the settled pill\'s left edge');
+  assert.ok(u.x <= before.pillLeft, 'must not clip the pre-flip pill\'s left edge either');
+  assert.ok(u.x + u.w >= afterBubbleRight, 'must reach the settled bubble\'s right edge');
+  assert.ok(u.x + u.w >= afterPillRight);
+  assert.ok(u.x + u.w >= beforeRight);
+  assert.equal(u.h, PRESENCE_SIZES.compact.h); // no bubble is taller than compact
+});
+
 test('without a bubble the pill is plain-centered', () => {
   const { pillLeft, bubbleLeft, bubbleSize } = pairLayout('compact', false, 1200);
   assert.equal(pillLeft, (1200 - PRESENCE_SIZES.compact.w) / 2);

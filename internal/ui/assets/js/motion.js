@@ -48,6 +48,26 @@ export function morphTo(el, presence, onSettled) {
   el.__morphTimer = setTimeout(() => onSettled && onSettled(), t.dur);
 }
 
+// Animates ONLY `left` — for the pill's shift when a bubble arrives/departs
+// at a CONSTANT presence (whole-branch review, fifth occurrence of the
+// region-geometry bug class): width/height/border-radius/opacity don't move
+// in that case, so this doesn't touch them, and it overwrites
+// el.style.transition outright rather than reusing whatever morphTo last set
+// — that string could be stale (a different duration from an unrelated
+// presence morph long past), and this needs an exact, known duration to
+// schedule its own settle callback correctly. `growing` selects the same
+// GROW/SHRINK asymmetry morphTo uses (arrival overshoots, departure doesn't);
+// callers pass `true` when a bubble is arriving (the pill making room reads
+// as part of that arrival), `false` when one is departing.
+export function shiftLeftTo(el, leftPx, growing, onSettled) {
+  const t = prefersReducedMotion() ? { dur: 0, ease: 'linear' } : (growing ? GROW : SHRINK);
+  el.style.transition = `left ${t.dur}ms ${t.ease}`;
+  el.style.left = leftPx + 'px';
+
+  clearTimeout(el.__morphTimer);
+  el.__morphTimer = setTimeout(() => onSettled && onSettled(), t.dur);
+}
+
 // Content lags the shape: the container reaches its new size BEFORE the new
 // content lands. This single detail is what separates a morphing object from a
 // box that resizes.
