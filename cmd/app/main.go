@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -19,6 +20,7 @@ import (
 	"github.com/yourname/voice-agent/internal/command"
 	agentctx "github.com/yourname/voice-agent/internal/context"
 	"github.com/yourname/voice-agent/internal/engine"
+	"github.com/yourname/voice-agent/internal/island"
 	"github.com/yourname/voice-agent/internal/llm"
 	"github.com/yourname/voice-agent/internal/memory"
 	"github.com/yourname/voice-agent/internal/search"
@@ -28,6 +30,66 @@ import (
 	"github.com/yourname/voice-agent/internal/ui"
 	"github.com/yourname/voice-agent/internal/wakeword"
 )
+
+// nextMeetingFromCalendar adapts the existing Google Calendar integration
+// (GoogleCalendarListTool) to the island.MeetingSource contract, reusing its
+// fetch path (OAuth client + calendar.Events.List) rather than opening a
+// second Calendar client.
+//
+// Contract: returns the soonest event that has not yet started, or (nil,
+// nil) when there is none. An unlinked Google account is the common steady
+// state for most users, not a failure — returning an error there would make
+// the runner's backoff retry (and log) forever for the life of every session
+// for every user who never connected the account. A genuine API failure
+// (network, auth refresh, quota) IS an error: returning (nil, nil) there
+// would look identical to "no meetings" and the backoff would never engage.
+func nextMeetingFromCalendar(ctx context.Context, cfg *config.Config) (*island.NextMeeting, error) {
+	if cfg.GoogleToken == "" {
+		return nil, nil // not linked — no meetings is the correct answer, not an error
+	}
+
+	raw, err := (&tools.GoogleCalendarListTool{Cfg: cfg}).Execute(ctx, json.RawMessage(`{"maxResults":10}`))
+	if err != nil {
+		return nil, fmt.Errorf("calendar fetch: %w", err)
+	}
+
+	// Mirrors GoogleCalendarListTool.Execute's EventInfo shape (see
+	// internal/tools/google_calendar.go), wrapped in the ToolResult envelope.
+	var result struct {
+		Artifacts struct {
+			Data []struct {
+				Summary   string `json:"summary"`
+				StartTime string `json:"startTime"`
+				JoinLink  string `json:"joinLink"`
+			} `json:"data"`
+		} `json:"artifacts"`
+	}
+	if err := json.Unmarshal([]byte(raw), &result); err != nil {
+		return nil, fmt.Errorf("calendar response: %w", err)
+	}
+
+	now := time.Now()
+	var best *island.NextMeeting
+	for _, ev := range result.Artifacts.Data {
+		if ev.StartTime == "" {
+			continue
+		}
+		t, perr := time.Parse(time.RFC3339, ev.StartTime)
+		if perr != nil {
+			// All-day events carry a date-only Start.Date ("2026-08-10"), not a
+			// timestamp — not a meaningful countdown target, so skip rather than
+			// error the whole poll over one malformed entry.
+			continue
+		}
+		if !t.After(now) {
+			continue // already started
+		}
+		if best == nil || t.Before(best.StartsAt) {
+			best = &island.NextMeeting{Title: ev.Summary, StartsAt: t, JoinURL: ev.JoinLink}
+		}
+	}
+	return best, nil
+}
 
 func main() {
 	// Debug log to a file next to the exe — the -H windowsgui build has no console,
@@ -226,6 +288,17 @@ func main() {
 			}
 		}()
 	}
+
+	// Live activities (SP6): registry + providers, started on rootCtx so every
+	// provider goroutine stops cleanly on shutdown alongside everything else.
+	islandReg := island.NewRegistry(island.SystemClock{}, ui.PublishActivities)
+	ui.SetIslandRegistry(islandReg) // lets the dismiss binding reach it
+
+	meetings := island.NewMeetingProvider(island.SystemClock{}, func(ctx context.Context) (*island.NextMeeting, error) {
+		return nextMeetingFromCalendar(ctx, cfg)
+	})
+	islandRunner := island.NewRunner(islandReg, island.DefaultTimers, meetings)
+	islandRunner.Start(rootCtx)
 
 	// The WebView UI Engine *must* run on the main OS thread to avoid crashes.
 	// When the WebView closes, we trigger shutdown
