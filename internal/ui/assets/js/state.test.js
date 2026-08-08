@@ -73,3 +73,69 @@ test('every presence has a size', () => {
     assert.ok(PRESENCE_SIZES[p].w > 0 && PRESENCE_SIZES[p].h > 0);
   }
 });
+
+import { WAKE_MS } from './state.js';
+
+const base2 = {
+  surface: null, activities: [], agentState: 'idle',
+  hover: false, idleSince: 0, now: 0, wakeUntil: 0,
+};
+const s2 = (o) => ({ ...base2, ...o });
+
+test('second activity goes to the bubble slot', () => {
+  const r = resolve(s2({ activities: [
+    { id: 'agent.job', priority: 90 },
+    { id: 'timer.t1',  priority: 60 },
+  ]}));
+  assert.equal(r.contentId, 'agent.job');
+  assert.equal(r.bubbleId, 'timer.t1');
+});
+
+test('a third activity is live but not rendered', () => {
+  const r = resolve(s2({ activities: [
+    { id: 'a', priority: 90 }, { id: 'b', priority: 60 }, { id: 'c', priority: 10 },
+  ]}));
+  assert.equal(r.contentId, 'a');
+  assert.equal(r.bubbleId, 'b');
+  assert.ok(r.bubbleId !== 'c');
+});
+
+test('a single activity leaves the bubble empty', () => {
+  const r = resolve(s2({ activities: [{ id: 'timer.t1', priority: 60 }] }));
+  assert.equal(r.bubbleId, null);
+});
+
+test('an approval takes the pill and demotes music to the bubble', () => {
+  const r = resolve(s2({ activities: [
+    { id: 'spotify.nowplaying', priority: 20 },
+    { id: 'trust.approval',     priority: 100 },
+  ]}));
+  assert.equal(r.contentId, 'trust.approval');
+  assert.equal(r.presence, 'expanded');
+  assert.equal(r.bubbleId, 'spotify.nowplaying');
+});
+
+test('wakeUntil lifts a dormant island to peek', () => {
+  const dormant = s2({ now: 60000, idleSince: 0,
+                       activities: [{ id: 'timer.t1', priority: 60 }] });
+  assert.equal(resolve(dormant).presence, 'compact');
+
+  const woken = { ...dormant, wakeUntil: 60000 + 1000 };
+  assert.equal(resolve(woken).presence, 'peek');
+});
+
+test('an expired wakeUntil does not hold the island open', () => {
+  const r = resolve(s2({ now: 60000, wakeUntil: 59000,
+                         activities: [{ id: 'timer.t1', priority: 60 }] }));
+  assert.equal(r.presence, 'compact');
+});
+
+test('wakeUntil never overrides an open surface', () => {
+  const r = resolve(s2({ surface: 'command', now: 1000, wakeUntil: 9999 }));
+  assert.equal(r.presence, 'sheet');
+  assert.equal(r.contentId, 'command');
+});
+
+test('WAKE_MS is a sane wake duration', () => {
+  assert.ok(WAKE_MS >= 1500 && WAKE_MS <= 4000);
+});
