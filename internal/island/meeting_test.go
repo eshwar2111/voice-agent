@@ -32,12 +32,17 @@ func TestMeetingActivityFields(t *testing.T) {
 }
 
 // TestMeetingSignificantOnlyAtThresholds runs a genuine descending sequence
-// against ONE provider, exactly as a real countdown would poll. It does not
-// reset m.lastWake between cases: that reset previously masked a re-fire bug
-// (see TestMeetingWakesOncePerThreshold) by making every case start fresh.
+// against ONE meeting instance (fixed StartsAt, the clock advances), exactly
+// as a real countdown would poll. It does not reset m.lastWake between
+// cases: that reset previously masked a re-fire bug (see
+// TestMeetingWakesOncePerThreshold) by making every case start fresh. The
+// clock — not StartsAt — is what advances, so this instance is never
+// mistaken for a new meeting by the instance-scoped reset in activityFor.
 func TestMeetingSignificantOnlyAtThresholds(t *testing.T) {
 	clk := &fakeClock{t: time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)}
 	m := NewMeetingProvider(clk, nil)
+	startsAt := clk.t.Add(30 * time.Minute)
+	n := &NextMeeting{Title: "Standup", StartsAt: startsAt}
 
 	cases := []struct {
 		minutes int
@@ -50,10 +55,11 @@ func TestMeetingSignificantOnlyAtThresholds(t *testing.T) {
 		{1, true},  // T-1m
 		{0, true},  // starting now
 	}
+	elapsed := 0
 	for _, tc := range cases {
-		a, ok := m.activityFor(&NextMeeting{
-			Title: "Standup", StartsAt: clk.t.Add(time.Duration(tc.minutes) * time.Minute),
-		})
+		clk.advance(time.Duration(30-tc.minutes-elapsed) * time.Minute)
+		elapsed = 30 - tc.minutes
+		a, ok := m.activityFor(n)
 		if !ok {
 			t.Fatalf("%dm: activityFor returned ok=false", tc.minutes)
 		}
@@ -125,6 +131,89 @@ func TestMeetingWakesOncePerThreshold(t *testing.T) {
 	}
 	if second.Significant {
 		t.Errorf("second poll at the same threshold must NOT re-wake the island")
+	}
+}
+
+// TestMeetingBackToBackMeetingsEachWake is the regression test for the bug
+// where lastWake was scoped to the provider instead of the meeting instance:
+// meeting A wakes at T-0, then the source hands the provider meeting B
+// (a different StartsAt) already 25 minutes out. B must get its own full
+// threshold sequence rather than inheriting A's lastWake=0, which would
+// otherwise suppress every one of B's wakes (5<0, 1<0, 0<0 are all false).
+func TestMeetingBackToBackMeetingsEachWake(t *testing.T) {
+	clk := &fakeClock{t: time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)}
+	m := NewMeetingProvider(clk, nil)
+
+	a := &NextMeeting{Title: "A", StartsAt: clk.t}
+	firstA, ok := m.activityFor(a)
+	if !ok {
+		t.Fatal("A: activityFor returned ok=false")
+	}
+	if !firstA.Significant {
+		t.Fatal("A at 0 minutes should be Significant")
+	}
+
+	b := &NextMeeting{Title: "B", StartsAt: clk.t.Add(25 * time.Minute)}
+	if _, ok := m.activityFor(b); !ok {
+		t.Fatal("B at 25 minutes: activityFor returned ok=false")
+	}
+
+	atFive, ok := m.activityFor(&NextMeeting{Title: "B", StartsAt: clk.t.Add(5 * time.Minute)})
+	if !ok {
+		t.Fatal("B at 5 minutes: activityFor returned ok=false")
+	}
+	if !atFive.Significant {
+		t.Error("B crossing T-5m must wake the island — back-to-back meetings must not go silent")
+	}
+}
+
+// TestMeetingSameInstanceDoesNotResetOnEveryCall confirms the instance-scoped
+// reset triggers only on a genuinely different StartsAt, not on every call —
+// repeated polls of the same meeting must still wake once per threshold, not
+// once per poll.
+func TestMeetingSameInstanceDoesNotResetOnEveryCall(t *testing.T) {
+	clk := &fakeClock{t: time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)}
+	m := NewMeetingProvider(clk, nil)
+	n := &NextMeeting{Title: "Standup", StartsAt: clk.t.Add(5 * time.Minute)}
+
+	first, ok := m.activityFor(n)
+	if !ok || !first.Significant {
+		t.Fatal("first poll at T-5m should be Significant")
+	}
+	// Same instance, same minute, polled again — must not reset/re-wake.
+	second, ok := m.activityFor(n)
+	if !ok {
+		t.Fatal("second poll: activityFor returned ok=false")
+	}
+	if second.Significant {
+		t.Error("polling the same meeting instance again must not re-wake the island")
+	}
+}
+
+// TestMeetingReplacedByEarlierMeeting covers a meeting just added to the
+// calendar ahead of what the provider was tracking: A at 40 minutes (below
+// any threshold, so no wake yet), then the source swaps to B at 3 minutes.
+// B must wake immediately rather than being suppressed by A's bookkeeping.
+func TestMeetingReplacedByEarlierMeeting(t *testing.T) {
+	clk := &fakeClock{t: time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)}
+	m := NewMeetingProvider(clk, nil)
+
+	a := &NextMeeting{Title: "A", StartsAt: clk.t.Add(40 * time.Minute)}
+	firstA, ok := m.activityFor(a)
+	if !ok {
+		t.Fatal("A: activityFor returned ok=false")
+	}
+	if firstA.Significant {
+		t.Fatal("A at 40 minutes should not be Significant yet")
+	}
+
+	b := &NextMeeting{Title: "B", StartsAt: clk.t.Add(3 * time.Minute)}
+	atThree, ok := m.activityFor(b)
+	if !ok {
+		t.Fatal("B: activityFor returned ok=false")
+	}
+	if !atThree.Significant {
+		t.Error("B, newly added at 3 minutes out, must wake immediately")
 	}
 }
 

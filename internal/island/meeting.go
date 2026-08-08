@@ -29,9 +29,12 @@ type MeetingProvider struct {
 	clock Clock
 	src   MeetingSource
 	// lastWake is the threshold already woken for, so a 60s poll does not
-	// re-wake the island every minute at the same threshold.
+	// re-wake the island every minute at the same threshold. Scoped to
+	// lastMeeting: a new meeting instance (different StartsAt) gets its own
+	// full T-5/T-1/start sequence, so back-to-back meetings each still warn.
 	lastWake int
-	started  time.Time
+	// lastMeeting is the StartsAt of the meeting lastWake refers to.
+	lastMeeting time.Time
 }
 
 func NewMeetingProvider(clock Clock, src MeetingSource) *MeetingProvider {
@@ -50,6 +53,15 @@ func (m *MeetingProvider) activityFor(n *NextMeeting) (Activity, bool) {
 		return Activity{}, false
 	}
 
+	// A different StartsAt means a different meeting instance (e.g. the
+	// previous meeting just ended and the source handed us the next one, or a
+	// meeting was added/rescheduled ahead of what we were tracking). Give it
+	// a fresh threshold sequence rather than inheriting stale bookkeeping.
+	if !n.StartsAt.Equal(m.lastMeeting) {
+		m.lastWake = -1
+		m.lastMeeting = n.StartsAt
+	}
+
 	significant := false
 	for _, th := range wakeThresholds {
 		if mins <= th {
@@ -62,12 +74,6 @@ func (m *MeetingProvider) activityFor(n *NextMeeting) (Activity, bool) {
 			}
 			break
 		}
-	}
-
-	// Started identifies the instance for dismissal; use the meeting's own
-	// start so it stays stable across polls.
-	if m.started.IsZero() {
-		m.started = n.StartsAt
 	}
 
 	return Activity{
@@ -106,6 +112,7 @@ func (m *MeetingProvider) Run(ctx context.Context, emit func(Activity), end func
 			end("meeting.next")
 			live = false
 			m.lastWake = -1
+			m.lastMeeting = time.Time{}
 		}
 		return nil
 	}
