@@ -56,11 +56,13 @@ type Engine struct {
 	Profile      *security.Profile
 	Dispatch     *dispatch.Deps
 
-	History     []string
-	Events      chan Event
-	isBusy      bool // true while processing a command pipeline
-	busyLock    sync.Mutex
-	commandDone chan struct{}
+	History  []string
+	Events   chan Event
+	isBusy   bool // true while processing a command pipeline
+	busyLock sync.Mutex
+	// pending is the trigger that started the in-flight command, held so its
+	// waiter is released by that command's completion and nothing else.
+	pending ui.Trigger
 }
 
 func NewEngine(cfg *config.Config, provider llm.Provider, registry *tools.Registry, store *memory.Store, retriever *memory.Retriever, rateLimiter *security.RateLimiter, profile *security.Profile, trusted *trust.TrustedExecutor) *Engine {
@@ -79,8 +81,7 @@ func NewEngine(cfg *config.Config, provider llm.Provider, registry *tools.Regist
 			Resolver: resolver.Default(),
 			Trusted:  trusted,
 		},
-		Events:      make(chan Event, 100),
-		commandDone: make(chan struct{}, 1),
+		Events: make(chan Event, 100),
 	}
 }
 
@@ -92,8 +93,8 @@ func (e *Engine) Start(ctx context.Context) {
 			select {
 			case <-ctx.Done():
 				return
-			case <-ui.ListenTrigger:
-				e.Events <- Event{Type: EventVoiceInput}
+			case t := <-ui.ListenTrigger:
+				e.emit(ctx, Event{Type: EventVoiceInput, Payload: t})
 			}
 		}
 	}()
@@ -115,9 +116,15 @@ func (e *Engine) Start(ctx context.Context) {
 func (e *Engine) handleEvent(ctx context.Context, ev Event) {
 	switch ev.Type {
 	case EventVoiceInput:
+		// A trigger carries its own completion channel. Releasing THIS trigger on
+		// rejection is correct — it did no work, so its waiter should stop waiting
+		// immediately — and, unlike the old shared signal, it cannot be mistaken
+		// for the completion of the command that is actually running.
+		trig, _ := ev.Payload.(ui.Trigger)
+
 		if executor.IsSpeaking() {
 			fmt.Println("⚠️  TTS is active — ignoring trigger to prevent feedback loop.")
-			e.signalCommandDone()
+			trig.Finish()
 			return
 		}
 
@@ -125,10 +132,14 @@ func (e *Engine) handleEvent(ctx context.Context, ev Event) {
 		if e.isBusy {
 			e.busyLock.Unlock()
 			fmt.Println("⚠️  Already processing a command — ignoring trigger.")
-			e.signalCommandDone()
+			trig.Finish()
 			return
 		}
 		e.isBusy = true
+		// Hold this trigger's completion channel for the life of the command, so
+		// EventToolExecuted/EventError release the trigger that started the work
+		// rather than whichever waiter happened to be listening.
+		e.pending = trig
 		e.busyLock.Unlock()
 
 		ui.SetState(ui.StateListening)
@@ -200,18 +211,12 @@ func (e *Engine) handleEvent(ctx context.Context, ev Event) {
 		if !executor.IsSpeaking() {
 			ui.SetState(ui.StateIdle)
 		}
-		e.busyLock.Lock()
-		e.isBusy = false
-		e.busyLock.Unlock()
-		e.signalCommandDone()
+		e.finishCommand()
 
 	case EventError:
 		log.Printf("Engine Error Event: %v", ev.Err)
 		ui.SetState(ui.StateIdle)
-		e.busyLock.Lock()
-		e.isBusy = false
-		e.busyLock.Unlock()
-		e.signalCommandDone()
+		e.finishCommand()
 	}
 }
 
@@ -243,31 +248,36 @@ func (e *Engine) IsBusy() bool {
 	return e.isBusy
 }
 
-// signalCommandDone releases any waiter in TriggerAndWait (non-blocking).
-func (e *Engine) signalCommandDone() {
-	select {
-	case e.commandDone <- struct{}{}:
-	default:
-	}
+// finishCommand clears the busy flag and releases the trigger that started the
+// command. Clearing e.pending as it goes makes a double release impossible,
+// which is what lets the release be a channel close (and so wake every waiter)
+// instead of a single-slot send.
+func (e *Engine) finishCommand() {
+	e.busyLock.Lock()
+	e.isBusy = false
+	trig := e.pending
+	e.pending = ui.Trigger{}
+	e.busyLock.Unlock()
+	trig.Finish()
 }
 
 // TriggerAndWait fires a voice capture (as if the pill were clicked) and blocks until the
 // command finishes or timeout elapses. Used by the wake-word loop to hand the mic back only
 // after the command is done.
+//
+// The done channel is created here and travels WITH the trigger, so this waiter
+// can only ever be released by its own trigger — either because the command it
+// started finished, or because the engine rejected it outright. There is no
+// longer a shared signal for an unrelated command to trip.
 func (e *Engine) TriggerAndWait(timeout time.Duration) {
-	// drain any stale completion signal
+	done := make(chan struct{})
 	select {
-	case <-e.commandDone:
-	default:
-	}
-	select {
-	case ui.ListenTrigger <- struct{}{}:
+	case ui.ListenTrigger <- ui.Trigger{Done: done}:
 	case <-time.After(2 * time.Second):
 		return // engine not consuming triggers; give up
 	}
 	select {
-	case <-e.commandDone:
+	case <-done:
 	case <-time.After(timeout):
 	}
 }
-

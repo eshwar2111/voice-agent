@@ -615,9 +615,34 @@ function handleIslandClick(ev){
     closeSurface();
     return;
   }
+  // Re-entrancy guard. Without it every click fired triggerListen() regardless
+  // of what the agent was already doing, so impatient repeat-clicks during a
+  // slow round trip — or a wake-word detection racing a click — each pushed a
+  // separate trigger. The engine rejected the duplicates, but the rejections
+  // were what produced the double-fire log spam, and a click landing in the
+  // gap between two commands could start a second capture for real.
+  if(store.agentState !== 'idle'){
+    jlog('island click ignored — agent is '+store.agentState);
+    return;
+  }
+  // The state guard alone can't catch a fast double-click: Go's 'listening'
+  // event has to make a round trip before store.agentState changes, and two
+  // clicks land well inside that window. This closes it locally.
+  const now = Date.now();
+  if(now - lastTriggerAt < TRIGGER_COOLDOWN_MS){
+    jlog('island click ignored — within trigger cooldown');
+    return;
+  }
+  lastTriggerAt = now;
   jlog('island click -> triggerListen');
   window.triggerListen && window.triggerListen();
 }
+
+// Long enough to swallow a double-click and the Go round trip that sets
+// agentState, short enough that a genuine retry after a failed capture is not
+// blocked. Reset on entry to idle so back-to-back commands stay responsive.
+const TRIGGER_COOLDOWN_MS = 700;
+let lastTriggerAt = 0;
 window.handleIslandClick = handleIslandClick;
 
 // The single entry point for agent state transitions, whether they arrive
@@ -632,7 +657,12 @@ function updateUI(state,text){
   // late relative to when the agent actually went quiet.
   const enteringIdle = state === 'idle' && store.agentState !== 'idle';
   store.agentState = state;
-  if(enteringIdle) store.idleSince = Date.now();
+  if(enteringIdle){
+    store.idleSince = Date.now();
+    // The command finished, so the cooldown has done its job — clear it rather
+    // than making the user wait out the remainder before they can speak again.
+    lastTriggerAt = 0;
+  }
   if(state === 'idle'){
     endActivity('agent.run', syncAndRerender);
   } else {

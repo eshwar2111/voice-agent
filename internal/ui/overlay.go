@@ -53,6 +53,28 @@ const (
 	StateSpeaking
 )
 
+// Trigger is a request to start a voice capture.
+//
+// Done exists so a caller can wait for THIS trigger specifically. The engine
+// previously acknowledged completion on one shared channel with no link to the
+// trigger being acknowledged, so a duplicate trigger the engine had rejected
+// could satisfy an unrelated capture that was still in flight — the wake-word
+// loop would reclaim the microphone mid-command and re-fire. Carrying the
+// completion channel with the trigger makes that mix-up impossible.
+//
+// A nil Done means fire-and-forget (the pill click); the engine simply has
+// nothing to close.
+type Trigger struct {
+	Done chan struct{}
+}
+
+// Finish closes t.Done if there is one. Safe to call on a zero Trigger.
+func (t Trigger) Finish() {
+	if t.Done != nil {
+		close(t.Done)
+	}
+}
+
 var (
 	currentState  AgentState = StateBoot
 	stateMutex    sync.Mutex
@@ -60,7 +82,7 @@ var (
 	hwndGlobal    win.HWND
 	canvasGlobal  *canvas
 	bridge        *Bridge
-	ListenTrigger = make(chan struct{})
+	ListenTrigger = make(chan Trigger)
 
 	notifTimer *time.Timer
 
@@ -297,7 +319,9 @@ func StartOverlay(ctx context.Context, cfg *config.Config) {
 
 	w.SetTitle("Voice Agent")
 
-	w.Bind("triggerListen", func() { ListenTrigger <- struct{}{} })
+	// Fire-and-forget: a pill click has nobody waiting on the outcome, so Done
+	// is nil. Only TriggerAndWait (the wake-word path) supplies one.
+	w.Bind("triggerListen", func() { ListenTrigger <- Trigger{} })
 	w.Bind("submitCommand", func(input string) {
 		// Run the dispatch OFF the WebView thread. OnCommand blocks on the
 		// LLM/tool pipeline; if it ran here it would freeze the WebView main
