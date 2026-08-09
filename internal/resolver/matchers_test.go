@@ -185,10 +185,10 @@ func TestDefaultResolverFileVsWeb(t *testing.T) {
 	}
 	search.InitIndexer(dir)
 	deadline := time.Now().Add(5 * time.Second)
-	for !search.IsReady && time.Now().Before(deadline) {
+	for !search.Ready() && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
-	if !search.IsReady {
+	if !search.Ready() {
 		t.Fatal("file indexer did not become ready in time")
 	}
 
