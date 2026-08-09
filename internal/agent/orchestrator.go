@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"sort"
 	"strings"
 
 	"github.com/yourname/voice-agent/internal/llm"
@@ -121,9 +122,13 @@ Available agents:
 - "spotify_workflow_agent" — multi-step Spotify tasks (play, queue, recommend, curate)
 - "google_workspace_assistant" — single-step Workspace lookups or simple drafts
 - "spotify_assistant"          — single-step Spotify actions (play a search, pause, volume)
-- Any raw tool name listed in the tool registry (e.g. "web_search", "system_status", "speak", "open_website")
+- Any raw tool name from this list, spelled EXACTLY as written:
+%s
 
 Rules:
+0. NEVER invent an agent or tool name. If nothing above fits, use "speak" to
+   tell the user you cannot do it. A name that is not on the list above fails
+   the whole plan with "tool not found in registry".
 1. Return ONLY a JSON array — no extra text.
 2. Each element: {"agent":"<name>","goal":"<natural language sub-goal>","context":"<optional extra context>"}
 3. Keep sub-goals tightly scoped. A Spotify action must NOT be in the same sub-goal as a Google action.
@@ -138,7 +143,12 @@ User request: %s
 Return ONLY the JSON array.`
 
 func (o *Orchestrator) decompose(ctx gocontext.Context, userText, sysContext string) ([]SubGoal, error) {
-	prompt := fmt.Sprintf(decompositionPrompt, sysContext, userText)
+	// Give the model the ACTUAL registry names. The prompt used to say "any raw
+	// tool name listed in the tool registry" without ever listing it, so the
+	// model guessed plausible-sounding names — "open_application" instead of
+	// "open_app" — and the plan died at execution with "tool not found in
+	// registry", which the trust layer reports as a hard stop with no recovery.
+	prompt := fmt.Sprintf(decompositionPrompt, o.toolNameList(), sysContext, userText)
 	raw, err := o.Provider.Generate(ctx, prompt, nil)
 	if err != nil {
 		return nil, fmt.Errorf("LLM decomposition failed: %w", err)
@@ -161,4 +171,22 @@ func extractJSONArray(s string) string {
 		return "[]"
 	}
 	return s[start : end+1]
+}
+
+// toolNameList renders the registry's tool names for the decomposition prompt.
+// Returns an empty string when no registry is reachable — the prompt still
+// works, it just falls back to the named specialist agents.
+func (o *Orchestrator) toolNameList() string {
+	if o.Executor == nil || o.Executor.Registry == nil {
+		return "  (none available)"
+	}
+	names := o.Executor.Registry.ToolNames()
+	sort.Strings(names)
+	var b strings.Builder
+	for _, n := range names {
+		b.WriteString("  - ")
+		b.WriteString(n)
+		b.WriteString("\n")
+	}
+	return strings.TrimRight(b.String(), "\n")
 }
