@@ -13,9 +13,20 @@
    reachable at 100% (canvas fits uncapped) and 125% (960 physical / 1080
    screen still fits, so no clamp triggers), but not 150%. top:10/height:700
    (bottom edge at CSS y=710) keeps them inside the ~720 CSS px worst case. */
+/* Sized against the VIEWPORT, not a fixed box. The window is clamped to the
+   screen (canvas.go), so at high DPI the CSS viewport shrinks: at 200% on a
+   1920x1080 display it is 960x540, and a fixed 1160x700 dashboard simply does
+   not fit — the sidebar's Close and Quit buttons ended up off-screen with no
+   way to reach them. min() keeps the roomy size when there is room and shrinks
+   to fit when there isn't. */
 #dashboard{position:fixed;top:10px;left:50%;transform:translateX(-50%);
-  width:1160px;height:700px;z-index:5;display:none;border-radius:26px;overflow:hidden}
-#dashboard.visible{display:grid;grid-template-columns:248px 1fr}
+  width:min(1160px, calc(100vw - 24px));
+  height:min(700px, calc(100vh - 20px));
+  z-index:5;display:none;border-radius:26px;overflow:hidden}
+#dashboard.visible{display:grid;grid-template-columns:minmax(180px,248px) 1fr}
+/* Both panes scroll independently, so shrinking the dashboard never puts a
+   control out of reach — it just means scrolling to it. */
+#dashboard .sidebar,#dashboard .surface{min-height:0;overflow-y:auto}
 .sidebar{padding:26px 20px;border-right:1px solid var(--stroke);display:flex;flex-direction:column;gap:22px;background:rgba(255,255,255,.02)}
 .sidebar h2{font-size:23px;font-weight:640;letter-spacing:-0.03em;line-height:1.05;margin-bottom:10px}
 .sidebar p{font-size:12.5px;line-height:1.5;color:var(--ink-2)}

@@ -82,6 +82,16 @@ func (c *canvas) Attach() {
 	win.SetWindowPos(c.hwnd, win.HWND_TOPMOST, x, 0, pw, ph,
 		win.SWP_NOACTIVATE|win.SWP_FRAMECHANGED)
 
+	// Publish the CSS size of the window we ACTUALLY created, not the nominal
+	// 1200x800. When the clamp above fires — 200% DPI on a 1080-tall display
+	// gives a 960x540 CSS viewport — everything downstream that centres against
+	// this value would otherwise be wrong by half the difference: pairLayout
+	// would put the island's centre at CSS x=600 in a viewport whose centre is
+	// 480, so the island would sit 120px right of centre, and the region
+	// registry's fallback rect would be built for a window that does not exist.
+	canvasCSSWidth = float64(pw) / c.scale
+	canvasCSSHeight = float64(ph) / c.scale
+
 	c.reg = newRectRegistry(canvasCSSWidth)
 	// Apply the fallback region immediately so the window has a shape before JS
 	// publishes anything. Without this the whole 1200x800 box is clickable.
