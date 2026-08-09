@@ -81,9 +81,15 @@ export async function loadIntegrationStatusesDash(){
     const g = await window.getGoogleStatus();
     const on = !!(g && g.connected);
     if(on) total++;
+    // An EXPIRED link is not the same as never having linked. Showing the
+    // generic invitation copy for a revoked token reads as "you never set this
+    // up", so nobody realises a working integration has gone stale — meanwhile
+    // every Calendar call fails in the background.
     setConn('google', on,
       on ? 'Connected as '+(g.email||'your account')+' — Docs, Sheets, Slides, Drive, Gmail, Calendar.'
-         : 'Link Gmail, Calendar, Drive, Docs, Sheets, and Slides for a unified workspace assistant.',
+         : (g && g.expired
+              ? (g.reason || 'Sign-in expired — reconnect to restore Gmail, Calendar and Drive.')
+              : 'Link Gmail, Calendar, Drive, Docs, Sheets, and Slides for a unified workspace assistant.'),
       g && g.workspace ? g.workspace : ['Gmail','Calendar','Drive','Docs','Sheets','Slides']);
   }
   if(window.getSpotifyStatus){
@@ -92,7 +98,9 @@ export async function loadIntegrationStatusesDash(){
     if(on) total++;
     setConn('spotify', on,
       on ? 'Connected as '+(s.display_name||'your account')+(s.product?' ('+s.product+')':'')
-         : 'Link Spotify for playback control, queueing, recommendations, and AI-curated sessions.',
+         : (s && s.expired
+              ? (s.reason || 'Spotify sign-in expired — reconnect to restore playback control.')
+              : 'Link Spotify for playback control, queueing, recommendations, and AI-curated sessions.'),
       s && s.capabilities ? s.capabilities : ['Playback','Queue','Recommendations','AI Curation']);
   }
   if(window.getMicrosoftStatus){

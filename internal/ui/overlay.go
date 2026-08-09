@@ -438,6 +438,10 @@ func setupAuthBindings(ctx context.Context, cfg *config.Config, w webview.WebVie
 			LowerTopmostForOAuth()
 			err := auth.StartGoogleAuth(ctx, cfg)
 			RestoreTopmost()
+			// The status cache must not outlive the thing it describes: without
+			// this the badge would keep reporting the pre-link state for up to
+			// the TTL, so a successful connect looks like it failed.
+			invalidateAuthStatus("google")
 			if err != nil {
 				fmt.Printf("Google Auth Error: %v\n", err)
 			} else {
@@ -448,26 +452,43 @@ func setupAuthBindings(ctx context.Context, cfg *config.Config, w webview.WebVie
 	})
 
 	w.Bind("unlinkGoogle", func() {
+		invalidateAuthStatus("google")
 		cfg.GoogleToken = ""
 		config.SaveConfig("config.json", cfg)
 		w.Dispatch(func() { w.Eval("loadIntegrationStatusesDash();") })
 	})
 
 	w.Bind("getGoogleStatus", func() map[string]interface{} {
-		store := auth.NewTokenStore("config.json")
-		_, err := store.LoadToken(auth.ProviderGoogle, cfg)
-		if err != nil {
-			return map[string]interface{}{"connected": false}
-		}
-		res := map[string]interface{}{
-			"connected":    true,
-			"workspace":    []string{"Gmail", "Calendar", "Drive", "Docs", "Sheets", "Slides"},
-			"capabilities": 6,
-		}
-		if info, err := auth.GetGoogleUserInfo(ctx, cfg); err == nil && info != nil {
-			res["email"] = info.Email
-		}
-		return res
+		return cachedAuthStatus("google", func() map[string]interface{} {
+			store := auth.NewTokenStore("config.json")
+			if _, err := store.LoadToken(auth.ProviderGoogle, cfg); err != nil {
+				return map[string]interface{}{"connected": false}
+			}
+			// A STORED token is not a WORKING token. LoadToken only reads what is in
+			// config.json, so a refresh token revoked by Google — expired, password
+			// changed, consent withdrawn — still reported "Connected" while every
+			// actual call failed with invalid_grant. The user saw a healthy badge
+			// and no reason to re-link, while the calendar provider retried into a
+			// backoff ladder forever. Exchange it for real: that is the only thing
+			// that distinguishes a live link from a dead one.
+			if _, err := auth.GetGoogleClient(ctx, cfg); err != nil {
+				log.Printf("[ui] Google token present but not usable: %v", err)
+				return map[string]interface{}{
+					"connected": false,
+					"expired":   true,
+					"reason":    "Sign-in expired — reconnect to restore Gmail, Calendar and Drive.",
+				}
+			}
+			res := map[string]interface{}{
+				"connected":    true,
+				"workspace":    []string{"Gmail", "Calendar", "Drive", "Docs", "Sheets", "Slides"},
+				"capabilities": 6,
+			}
+			if info, err := auth.GetGoogleUserInfo(ctx, cfg); err == nil && info != nil {
+				res["email"] = info.Email
+			}
+			return res
+		})
 	})
 
 	w.Bind("linkMicrosoft", func() {
@@ -503,6 +524,10 @@ func setupAuthBindings(ctx context.Context, cfg *config.Config, w webview.WebVie
 			LowerTopmostForOAuth()
 			err := auth.StartSpotifyAuth(ctx, cfg)
 			RestoreTopmost()
+			// The status cache must not outlive the thing it describes: without
+			// this the badge would keep reporting the pre-link state for up to
+			// the TTL, so a successful connect looks like it failed.
+			invalidateAuthStatus("spotify")
 			if err != nil {
 				fmt.Printf("Spotify Auth Error: %v\n", err)
 			} else {
@@ -512,25 +537,40 @@ func setupAuthBindings(ctx context.Context, cfg *config.Config, w webview.WebVie
 	})
 
 	w.Bind("unlinkSpotify", func() {
+		invalidateAuthStatus("spotify")
 		cfg.SpotifyToken = ""
 		config.SaveConfig("config.json", cfg)
 		w.Dispatch(func() { w.Eval("loadIntegrationStatusesDash();") })
 	})
 
 	w.Bind("getSpotifyStatus", func() map[string]interface{} {
-		store := auth.NewTokenStore("config.json")
-		_, err := store.LoadToken(auth.ProviderSpotify, cfg)
-		if err != nil {
-			return map[string]interface{}{"connected": false}
-		}
-		res := map[string]interface{}{
-			"connected":    true,
-			"capabilities": []string{"Playback", "Queue", "Recommendations", "AI Curation"},
-		}
-		if info, err := auth.GetSpotifyUserInfo(ctx, cfg); err == nil && info != nil {
-			res["display_name"] = info.DisplayName
-			res["product"] = info.Product
-		}
-		return res
+		return cachedAuthStatus("spotify", func() map[string]interface{} {
+			store := auth.NewTokenStore("config.json")
+			if _, err := store.LoadToken(auth.ProviderSpotify, cfg); err != nil {
+				return map[string]interface{}{"connected": false}
+			}
+			// Same trap as Google: a stored token is not a working one. The user
+			// info call is the cheapest way to actually exercise it, and it is
+			// already being made — it just used to be treated as optional garnish
+			// while "connected" was hardcoded true.
+			info, err := auth.GetSpotifyUserInfo(ctx, cfg)
+			if err != nil {
+				log.Printf("[ui] Spotify token present but not usable: %v", err)
+				return map[string]interface{}{
+					"connected": false,
+					"expired":   true,
+					"reason":    "Spotify sign-in expired or unreachable — reconnect to restore playback control.",
+				}
+			}
+			res := map[string]interface{}{
+				"connected":    true,
+				"capabilities": []string{"Playback", "Queue", "Recommendations", "AI Curation"},
+			}
+			if info != nil {
+				res["display_name"] = info.DisplayName
+				res["product"] = info.Product
+			}
+			return res
+		})
 	})
 }
