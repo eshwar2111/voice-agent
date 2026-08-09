@@ -2,7 +2,9 @@
 package ui
 
 import (
+	"context"
 	"log"
+	"time"
 
 	"github.com/lxn/win"
 	webview "github.com/webview/webview_go"
@@ -32,6 +34,10 @@ type canvas struct {
 	reg    *rectRegistry
 	region *regionApplier
 	scale  float64
+
+	// lastPW/lastPH record the physical size WE applied, so reconcile() can tell
+	// "someone else resized the window" from "this is what we asked for".
+	lastPW, lastPH int32
 }
 
 func newCanvas(w webview.WebView) *canvas {
@@ -51,6 +57,42 @@ func (c *canvas) Attach() {
 	win.SetWindowLong(c.hwnd, win.GWL_EXSTYLE,
 		ex|win.WS_EX_TOPMOST|win.WS_EX_TOOLWINDOW|win.WS_EX_NOACTIVATE)
 
+	c.applyGeometry()
+
+	c.reg = newRectRegistry(canvasCSSWidth)
+	// Apply the fallback region immediately so the window has a shape before JS
+	// publishes anything. Without this the whole 1200x800 box is clickable.
+	c.applyRegion()
+
+}
+
+// SetRects records the currently visible surface rects and reshapes the window.
+// The slice from Get() is read-only — never sort or mutate it in place.
+func (c *canvas) SetRects(rects []Rect) {
+	if c.reg == nil {
+		return
+	}
+	c.reg.Set(rects)
+	c.applyRegion()
+}
+
+func (c *canvas) applyRegion() {
+	const (
+		regionRadius  = 26.0 // largest island radius; over-rounding is invisible
+		regionInflate = 2.0  // absorbs DPI rounding so no painted edge is clipped
+	)
+	shapes := regionShapes(c.reg.Get(), regionRadius, regionInflate, c.scale)
+	c.region.Apply(shapes)
+}
+
+// applyGeometry sizes, positions and re-publishes the canvas from the CURRENT
+// DPI. Split out of Attach so it can be re-run: webview_go installs its own
+// WM_DPICHANGED handler that resizes the window independently of us, so
+// dragging the app to a monitor with different scaling silently breaks the
+// never-resize invariant the whole island design rests on — the window ends up
+// a size we never chose, canvasCSSWidth describes a window that no longer
+// exists, and the island centres against the wrong number.
+func (c *canvas) applyGeometry() {
 	c.scale = dpiScale()
 	pw := int32(canvasW * c.scale)
 	ph := int32(canvasH * c.scale)
@@ -91,31 +133,53 @@ func (c *canvas) Attach() {
 	// registry's fallback rect would be built for a window that does not exist.
 	canvasCSSWidth = float64(pw) / c.scale
 	canvasCSSHeight = float64(ph) / c.scale
+	c.lastPW, c.lastPH = pw, ph
 
-	c.reg = newRectRegistry(canvasCSSWidth)
-	// Apply the fallback region immediately so the window has a shape before JS
-	// publishes anything. Without this the whole 1200x800 box is clickable.
-	c.applyRegion()
-
-	log.Printf("[ui/canvas] fixed %.0fx%.0f css (%dx%d physical) at x=%d, dpiScale=%.2f",
-		canvasW, canvasH, pw, ph, x, c.scale)
+	log.Printf("[ui/canvas] %dx%d physical at x=%d, dpiScale=%.2f -> css %.0fx%.0f",
+		pw, ph, x, c.scale, canvasCSSWidth, canvasCSSHeight)
 }
 
-// SetRects records the currently visible surface rects and reshapes the window.
-// The slice from Get() is read-only — never sort or mutate it in place.
-func (c *canvas) SetRects(rects []Rect) {
-	if c.reg == nil {
+// watchGeometry re-applies our geometry whenever something else changes it.
+//
+// The alternative is subclassing the WebView2 host window's WndProc to
+// intercept WM_DPICHANGED, which means a Go callback invoked from C on every
+// message — a panic there takes the process down, and getting it wrong is
+// worse than the bug. Reconciliation costs two cheap syscalls on a slow tick
+// and self-heals ANY external resize, not only the DPI one.
+func (c *canvas) watchGeometry(ctx context.Context) {
+	go func() {
+		t := time.NewTicker(2 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				c.reconcile()
+			}
+		}
+	}()
+}
+
+func (c *canvas) reconcile() {
+	if c.hwnd == 0 {
 		return
 	}
-	c.reg.Set(rects)
-	c.applyRegion()
-}
+	scale := dpiScale()
+	var rc win.RECT
+	if !win.GetWindowRect(c.hwnd, &rc) {
+		return
+	}
+	wantW, wantH := c.lastPW, c.lastPH
+	gotW, gotH := rc.Right-rc.Left, rc.Bottom-rc.Top
 
-func (c *canvas) applyRegion() {
-	const (
-		regionRadius  = 26.0 // largest island radius; over-rounding is invisible
-		regionInflate = 2.0  // absorbs DPI rounding so no painted edge is clipped
-	)
-	shapes := regionShapes(c.reg.Get(), regionRadius, regionInflate, c.scale)
-	c.region.Apply(shapes)
+	if scale == c.scale && gotW == wantW && gotH == wantH {
+		return
+	}
+	log.Printf("[ui/canvas] geometry drifted (scale %.2f->%.2f, size %dx%d->%dx%d) — reapplying",
+		c.scale, scale, wantW, wantH, gotW, gotH)
+	c.w.Dispatch(func() {
+		c.applyGeometry()
+		c.applyRegion()
+	})
 }

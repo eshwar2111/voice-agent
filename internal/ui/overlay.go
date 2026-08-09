@@ -399,6 +399,11 @@ func StartOverlay(ctx context.Context, cfg *config.Config) {
 	win.ShowWindow(hwnd, win.SW_HIDE)
 	canvasGlobal.Attach()
 	win.ShowWindow(hwnd, win.SW_SHOWNOACTIVATE)
+	// webview_go handles WM_DPICHANGED itself and resizes the window without
+	// telling us, which silently breaks the never-resize invariant when the app
+	// moves to a monitor with different scaling. Reconcile instead of fighting
+	// it for ownership of the message loop.
+	canvasGlobal.watchGeometry(ctx)
 
 	w.Bind("uiReady", func() {
 		log.Printf("[ui] uiReady — JS finished loading")
