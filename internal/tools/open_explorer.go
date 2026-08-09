@@ -24,9 +24,9 @@ func (o *OpenExplorerTool) Parameters() string {
 	return `{
 		"type": "object",
 		"properties": {
-			"path": { "type": "string", "description": "The absolute or relative directory path to open." }
+			"path": { "type": "string", "description": "Optional. Absolute or relative directory to open. Omit to just open File Explorer." }
 		},
-		"required": ["path"]
+		"required": []
 	}`
 }
 
@@ -44,9 +44,17 @@ func (o *OpenExplorerTool) Execute(ctx context.Context, rawParams json.RawMessag
 		return "", fmt.Errorf("invalid parameters: %w", err)
 	}
 
-	path := params.Path
-	if strings.TrimSpace(path) == "" {
-		return "", errors.New("missing path parameter")
+	path := strings.TrimSpace(params.Path)
+	if path == "" {
+		// "Open File Explorer" is a complete request on its own — there is no
+		// folder to name. Erroring here made that command impossible: the
+		// planner correctly omitted `path`, and the plan died with "missing
+		// path parameter". Bare `explorer` opens the default window.
+		fmt.Println("Opening explorer (no path given)")
+		if err := exec.Command("explorer").Start(); err != nil {
+			return "", err
+		}
+		return "Explorer opened", nil
 	}
 
 	// Verify path exists

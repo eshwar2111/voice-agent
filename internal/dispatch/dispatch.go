@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 	"sync/atomic"
 
 	"github.com/yourname/voice-agent/internal/agent"
@@ -39,6 +40,16 @@ func CloudCount() int64 { return atomic.LoadInt64(&cloudHits) }
 func (d *Deps) Handle(ctx context.Context, input string, cap agentctx.Capture) error {
 	if d.Resolver == nil || d.Registry == nil {
 		return fmt.Errorf("dispatch: Deps not fully configured")
+	}
+	// Silence is not a command. Whisper transcribes non-speech audio as a
+	// bracketed marker ("[BLANK_AUDIO]"), and dispatching that sent it to the
+	// cloud orchestrator, which planned "apologise and ask the user to repeat"
+	// — a token-burning round trip triggered by an empty room. Drop it quietly:
+	// returning an error here would surface "dispatch failed" in the UI for
+	// what is simply nothing having been said.
+	if isNonSpeech(input) {
+		log.Printf("[dispatch] ignoring non-speech transcript %q", input)
+		return nil
 	}
 	norm := resolver.Normalize(input, cap.AppName)
 	if match, ok := d.Resolver.Resolve(norm); ok {
@@ -92,4 +103,31 @@ func (d *Deps) enforceSecurity(tasks []agent.Task) error {
 		}
 	}
 	return nil
+}
+
+// isNonSpeech reports whether a transcript carries no actual speech.
+//
+// Whisper marks non-speech audio with a bracketed token — "[BLANK_AUDIO]",
+// "[SILENCE]", "[MUSIC]" — rather than returning an empty string. Only a
+// transcript that is ENTIRELY such a marker counts: brackets appearing inside
+// real speech ("play [something] by the band") must still dispatch.
+func isNonSpeech(s string) bool {
+	t := strings.TrimSpace(s)
+	if t == "" {
+		return true
+	}
+	// A transcript of only punctuation/ellipsis is silence too.
+	if strings.Trim(t, ".,!?;:-— \t") == "" {
+		return true
+	}
+	if (strings.HasPrefix(t, "[") && strings.HasSuffix(t, "]")) ||
+		(strings.HasPrefix(t, "(") && strings.HasSuffix(t, ")")) {
+		inner := strings.ToLower(strings.Trim(t, "[]() \t_"))
+		switch inner {
+		case "blank_audio", "blank audio", "silence", "music", "noise",
+			"inaudible", "no audio", "sound", "applause", "laughter":
+			return true
+		}
+	}
+	return false
 }
