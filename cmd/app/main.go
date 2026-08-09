@@ -243,7 +243,15 @@ func main() {
 	if userProfile == "" {
 		userProfile = "C:\\"
 	}
-	search.InitIndexer(userProfile) // async
+	// Index the working directory too, not just the profile. The agent's own
+	// project — and most of what someone names out loud — often lives on
+	// another drive ("E:\Voice Agent"), which a profile-only walk can never
+	// see, so file and folder lookups silently found nothing.
+	indexRoots := []string{userProfile}
+	if wd, werr := os.Getwd(); werr == nil {
+		indexRoots = append(indexRoots, wd)
+	}
+	search.InitIndexer(indexRoots...) // async
 
 	fmt.Println("======================================")
 	fmt.Println("🤖 Voice Agent MVP - Listening Mode Active")

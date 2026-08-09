@@ -37,34 +37,50 @@ func Ready() bool {
 // atomically. The walk builds into a local map and swaps it in under the lock,
 // so readers never observe a half-populated index and the lock is not held for
 // the duration of a filesystem walk.
-func InitIndexer(rootDir string) {
+func InitIndexer(roots ...string) {
 	mu.Lock()
 	index = nil
 	ready = false
 	mu.Unlock()
 
 	go func() {
-		log.Printf("Starting file indexer on %s...", rootDir)
 		local := make(map[string][]FileRecord)
+		seen := make(map[string]bool) // a root nested inside another must not be walked twice
 
-		_ = filepath.Walk(rootDir, func(path string, info os.FileInfo, err error) error {
+		for _, root := range roots {
+			if root == "" {
+				continue
+			}
+			abs, err := filepath.Abs(root)
 			if err != nil {
+				abs = root
+			}
+			if seen[strings.ToLower(abs)] {
+				continue
+			}
+			seen[strings.ToLower(abs)] = true
+
+			log.Printf("Indexing %s...", abs)
+			_ = filepath.Walk(abs, func(path string, info os.FileInfo, err error) error {
+				if err != nil {
+					return nil
+				}
+				// Skip hidden directories and large system folders to speed up indexing.
+				if info.IsDir() && (strings.HasPrefix(info.Name(), ".") || info.Name() == "AppData" || info.Name() == "Windows" ||
+					info.Name() == "node_modules" || info.Name() == "$RECYCLE.BIN") {
+					return filepath.SkipDir
+				}
+				name := strings.ToLower(info.Name())
+				local[name] = append(local[name], FileRecord{Path: path, Name: info.Name()})
 				return nil
-			}
-			// Skip hidden directories and large system folders to speed up indexing.
-			if info.IsDir() && (strings.HasPrefix(info.Name(), ".") || info.Name() == "AppData" || info.Name() == "Windows") {
-				return filepath.SkipDir
-			}
-			name := strings.ToLower(info.Name())
-			local[name] = append(local[name], FileRecord{Path: path, Name: info.Name()})
-			return nil
-		})
+			})
+		}
 
 		mu.Lock()
 		index = local
 		ready = true
 		mu.Unlock()
 
-		log.Printf("File indexer finished. Indexed %d distinct names in %s.", len(local), rootDir)
+		log.Printf("File indexer finished. Indexed %d distinct names across %d root(s).", len(local), len(seen))
 	}()
 }
