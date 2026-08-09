@@ -230,3 +230,45 @@ func TestDefaultResolverPriority(t *testing.T) {
 		t.Errorf("open-ended request must fall through to Tier 1")
 	}
 }
+
+// A stray preposition used to survive the verb strip, so "search for X" issued
+// a DDG query of "for X" — and because Tier 0 claimed it at 0.85, Tier 1 never
+// got to clean it up.
+func TestWebMatcherStripsPrepositionAfterVerb(t *testing.T) {
+	m := WebMatcher{}
+	for in, want := range map[string]string{
+		"search for the weather in delhi": "the weather in delhi",
+		"look up for cheap flights":       "cheap flights",
+		"search the weather in delhi":     "the weather in delhi",
+		"google best go linters":          "best go linters",
+	} {
+		match, ok := m.Match(Normalize(in, ""))
+		if !ok {
+			t.Errorf("%q should match web", in)
+			continue
+		}
+		if !strings.Contains(string(match.Tasks[0].Params), `"query":"`+want+`"`) {
+			t.Errorf("%q -> params %s, want query %q", in, match.Tasks[0].Params, want)
+		}
+	}
+}
+
+// "pause" is an ordinary English word. Matching it as an unanchored substring
+// let the media matcher claim — and discard — a sentence whose real intent was
+// something else entirely.
+func TestMediaMatcherPauseIsAnchored(t *testing.T) {
+	m := MediaMatcher{}
+	for _, in := range []string{"pause", "pause it", "pause the music", "pause spotify"} {
+		if _, ok := m.Match(Normalize(in, "")); !ok {
+			t.Errorf("%q should still match media pause", in)
+		}
+	}
+	for _, in := range []string{
+		"pause for a second what's on my calendar",
+		"tell me how to pause a running container",
+	} {
+		if match, ok := m.Match(Normalize(in, "")); ok {
+			t.Errorf("%q must not be claimed by media, got %s", in, match.Tasks[0].Params)
+		}
+	}
+}

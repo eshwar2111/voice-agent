@@ -32,6 +32,22 @@ func containsAny(s string, subs ...string) bool {
 	return false
 }
 
+// isCommandPhrase reports whether s IS the given command, rather than merely
+// containing it somewhere. Use this for short, common English words that double
+// as ordinary vocabulary ("pause", "play", "stop") — an unanchored Contains on
+// those lets Tier 0 claim a sentence whose real intent lives elsewhere, and
+// because a claim short-circuits the chain, Tier 1 never gets to correct it.
+func isCommandPhrase(s, cmd string) bool {
+	s = strings.TrimSpace(s)
+	if s == cmd {
+		return true
+	}
+	// Allow a trailing object ("pause it", "pause spotify") but nothing before
+	// the verb, so a mid-sentence use can never match.
+	rest, ok := strings.CutPrefix(s, cmd+" ")
+	return ok && len(strings.Fields(rest)) <= 2
+}
+
 type DateTimeMatcher struct{}
 
 func (DateTimeMatcher) Name() string { return "datetime" }
@@ -68,6 +84,14 @@ func (WebMatcher) Match(in NormalizedInput) (*Match, bool) {
 	for _, verb := range []string{"search ", "google ", "look up "} {
 		if strings.HasPrefix(in.Lower, verb) {
 			q := strings.TrimSpace(strings.TrimPrefix(in.Lower, verb))
+			// "search FOR the weather" is at least as common in speech as bare
+			// "search the weather", and stripping only the verb left the query as
+			// "for the weather" — which Tier 0 then claimed at 0.85 confidence, so
+			// Tier 1 never got the chance to clean it up. Every such search was
+			// silently degraded by a stray preposition.
+			for _, prep := range []string{"for ", "up "} {
+				q = strings.TrimSpace(strings.TrimPrefix(q, prep))
+			}
 			if q == "" {
 				return nil, false
 			}
@@ -160,7 +184,14 @@ func (MediaMatcher) Match(in NormalizedInput) (*Match, bool) {
 		action = "next"
 	case containsAny(l, "previous track", "previous song", "go back a track"):
 		action = "previous"
-	case containsAny(l, "pause"):
+	// Anchored, not contains. "pause" as an unanchored substring claimed any
+	// sentence that merely used the word — "pause for a second, what's on my
+	// calendar?" was resolved to media_control{pause} at 0.9 confidence and the
+	// real request was thrown away before Tier 1 ever saw it. Mirrors how the
+	// "play" case below was already anchored.
+	case isCommandPhrase(l, "pause"):
+		action = "pause"
+	case containsAny(l, "pause music", "pause the music", "pause playback", "pause the song"):
 		action = "pause"
 	case l == "play" || containsAny(l, "play music", "resume music", "resume playback"):
 		action = "play"

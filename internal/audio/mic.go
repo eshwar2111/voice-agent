@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
+	"sync"
 	"time"
 
 	"github.com/gen2brain/malgo"
@@ -13,6 +14,11 @@ const (
 	sampleRate = 16000
 	channels   = 1
 	bitDepth   = 16
+
+	// How long to wait for the user to start speaking before giving up. Generous
+	// enough to cover reaction time on a slow machine, short enough that a
+	// mis-trigger doesn't pin the microphone for the whole maxDuration.
+	noSpeechTimeout = 4 * time.Second
 )
 
 func RecordDynamic(maxDuration time.Duration, silenceThreshold float64, silenceFramesNeeded int) ([]float32, error) {
@@ -35,8 +41,13 @@ func RecordDynamic(maxDuration time.Duration, silenceThreshold float64, silenceF
 	deviceConfig.SampleRate = uint32(sampleRate)
 	deviceConfig.Alsa.NoMMap = 1
 
+	// pcmFloat32 and the counters below are written from malgo's capture thread
+	// and read from the polling loop, so every shared field is guarded. The
+	// buffer is copied out under the same lock once the device has stopped.
+	var mu sync.Mutex
 	var pcmFloat32 []float32
 	var consecutiveSilence int
+	var speechSeen bool
 
 	// Define capture callback
 	onRecvFrames := func(pOutputSample, pInputSamples []byte, framecount uint32) {
@@ -51,16 +62,24 @@ func RecordDynamic(maxDuration time.Duration, silenceThreshold float64, silenceF
 
 		var sumSquares float64
 		for _, sample := range samples {
-			pcmFloat32 = append(pcmFloat32, sample)
 			sumSquares += float64(sample * sample)
 		}
-
 		rms := math.Sqrt(sumSquares / float64(len(samples)))
-		if rms < silenceThreshold {
-			consecutiveSilence += int(framecount)
-		} else {
+
+		mu.Lock()
+		pcmFloat32 = append(pcmFloat32, samples...)
+		// Silence-detection is ARMED by speech, not by the start of the capture.
+		// Counting silence from frame 0 meant the ~2s of ordinary reaction time
+		// between the pill lighting up and the user actually speaking was itself
+		// enough to trip the stop condition — the recording ended before a single
+		// word landed, and the caller reported "audio too short".
+		if rms >= silenceThreshold {
+			speechSeen = true
 			consecutiveSilence = 0
+		} else if speechSeen {
+			consecutiveSilence += int(framecount)
 		}
+		mu.Unlock()
 	}
 
 	captureCallbacks := malgo.DeviceCallbacks{
@@ -88,8 +107,21 @@ func RecordDynamic(maxDuration time.Duration, silenceThreshold float64, silenceF
 			break
 		}
 
-		if consecutiveSilence >= silenceFramesNeeded {
+		mu.Lock()
+		silence, heardSpeech := consecutiveSilence, speechSeen
+		mu.Unlock()
+
+		if heardSpeech && silence >= silenceFramesNeeded {
 			fmt.Println("\n🔇 Silence detected. Stopping recording...")
+			break
+		}
+
+		// If nothing above the threshold has arrived at all, don't hold the mic
+		// open for the full maxDuration — the user triggered by accident, or the
+		// wrong capture device is selected. Bail out early with what we have so
+		// the caller's "audio too short" path fires promptly instead of after 10s.
+		if !heardSpeech && time.Since(startTime) > noSpeechTimeout {
+			fmt.Println("\n🤐 No speech detected. Stopping recording...")
 			break
 		}
 	}
@@ -99,8 +131,13 @@ func RecordDynamic(maxDuration time.Duration, silenceThreshold float64, silenceF
 		return nil, err
 	}
 
+	mu.Lock()
+	out := make([]float32, len(pcmFloat32))
+	copy(out, pcmFloat32)
+	mu.Unlock()
+
 	fmt.Println("⏹️  Finished Recording.")
-	return pcmFloat32, nil
+	return out, nil
 }
 
 // putUint32LE writes a uint32 in little-endian format at the given position.

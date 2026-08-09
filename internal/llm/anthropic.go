@@ -11,7 +11,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"time"
 )
 
 type anthropicMessage struct {
@@ -81,11 +80,7 @@ func NewAnthropic(apiKey, model, baseURL string) *AnthropicProvider {
 		model:   model,
 		baseURL: baseURL,
 		client: &http.Client{
-			Transport: &http.Transport{
-				MaxIdleConns:        10,
-				MaxIdleConnsPerHost: 2,
-				IdleConnTimeout:     90 * time.Second,
-			},
+			Transport: newProviderTransport(),
 		},
 	}
 }

@@ -299,6 +299,13 @@ Provide:
 5. Actionable recommendations`, task, dataText.String())
 
 	analysis, err := t.Provider.Generate(ctx, analysisPrompt, nil)
+	if err != nil {
+		// This error used to be captured and dropped, so a rate limit or a
+		// network blip returned a confident "📊 Spreadsheet Analysis" header
+		// with an empty body and a nil error — the user was told the analysis
+		// succeeded when it had produced nothing at all.
+		return "", fmt.Errorf("spreadsheet analysis failed: %w", err)
+	}
 	return fmt.Sprintf("📊 Spreadsheet Analysis\n\n%s", analysis), nil
 }
 

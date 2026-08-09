@@ -4,14 +4,47 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/yourname/voice-agent/config"
 	"github.com/yourname/voice-agent/internal/auth"
 	"google.golang.org/api/drive/v3"
-	"google.golang.org/api/sheets/v4"
 	"google.golang.org/api/option"
+	"google.golang.org/api/sheets/v4"
 )
+
+// resolveSpreadsheetID turns a human-spoken sheet name into a Drive file ID.
+//
+// A spreadsheet ID is a 44-character opaque string; a user saying "add a row to
+// my budget sheet" can never supply one, and neither can the planner. Any tool
+// that hard-requires the ID is unreachable by voice, so every sheets tool needs
+// this same fallback — hence one helper rather than a copy per tool.
+//
+// Returns (id, "", nil) on success, or ("", userMessage, nil) when there was
+// nothing to match — a missing sheet is an answer for the user, not a failure
+// worth aborting the surrounding plan over.
+func resolveSpreadsheetID(ctx context.Context, client *http.Client, name string) (string, string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", "", fmt.Errorf("either spreadsheet_id or name is required")
+	}
+
+	driveSvc, err := drive.NewService(ctx, option.WithHTTPClient(client))
+	if err != nil {
+		return "", "", fmt.Errorf("unable to retrieve Drive client: %w", err)
+	}
+
+	q := fmt.Sprintf("mimeType='application/vnd.google-apps.spreadsheet' and name contains '%s'", sanitizeQuery(name))
+	files, err := driveSvc.Files.List().Q(q).PageSize(1).OrderBy("modifiedTime desc").Do()
+	if err != nil {
+		return "", "", fmt.Errorf("unable to search for spreadsheet: %w", err)
+	}
+	if len(files.Files) == 0 {
+		return "", fmt.Sprintf("No Google Sheet found matching '%s'", name), nil
+	}
+	return files.Files[0].Id, "", nil
+}
 
 type GoogleSheetsReadTool struct {
 	Cfg *config.Config
@@ -58,26 +91,14 @@ func (t *GoogleSheetsReadTool) Execute(ctx context.Context, params json.RawMessa
 
 	// If no spreadsheet ID provided, search by name
 	if args.SpreadsheetID == "" {
-		if args.Name == "" {
-			return "", fmt.Errorf("either spreadsheet_id or name is required")
-		}
-
-		driveSvc, err := drive.NewService(ctx, option.WithHTTPClient(client))
+		id, msg, err := resolveSpreadsheetID(ctx, client, args.Name)
 		if err != nil {
-			return "", fmt.Errorf("unable to retrieve Drive client: %w", err)
+			return "", err
 		}
-
-		q := fmt.Sprintf("mimeType='application/vnd.google-apps.spreadsheet' and name contains '%s'", sanitizeQuery(args.Name))
-		files, err := driveSvc.Files.List().Q(q).PageSize(1).OrderBy("modifiedTime desc").Do()
-		if err != nil {
-			return "", fmt.Errorf("unable to search for spreadsheet: %w", err)
+		if msg != "" {
+			return msg, nil
 		}
-
-		if len(files.Files) == 0 {
-			return fmt.Sprintf("No Google Sheet found matching '%s'", args.Name), nil
-		}
-
-		args.SpreadsheetID = files.Files[0].Id
+		args.SpreadsheetID = id
 	}
 
 	sheetsSvc, err := sheets.NewService(ctx, option.WithHTTPClient(client))
@@ -177,12 +198,13 @@ func (t *GoogleSheetsWriteTool) Parameters() string {
 	return `{
 		"type": "object",
 		"properties": {
-			"spreadsheet_id": {"type": "string", "description": "The Google Sheets spreadsheet ID (required)"},
+			"spreadsheet_id": {"type": "string", "description": "The Google Sheets spreadsheet ID, if known"},
+			"name": {"type": "string", "description": "The spreadsheet's name, used to find it when no ID is known (e.g. 'Budget 2026'). One of spreadsheet_id or name is required."},
 			"range": {"type": "string", "description": "The A1 notation range (e.g., 'Sheet1!A1' or 'Sheet1!A1:C10')"},
 			"values": {"type": "array", "items": {"type": "array", "items": {"type": "string"}}, "description": "2D array of values to write. Each inner array is a row."},
 			"append": {"type": "boolean", "description": "If true, append values to end of sheet instead of overwriting. Default: false"}
 		},
-		"required": ["spreadsheet_id", "values"]
+		"required": ["values"]
 	}`
 }
 
@@ -192,10 +214,11 @@ func (t *GoogleSheetsWriteTool) RequiresConfirmation() bool {
 
 func (t *GoogleSheetsWriteTool) Execute(ctx context.Context, params json.RawMessage) (string, error) {
 	var args struct {
-		SpreadsheetID string     `json:"spreadsheet_id"`
-		Range         string     `json:"range"`
-		Values        [][]any    `json:"values"`
-		Append        bool       `json:"append"`
+		SpreadsheetID string  `json:"spreadsheet_id"`
+		Name          string  `json:"name"`
+		Range         string  `json:"range"`
+		Values        [][]any `json:"values"`
+		Append        bool    `json:"append"`
 	}
 	if err := json.Unmarshal(params, &args); err != nil {
 		return "", err
@@ -204,6 +227,19 @@ func (t *GoogleSheetsWriteTool) Execute(ctx context.Context, params json.RawMess
 	client, err := auth.GetGoogleClient(ctx, t.Cfg)
 	if err != nil {
 		return "", err
+	}
+
+	// Same name-lookup fallback google_sheets_read already had. Without it this
+	// tool could only ever be driven by an ID the planner had no way to obtain.
+	if strings.TrimSpace(args.SpreadsheetID) == "" {
+		id, msg, err := resolveSpreadsheetID(ctx, client, args.Name)
+		if err != nil {
+			return "", err
+		}
+		if msg != "" {
+			return msg, nil
+		}
+		args.SpreadsheetID = id
 	}
 
 	sheetsSvc, err := sheets.NewService(ctx, option.WithHTTPClient(client))

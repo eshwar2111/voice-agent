@@ -10,6 +10,8 @@ import (
 
 	"github.com/yourname/voice-agent/internal/executor"
 	"github.com/yourname/voice-agent/internal/ui"
+	"log"
+	"time"
 )
 
 type SpeakTool struct{}
@@ -93,8 +95,19 @@ func (t *SpeakTool) Execute(ctx context.Context, rawParams json.RawMessage) (str
 		// StreamSpeak returns immediately (it's non-blocking), but
 		// IsSpeaking() tracks the active PowerShell process
 		// We can't simply wait here without a sync primitive, so we poll briefly
+		// Poll with a sleep, not a bare spin. This loop had no delay at all, so
+		// it pegged a full CPU core for the entire duration of every spoken
+		// response — seconds at a time, on every reply the agent speaks. The
+		// deadline is a safety net: if IsSpeaking never clears (a wedged TTS
+		// process), this goroutine used to spin forever AND the island would be
+		// stuck out of idle with no way back.
+		deadline := time.Now().Add(5 * time.Minute)
 		for executor.IsSpeaking() {
-			// spin until the TTS worker finishes
+			if time.Now().After(deadline) {
+				log.Printf("[speak] TTS did not report completion within 5m — releasing UI state")
+				break
+			}
+			time.Sleep(50 * time.Millisecond)
 		}
 		ui.SetState(ui.StateIdle)
 	}()

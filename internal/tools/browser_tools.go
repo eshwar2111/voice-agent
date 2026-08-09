@@ -4,25 +4,86 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
+	"sync"
+	"time"
 
 	"github.com/chromedp/chromedp"
 )
 
+// browserOpTimeout bounds a single CDP operation. Chrome can stall
+// indefinitely: a page that never fires load, a modal dialog nobody dismisses,
+// or a browser the user closed out from under us. The executor runs tasks
+// sequentially, so one stalled Run() used to freeze the entire plan — and with
+// it the engine's busy flag — with no way back short of killing the process.
+const browserOpTimeout = 45 * time.Second
+
 var (
+	browserMu          sync.Mutex
 	browserAllocCtx    context.Context
 	browserAllocCancel context.CancelFunc
 	browserTaskCtx     context.Context
+	browserTaskCancel  context.CancelFunc
 )
 
+// getBrowserContext returns the long-lived chromedp context, creating the
+// browser on first use. It is deliberately NOT parented to any caller's ctx:
+// the browser outlives individual tool calls. Per-call bounds come from
+// runBrowser instead.
 func getBrowserContext() context.Context {
+	browserMu.Lock()
+	defer browserMu.Unlock()
 	if browserAllocCtx == nil {
 		opts := append(chromedp.DefaultExecAllocatorOptions[:],
 			chromedp.Flag("headless", false),
 		)
 		browserAllocCtx, browserAllocCancel = chromedp.NewExecAllocator(context.Background(), opts...)
-		browserTaskCtx, _ = chromedp.NewContext(browserAllocCtx)
+		browserTaskCtx, browserTaskCancel = chromedp.NewContext(browserAllocCtx)
 	}
 	return browserTaskCtx
+}
+
+// CloseBrowser tears down the shared Chrome instance. Safe to call more than
+// once; a later tool call transparently relaunches.
+func CloseBrowser() {
+	browserMu.Lock()
+	defer browserMu.Unlock()
+	if browserTaskCancel != nil {
+		browserTaskCancel()
+		browserTaskCancel = nil
+	}
+	if browserAllocCancel != nil {
+		browserAllocCancel()
+		browserAllocCancel = nil
+	}
+	browserAllocCtx, browserTaskCtx = nil, nil
+}
+
+// runBrowser executes actions against the shared browser under two deadlines:
+// a hard per-operation timeout, and the caller's own context (so cancelling a
+// plan, or shutting the app down, actually stops the browser work instead of
+// leaving it to finish on its own).
+func runBrowser(ctx context.Context, actions ...chromedp.Action) error {
+	runCtx, cancel := context.WithTimeout(getBrowserContext(), browserOpTimeout)
+	defer cancel()
+
+	if ctx != nil {
+		stop := make(chan struct{})
+		defer close(stop)
+		go func() {
+			select {
+			case <-ctx.Done():
+				cancel()
+			case <-stop:
+			}
+		}()
+	}
+
+	err := chromedp.Run(runCtx, actions...)
+	if err != nil && runCtx.Err() == context.DeadlineExceeded {
+		return fmt.Errorf("browser did not respond within %s (page stalled, or Chrome was closed): %w", browserOpTimeout, err)
+	}
+	return err
 }
 
 // BrowserReadPageTool connects to an existing Chrome instance (or launches one) and extracts the clean text content of the current page using CDP.
@@ -41,10 +102,8 @@ func (t *BrowserReadPageTool) Parameters() string {
 }
 
 func (t *BrowserReadPageTool) Execute(ctx context.Context, params json.RawMessage) (string, error) {
-	taskCtx := getBrowserContext()
-
 	var text string
-	err := chromedp.Run(taskCtx,
+	err := runBrowser(ctx,
 		chromedp.Evaluate(`document.body.innerText || document.documentElement.innerText`, &text),
 	)
 	if err != nil {
@@ -81,16 +140,21 @@ func (t *BrowserNavigateTool) Execute(ctx context.Context, params json.RawMessag
 		return "", fmt.Errorf("invalid parameters: %w", err)
 	}
 
-	taskCtx := getBrowserContext()
+	url := strings.TrimSpace(input.URL)
+	if url == "" {
+		return "", fmt.Errorf("browser_navigate requires a url")
+	}
+	// A bare "example.com" is what a planner produces most of the time; without
+	// a scheme chromedp treats it as a file path and lands on about:blank.
+	if !strings.Contains(url, "://") {
+		url = "https://" + url
+	}
 
-	err := chromedp.Run(taskCtx,
-		chromedp.Navigate(input.URL),
-	)
-	if err != nil {
+	if err := runBrowser(ctx, chromedp.Navigate(url)); err != nil {
 		return "", fmt.Errorf("failed to navigate: %w", err)
 	}
 
-	return fmt.Sprintf("Successfully navigated to %s", input.URL), nil
+	return fmt.Sprintf("Successfully navigated to %s", url), nil
 }
 
 func (t *BrowserNavigateTool) RequiresConfirmation() bool {

@@ -11,7 +11,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"time"
 )
 
 type openaiMessage struct {
@@ -84,11 +83,7 @@ func NewOpenAICompatible(apiKey, model, baseURL string) *OpenAICompatibleProvide
 		model:   model,
 		baseURL: baseURL,
 		client: &http.Client{
-			Transport: &http.Transport{
-				MaxIdleConns:        10,
-				MaxIdleConnsPerHost: 2,
-				IdleConnTimeout:     90 * time.Second,
-			},
+			Transport: newProviderTransport(),
 		},
 	}
 }

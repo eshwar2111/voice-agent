@@ -137,12 +137,12 @@ func (e *Engine) handleEvent(ctx context.Context, ev Event) {
 			cap := agentctx.CaptureAmbient(true) // app still focused (pill never steals focus)
 			audioData, err := audio.RecordDynamic(10*time.Second, 0.01, 32000)
 			if err != nil {
-				e.Events <- Event{Type: EventError, Err: fmt.Errorf("record missing: %w", err)}
+				e.emit(ctx, Event{Type: EventError, Err: fmt.Errorf("record missing: %w", err)})
 				return
 			}
 
 			if len(audioData) < 1600 {
-				e.Events <- Event{Type: EventError, Err: fmt.Errorf("audio too short")}
+				e.emit(ctx, Event{Type: EventError, Err: fmt.Errorf("audio too short")})
 				return
 			}
 
@@ -150,10 +150,10 @@ func (e *Engine) handleEvent(ctx context.Context, ev Event) {
 			fmt.Println("🎧 Transcribing audio with in-process Whisper...")
 			transcript, err := asr.Transcribe(audioData)
 			if err != nil {
-				e.Events <- Event{Type: EventError, Err: fmt.Errorf("transcription failed: %w", err)}
+				e.emit(ctx, Event{Type: EventError, Err: fmt.Errorf("transcription failed: %w", err)})
 				return
 			}
-			e.Events <- Event{Type: EventTranscribed, Payload: transcribedPayload{Transcript: transcript, Cap: cap}}
+			e.emit(ctx, Event{Type: EventTranscribed, Payload: transcribedPayload{Transcript: transcript, Cap: cap}})
 		}()
 
 	case EventTranscribed:
@@ -164,13 +164,27 @@ func (e *Engine) handleEvent(ctx context.Context, ev Event) {
 		// resolver first, falling back to Tier 1 cloud orchestration).
 		go func() {
 			ui.SetState(ui.StateExecuting)
-			if err := e.Dispatch.Handle(ctx, p.Transcript, p.Cap); err != nil {
-				e.Events <- Event{Type: EventError, Err: fmt.Errorf("dispatch failed: %w", err)}
+
+			// Bound the whole dispatch. Without a deadline the ctx here is the
+			// root app context, cancelled only at shutdown — so any call that
+			// never returns (the classic case being a cloud LLM request on a
+			// half-dead network) leaves this goroutine parked forever. It never
+			// emits, so isBusy is never cleared, and from then on EVERY trigger
+			// hits the "already processing" branch: the island sticks on
+			// Executing and the agent is dead until the process is restarted.
+			// The transport-level deadlines in internal/llm make that specific
+			// hang unreachable; this is the guarantee that no future blocking
+			// call anywhere under Handle can resurrect the same wedge.
+			dctx, cancel := context.WithTimeout(ctx, dispatchDeadline)
+			defer cancel()
+
+			if err := e.Dispatch.Handle(dctx, p.Transcript, p.Cap); err != nil {
+				e.emit(ctx, Event{Type: EventError, Err: fmt.Errorf("dispatch failed: %w", err)})
 				audit.LogAction(p.Transcript, "dispatch", nil, "FAILED: "+err.Error())
 				return
 			}
 			audit.LogAction(p.Transcript, "dispatch", nil, "SUCCESS")
-			e.Events <- Event{Type: EventToolExecuted, Payload: agent.Plan{Transcript: p.Transcript, Intent: "dispatch"}}
+			e.emit(ctx, Event{Type: EventToolExecuted, Payload: agent.Plan{Transcript: p.Transcript, Intent: "dispatch"}})
 		}()
 
 	case EventToolExecuted:
@@ -198,6 +212,25 @@ func (e *Engine) handleEvent(ctx context.Context, ev Event) {
 		e.isBusy = false
 		e.busyLock.Unlock()
 		e.signalCommandDone()
+	}
+}
+
+// dispatchDeadline is the absolute ceiling on one command's execution. Set well
+// above any legitimate multi-step plan (research fan-outs, GUI automation with
+// waits) — it exists to guarantee the busy flag always clears, not to police
+// slow work.
+const dispatchDeadline = 5 * time.Minute
+
+// emit posts an event unless the engine is already shutting down.
+//
+// Start()'s loop stops draining e.Events the moment ctx is cancelled, so a bare
+// `e.Events <- ...` from a background goroutine parks forever once the buffer
+// fills — one leaked goroutine per shutdown-during-command, holding whatever it
+// captured. Selecting on ctx.Done() makes the send give up instead.
+func (e *Engine) emit(ctx context.Context, ev Event) {
+	select {
+	case e.Events <- ev:
+	case <-ctx.Done():
 	}
 }
 

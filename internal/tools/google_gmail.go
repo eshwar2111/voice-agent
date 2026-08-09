@@ -327,16 +327,17 @@ func (t *GoogleGmailGetEmailTool) Name() string {
 }
 
 func (t *GoogleGmailGetEmailTool) Description() string {
-	return "Retrieve the full content of a specific email by its ID."
+	return "Retrieve the full content of a specific email. Give either messageId (from a prior search) or query — a Gmail search string like 'from:alice', 'latest', or 'subject:invoice' — and the newest match is opened."
 }
 
 func (t *GoogleGmailGetEmailTool) Parameters() string {
-	return `{"type": "object", "properties": {"messageId": {"type": "string", "description": "The unique ID of the Gmail message"}}, "required": ["messageId"]}`
+	return `{"type": "object", "properties": {"messageId": {"type": "string", "description": "The unique ID of the Gmail message, if known from a previous search"}, "query": {"type": "string", "description": "Gmail search query to locate the email when no ID is known, e.g. 'from:alice unread' or 'subject:invoice'"}}}`
 }
 
 func (t *GoogleGmailGetEmailTool) Execute(ctx context.Context, params json.RawMessage) (string, error) {
 	var args struct {
 		MessageId string `json:"messageId"`
+		Query     string `json:"query"`
 	}
 	if err := json.Unmarshal(params, &args); err != nil {
 		return "", err
@@ -352,7 +353,27 @@ func (t *GoogleGmailGetEmailTool) Execute(ctx context.Context, params json.RawMe
 		return "", fmt.Errorf("unable to retrieve Gmail client: %w", err)
 	}
 
-	msg, err := srv.Users.Messages.Get("me", args.MessageId).Do()
+	// A Gmail message ID is an opaque hex string. Nothing the user says out loud
+	// contains one, and the planner has no way to invent it — so requiring it
+	// made "read my latest email from Alice" impossible to satisfy in a single
+	// step. Resolve a natural-language query to an ID here instead.
+	msgID := strings.TrimSpace(args.MessageId)
+	if msgID == "" {
+		q := strings.TrimSpace(args.Query)
+		if q == "" || strings.EqualFold(q, "latest") || strings.EqualFold(q, "last") {
+			q = "in:inbox"
+		}
+		list, err := srv.Users.Messages.List("me").Q(q).MaxResults(1).Do()
+		if err != nil {
+			return "", fmt.Errorf("unable to search for the email: %w", err)
+		}
+		if len(list.Messages) == 0 {
+			return fmt.Sprintf("No email found matching: %s", q), nil
+		}
+		msgID = list.Messages[0].Id
+	}
+
+	msg, err := srv.Users.Messages.Get("me", msgID).Do()
 	if err != nil {
 		return "", fmt.Errorf("unable to retrieve message: %w", err)
 	}
