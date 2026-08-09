@@ -15,6 +15,16 @@ go build -ldflags="-s -w -H windowsgui" -o voice-agent.exe ./cmd/app
 
 Fill in Result / Notes as you go.
 
+> **Run status (2026-08-09).** Binary rebuilt with `-tags whisper` at 31MB; Go suite (13 pkgs,
+> `-race` on `internal/engine`) and all 60 JS tests green. Only the rows marked below could be
+> settled without a desktop — **A1–A8, A10, B1–B4, C1–C6, D1–D6, D8 remain unrun** and need a
+> human at the machine. Nothing here has been observed moving.
+>
+> Two environment faults will distort several rows until fixed: the Porcupine key is refused
+> (`ACTIVATION_REFUSED`, code `00000136`) so wake-word triggering is dead, and the Google token
+> was still `invalid_grant` as of the 21:21 run, so anything touching Calendar/Gmail (A7, D8's
+> OAuth leg) will fail for that reason rather than a UI one.
+
 ---
 
 ## A. The checks that gate merge
@@ -32,7 +42,7 @@ highest risk.
 | A6 | **Two long results back to back** — get a >55-char answer, then let a timer complete while the sheet is open | The second result replaces the first, and **Copy copies the new text**. Regression fixed late; highest-value repro. | |
 | A7 | **Run a multi-step command** (`ai give me my Google Workspace brief`) and watch the pill continuously | Shows a step ticker (`3 of 5 · …`), never goes blank mid-operation, never shows `Working…` as the only feedback. | |
 | A8 | **Approval end-to-end**: trigger a gated action, then (separately) click Approve, click Cancel, click the island body while the prompt is up, press Esc, and quit the app with a prompt open | Each resolves cleanly; the executor never hangs. No Go test can exercise `confirmChan` against a real WebView. | |
-| A9 | **Double-click Approve rapidly** | Only one approval registers. A stray second click must be dropped and logged, never delivered to a queued prompt. Check `voice-agent.log` for the drop line. | |
+| A9 | **Double-click Approve rapidly** | Only one approval registers. A stray second click must be dropped and logged, never delivered to a queued prompt. Check `voice-agent.log` for the drop line. | **Partial — automated only.** JS test `fix round 3 (R3): a stray second resolveConfirm on the same prompt is dropped, not delivered` passes. The related engine-side double-fire (repeat triggers, not repeat approvals) is now covered by `runtime_test.go`. Human repro still wanted: neither test drives a real WebView. |
 | A10 | **Two approvals at once** — start a voice command needing approval, then submit `ai <something risky>` from the command bar | Both prompts appear in turn; neither goroutine hangs. | |
 
 ## B. Display and scaling
@@ -70,7 +80,7 @@ No test can answer these. They are the actual request.
 | D4 | **Toast visible** | `Copy` on a result and `Save` in settings both show a visible toast. It was clipped out of the region until the final fix wave. | |
 | D5 | **Dormant wake** | Let the island go dormant, then confirm it wakes on hover, on a Spotify track change, and on an incoming approval. | |
 | D6 | **Startup** | Launch 10×. Island always appears; no blank canvas, no dropped first event, no flash of a default-styled window. | |
-| D7 | **Log hygiene** | `voice-agent.log` has no `unhandled event`, no `unknown activity`, no JS errors. | |
+| D7 | **Log hygiene** | `voice-agent.log` has no `unhandled event`, no `unknown activity`, no JS errors. | **Pass, but weak evidence.** Zero matches for `unhandled event` / `unknown activity` / JS error patterns in the 21:20–21:21 session. That session only reached the Control Center — it never exercised the A-series, so re-check after a real pass. Known unrelated errors present: Porcupine `ACTIVATION_REFUSED`, Google `invalid_grant`. |
 | D8 | **Control Center round-trip** | All four tabs, Save, and one OAuth connect. Esc closes. | |
 
 ---
