@@ -388,3 +388,41 @@ func TestRunJitterDoesNotRewake(t *testing.T) {
 		t.Error("a few hundred ms of StartsAt jitter must not look like a new meeting and re-wake")
 	}
 }
+
+// Two genuinely different meetings can start in the same clock minute — a
+// cancelled 12:00:00 replaced by a different 12:00:30 one. Minute-truncated
+// timestamps collide there and suppress the second meeting's alerts entirely.
+// A real calendar event ID cannot collide.
+func TestMeetingDistinguishesSameMinuteByID(t *testing.T) {
+	clk := &fakeClock{t: time.Date(2026, 8, 9, 12, 0, 0, 0, time.UTC)}
+	m := NewMeetingProvider(clk, nil)
+
+	a := &NextMeeting{ID: "evt-A", Title: "Standup", StartsAt: clk.t.Add(5 * time.Minute)}
+	first, _ := m.activityFor(a)
+	if !first.Significant {
+		t.Fatalf("first meeting crossing T-5m should wake")
+	}
+
+	// Different event, same clock minute, 30s later.
+	b := &NextMeeting{ID: "evt-B", Title: "Review", StartsAt: clk.t.Add(5*time.Minute + 30*time.Second)}
+	second, _ := m.activityFor(b)
+	if !second.Significant {
+		t.Errorf("a DIFFERENT meeting in the same clock minute must get its own wake — " +
+			"minute-truncated identity collided here and silently suppressed it")
+	}
+}
+
+// Same event re-fetched with jittered timestamps must NOT re-wake.
+func TestMeetingSameIDDoesNotRewakeOnJitter(t *testing.T) {
+	clk := &fakeClock{t: time.Date(2026, 8, 9, 12, 0, 0, 0, time.UTC)}
+	m := NewMeetingProvider(clk, nil)
+
+	a := &NextMeeting{ID: "evt-A", Title: "Standup", StartsAt: clk.t.Add(5 * time.Minute)}
+	if first, _ := m.activityFor(a); !first.Significant {
+		t.Fatalf("first crossing should wake")
+	}
+	jittered := &NextMeeting{ID: "evt-A", Title: "Standup", StartsAt: clk.t.Add(5*time.Minute + 300*time.Millisecond)}
+	if second, _ := m.activityFor(jittered); second.Significant {
+		t.Errorf("same event ID must not re-wake on a jittered re-fetch")
+	}
+}

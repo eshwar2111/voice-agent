@@ -16,6 +16,13 @@ const LookaheadMinutes = 60
 var wakeThresholds = []int{0, 1, 5}
 
 type NextMeeting struct {
+	// ID is the calendar's own event identifier. It is the instance key: two
+	// genuinely different meetings can start in the same clock minute (a
+	// cancelled 12:00:00 replaced by a 12:00:30 one), and any timestamp-derived
+	// key collides there and silently suppresses the second meeting's alerts.
+	// Empty ID falls back to a minute-truncated start, which is still correct
+	// for a source that has no IDs — just collision-prone.
+	ID       string
 	Title    string
 	JoinURL  string
 	StartsAt time.Time
@@ -39,7 +46,7 @@ type MeetingProvider struct {
 	lastWake int
 	// lastMeeting is the minute-truncated StartsAt of the meeting lastWake
 	// refers to.
-	lastMeeting time.Time
+	lastMeeting string
 	// live tracks whether the last poll produced a visible activity, so Run
 	// knows when to call end().
 	live bool
@@ -69,8 +76,8 @@ func (m *MeetingProvider) activityFor(n *NextMeeting) (Activity, bool) {
 	// resolution, so sub-minute jitter in StartsAt across polls (timezone
 	// re-normalization, source precision differences) must not look like a
 	// new meeting and replay the sequence.
-	key := n.StartsAt.Truncate(time.Minute)
-	if !key.Equal(m.lastMeeting) {
+	key := meetingKey(n)
+	if key != m.lastMeeting {
 		m.lastWake = -1
 		m.lastMeeting = key
 	}
@@ -153,4 +160,15 @@ func (m *MeetingProvider) Run(ctx context.Context, emit func(Activity), end func
 			}
 		}
 	}
+}
+
+// meetingKey identifies a meeting INSTANCE. The calendar's event ID is stable
+// across re-fetches and cannot collide between different meetings; a timestamp
+// can do neither. Truncating to the minute is only the fallback for a source
+// that supplies no ID, and matches the countdown's own resolution.
+func meetingKey(n *NextMeeting) string {
+	if n.ID != "" {
+		return "id:" + n.ID
+	}
+	return "at:" + n.StartsAt.Truncate(time.Minute).Format(time.RFC3339)
 }

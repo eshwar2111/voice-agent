@@ -58,6 +58,11 @@ func nextMeetingFromCalendar(ctx context.Context, cfg *config.Config) (*island.N
 	var result struct {
 		Artifacts struct {
 			Data []struct {
+				// ID is the meeting's instance key downstream (island.meetingKey):
+				// two different meetings can start in the same clock minute, and a
+				// timestamp-derived key collides there and drops the second one's
+				// alerts entirely.
+				ID        string `json:"id"`
 				Summary   string `json:"summary"`
 				StartTime string `json:"startTime"`
 				JoinLink  string `json:"joinLink"`
@@ -85,7 +90,7 @@ func nextMeetingFromCalendar(ctx context.Context, cfg *config.Config) (*island.N
 			continue // already started
 		}
 		if best == nil || t.Before(best.StartsAt) {
-			best = &island.NextMeeting{Title: ev.Summary, StartsAt: t, JoinURL: ev.JoinLink}
+			best = &island.NextMeeting{ID: ev.ID, Title: ev.Summary, StartsAt: t, JoinURL: ev.JoinLink}
 		}
 	}
 	return best, nil
