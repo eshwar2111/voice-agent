@@ -47,9 +47,13 @@ func (o *Orchestrator) Run(ctx gocontext.Context, userText, sysContext string) e
 
 	subGoals, err := o.decompose(ctx, userText, sysContext)
 	if err != nil || len(subGoals) == 0 {
-		// Fallback: treat the entire text as a single google_workflow_agent call
-		log.Printf("[Orchestrator] Decompose failed or empty, falling back to single-agent: %v", err)
-		subGoals = []SubGoal{{Agent: "google_workflow_agent", Goal: userText}}
+		// Fallback: answer directly with the LLM. The old fallback routed EVERY
+		// unclassified request to google_workflow_agent, so a plain question like
+		// "explain quantum tunneling" tried to use Google and failed on an OAuth
+		// token — surfacing as a bogus "Step failed / Approve" card. A general
+		// query belongs on the answer path, never on an app agent.
+		log.Printf("[Orchestrator] Decompose failed or empty, answering directly: %v", err)
+		subGoals = []SubGoal{{Agent: "answer", Goal: userText}}
 	}
 
 	// Fast path: single sub-goal with no orchestration overhead
@@ -95,7 +99,26 @@ func (o *Orchestrator) Run(ctx gocontext.Context, userText, sysContext string) e
 func (o *Orchestrator) execSubGoal(ctx gocontext.Context, sg SubGoal) error {
 	agentName := sg.Agent
 	if agentName == "" {
-		agentName = "google_workflow_agent"
+		agentName = "answer"
+	}
+
+	// General-answer path: a question/explanation/chit-chat that needs no app or
+	// user data. Answer directly with the LLM and surface it (ShowOutputOverlay
+	// also speaks it for voice commands). Never routes to an app agent, so it can
+	// never fail on an OAuth token.
+	switch agentName {
+	case "answer", "chat", "respond", "general":
+		prompt := "You are a concise, helpful voice assistant. Answer conversationally in a few sentences (it may be read aloud).\n\n"
+		if sg.Context != "" {
+			prompt += "Context:\n" + sg.Context + "\n\n"
+		}
+		prompt += sg.Goal
+		ans, err := o.Provider.Generate(ctx, prompt, nil)
+		if err != nil {
+			return err
+		}
+		ui.ShowOutputOverlay(ans)
+		return nil
 	}
 
 	// Build a one-task plan so the existing ExecutePlan / Phase 3 approval loop runs unchanged.
@@ -123,6 +146,10 @@ const decompositionPrompt = `You are a task decomposition engine for a voice ass
 Break the user's request into sub-goals, each routed to a specialist agent.
 
 Available agents:
+- "answer" — general questions, explanations, definitions, advice, calculations,
+  writing, or chit-chat that need NO specific app and NONE of the user's private
+  data. The assistant just answers directly. THIS IS THE DEFAULT for anything
+  that isn't clearly a Google or Spotify task.
 - "google_workflow_agent"  — multi-step Google Workspace tasks (Gmail, Calendar, Drive, Docs, Sheets, Slides)
 - "spotify_workflow_agent" — multi-step Spotify tasks (play, queue, recommend, curate)
 - "google_workspace_assistant" — single-step Workspace lookups or simple drafts
@@ -131,9 +158,11 @@ Available agents:
 %s
 
 Rules:
-0. NEVER invent an agent or tool name. If nothing above fits, use "speak" to
-   tell the user you cannot do it. A name that is not on the list above fails
-   the whole plan with "tool not found in registry".
+0. NEVER invent an agent or tool name. If a request is a general question or
+   explanation ("explain X", "what is Y", "how do I…", "write me…"), route the
+   WHOLE thing to a single "answer" sub-goal — do NOT send it to a Google or
+   Spotify agent. Only use google_*/spotify_* when the request clearly needs
+   that app or the user's data there.
 1. Return ONLY a JSON array — no extra text.
 2. Each element: {"agent":"<name>","goal":"<natural language sub-goal>","context":"<optional extra context>"}
 3. Keep sub-goals tightly scoped. A Spotify action must NOT be in the same sub-goal as a Google action.
