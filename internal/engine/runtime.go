@@ -63,6 +63,12 @@ type Engine struct {
 	// pending is the trigger that started the in-flight command, held so its
 	// waiter is released by that command's completion and nothing else.
 	pending ui.Trigger
+	// curCancel cancels the context of the command currently being dispatched.
+	// Ctrl+Esc (the kill switch) calls it via CancelCurrent to halt just the
+	// in-flight command, leaving the engine, ambient loop, island, and WebView
+	// alive. It is nil between commands; both it and pending are guarded by
+	// busyLock.
+	curCancel context.CancelFunc
 }
 
 func NewEngine(cfg *config.Config, provider llm.Provider, registry *tools.Registry, store *memory.Store, retriever *memory.Retriever, rateLimiter *security.RateLimiter, profile *security.Profile, trusted *trust.TrustedExecutor) *Engine {
@@ -188,6 +194,12 @@ func (e *Engine) handleEvent(ctx context.Context, ev Event) {
 			// call anywhere under Handle can resurrect the same wedge.
 			dctx, cancel := context.WithTimeout(ctx, dispatchDeadline)
 			defer cancel()
+			// Publish this command's cancel so Ctrl+Esc can halt just this
+			// command (see CancelCurrent). Cleared when the command finishes so
+			// a later kill-switch press is a no-op rather than cancelling a
+			// stale context.
+			e.setCurrentCancel(cancel)
+			defer e.clearCurrentCancel()
 
 			if err := e.Dispatch.Handle(dctx, p.Transcript, p.Cap); err != nil {
 				e.emit(ctx, Event{Type: EventError, Err: fmt.Errorf("dispatch failed: %w", err)})
@@ -259,6 +271,35 @@ func (e *Engine) finishCommand() {
 	e.pending = ui.Trigger{}
 	e.busyLock.Unlock()
 	trig.Finish()
+}
+
+// setCurrentCancel records the cancel func of the command being dispatched.
+func (e *Engine) setCurrentCancel(cancel context.CancelFunc) {
+	e.busyLock.Lock()
+	e.curCancel = cancel
+	e.busyLock.Unlock()
+}
+
+// clearCurrentCancel drops the reference once the command has finished, so a
+// later CancelCurrent does not fire against a stale context.
+func (e *Engine) clearCurrentCancel() {
+	e.busyLock.Lock()
+	e.curCancel = nil
+	e.busyLock.Unlock()
+}
+
+// CancelCurrent halts the command currently in flight by cancelling its context.
+// This is the Ctrl+Esc kill switch: it stops the active command only and leaves
+// the root context — and therefore the engine, ambient loop, island, and WebView
+// — untouched. It is a no-op when nothing is running.
+func (e *Engine) CancelCurrent() {
+	e.busyLock.Lock()
+	cancel := e.curCancel
+	e.busyLock.Unlock()
+	if cancel != nil {
+		log.Println("Engine: cancelling current command (kill switch)")
+		cancel()
+	}
 }
 
 // TriggerAndWait fires a voice capture (as if the pill were clicked) and blocks until the

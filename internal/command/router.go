@@ -132,14 +132,22 @@ func RunAICommand(input string) {
 		return
 	}
 
-	// Phase 4: Route through the Orchestrator instead of calling ExecutePlan directly.
-	// For plans produced by the LLM's own ClassifyAndPlan pass we honour them as-is
-	// (single-step dispatch); the Orchestrator's decomposer is only invoked when the
-	// user sends a free-text "ai <request>" that contains no explicit tool selection.
+	// Execute the plan we just built and validated. Routing through orch.Run
+	// here would re-plan from scratch, discarding both the upfront planning and
+	// the validatePlan gate above — so when the plan already has tasks we run it
+	// directly through the executor, which applies the trust layer and the
+	// profile Allow gate. Only a genuinely empty plan (no tool selection) is
+	// handed to the Orchestrator to be decomposed.
 	executor := agent.NewExecutor(globalRegistry)
 	executor.Trusted = globalTrusted
 	if globalProfile != nil {
 		executor.Allow = globalProfile.IsAllowed
+	}
+	if len(plan.Tasks) > 0 {
+		if err := executor.ExecutePlan(globalCtx, plan); err != nil {
+			log.Printf("Plan execution failed: %v", err)
+		}
+		return
 	}
 	orch := agent.NewOrchestrator(globalProvider, executor)
 	if err := orch.Run(globalCtx, prompt, contextStr); err != nil {

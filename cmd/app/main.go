@@ -196,7 +196,6 @@ func main() {
 	rateLimiter := security.NewRateLimiter(5) // 5 seconds cooldown
 
 	command.InitRouter(registry, provider, &profile)
-	command.SetCancelFunc(cancel)
 
 	// Trust layer: build a single *trust.TrustedExecutor and inject it into every
 	// execution path (dispatch → engine + router AI commands), gated by config.
@@ -271,6 +270,13 @@ func main() {
 	// Initialize and run the Event-Driven Engine
 	engineApp := engine.NewEngine(cfg, provider, registry, memStore, memRetriever, rateLimiter, &profile, trustedExec)
 	go engineApp.Start(rootCtx)
+
+	// Wire the Ctrl+Esc kill switch to halt only the in-flight command rather
+	// than tearing down the root context (which would kill the engine, ambient
+	// loop, and island but leave the WebView alive — a half-dead app). The root
+	// context is still cancelled by the signal handler and after the WebView
+	// closes.
+	command.SetCancelFunc(engineApp.CancelCurrent)
 
 	// Start the ambient (proactive suggestions) engine, gated by config + privacy mode.
 	if cfg.EnableProactive && !cfg.PrivacyMode {
