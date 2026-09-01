@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -110,6 +111,22 @@ func init() {
 	confirmChan = make(chan bool)
 }
 
+// SpeakFunc, when non-nil, speaks an answer aloud. It is injected once from
+// main (wired to executor.Speak) and gated by cfg.SpeakResponses — left nil the
+// UI stays silent. Keeping it as an injected func means internal/ui takes no
+// dependency on internal/executor, preserving the layering.
+var SpeakFunc func(string)
+
+// speakMode is toggled per command by the engine: on for a voice-originated
+// command, off for the typed path. Only ShowOutputOverlay (answers) consults it;
+// status messages via ShowNotification are never spoken.
+var speakMode atomic.Bool
+
+// SetSpeakMode enables or disables speaking of answers for the current command.
+func SetSpeakMode(on bool) {
+	speakMode.Store(on)
+}
+
 func SetState(s AgentState) {
 	stateMutex.Lock()
 	defer stateMutex.Unlock()
@@ -179,6 +196,15 @@ func ShowCommandBarInOverlay() {
 func ShowOutputOverlay(text string) {
 	if w == nil {
 		return
+	}
+	// Speak the answer for voice-originated commands. This is the single point
+	// every textual ANSWER funnels through (short answers still route through
+	// ShowNotification below, but only from here — direct ShowNotification/
+	// SetState status messages never reach this call and so are never spoken).
+	// Run off the UI dispatch: SpeakFunc blocks on SAPI, and this may be called
+	// on the WebView thread. speakMode is off for the typed path.
+	if speakMode.Load() && SpeakFunc != nil {
+		go SpeakFunc(text)
 	}
 	if len(text) < 55 {
 		ShowNotification(text)

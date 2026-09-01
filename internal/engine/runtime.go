@@ -182,6 +182,13 @@ func (e *Engine) handleEvent(ctx context.Context, ev Event) {
 		go func() {
 			ui.SetState(ui.StateExecuting)
 
+			// Voice-originated commands speak their answers ("Jarvis" mode); the
+			// typed command path never enables this, so only ShowOutputOverlay
+			// calls reached during THIS dispatch are spoken. Cleared on the way
+			// out so a following typed command stays silent.
+			ui.SetSpeakMode(true)
+			defer ui.SetSpeakMode(false)
+
 			// Bound the whole dispatch. Without a deadline the ctx here is the
 			// root app context, cancelled only at shutdown — so any call that
 			// never returns (the classic case being a cloud LLM request on a

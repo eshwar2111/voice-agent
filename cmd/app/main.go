@@ -20,6 +20,7 @@ import (
 	"github.com/yourname/voice-agent/internal/command"
 	agentctx "github.com/yourname/voice-agent/internal/context"
 	"github.com/yourname/voice-agent/internal/engine"
+	"github.com/yourname/voice-agent/internal/executor"
 	"github.com/yourname/voice-agent/internal/island"
 	"github.com/yourname/voice-agent/internal/llm"
 	"github.com/yourname/voice-agent/internal/memory"
@@ -118,6 +119,14 @@ func main() {
 	// so warn loudly rather than let that surface as a silent failure later.
 	if strings.TrimSpace(cfg.APIKey) == "" {
 		log.Println("[config] WARNING: api_key is empty — cloud commands will fail; set it in config.json or the Settings gear")
+	}
+
+	// Wire the "Jarvis" speak-answers path. The engine enables speak-mode only
+	// for voice-originated commands, so this func is invoked solely for those
+	// answers; leaving it nil (speak_responses=false) keeps the agent silent.
+	if cfg.SpeakResponses {
+		ui.SpeakFunc = func(s string) { _ = executor.Speak(s) }
+		log.Println("[config] speak_responses=true — voice answers will be spoken aloud")
 	}
 
 	// Apply whisper paths from config
