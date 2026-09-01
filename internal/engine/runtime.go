@@ -227,7 +227,19 @@ func (e *Engine) handleEvent(ctx context.Context, ev Event) {
 		}
 
 		fmt.Println("✅ Done execution.")
-		if !executor.IsSpeaking() {
+		if executor.IsSpeaking() {
+			// A response is being spoken (voice-out, or the speak tool). Don't cut
+			// it off with an idle flip now — but DO return to idle once speech
+			// ends, or the pill sticks on "Working…" forever after the answer
+			// finishes. (finishCommand still runs immediately so the engine is
+			// free to accept the next command while the tail of speech plays.)
+			go func() {
+				for executor.IsSpeaking() {
+					time.Sleep(150 * time.Millisecond)
+				}
+				ui.SetState(ui.StateIdle)
+			}()
+		} else {
 			ui.SetState(ui.StateIdle)
 		}
 		e.finishCommand()

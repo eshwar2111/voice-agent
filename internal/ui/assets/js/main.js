@@ -579,9 +579,14 @@ export function closeSurface(){
 window.openSurface = openSurface;
 window.closeSurface = closeSurface;
 
-// Trailing control on agent.run — hides the progress display without touching
-// the running plan (see activities.js note in Task 6).
-window.dismissRunDisplay = () => { endActivity('agent.run', syncAndRerender) };
+// Trailing control on agent.run — returns the pill to the calm idle (mic) face
+// without touching the running plan. Must go through updateUI('idle'), not a bare
+// endActivity: ending agent.run while agentState is still 'acting' leaves the
+// render with no content to show → a BLANK pill (the reported bug). updateUI
+// clears agentState too, so the idle mic/gear face renders. (If the plan is
+// genuinely still running, a later progress update or the engine's own idle on
+// completion updates the pill again — never blank.)
+window.dismissRunDisplay = () => { updateUI('idle') };
 
 island.addEventListener('mouseenter', () => { store.hover = true;  rerender() });
 island.addEventListener('mouseleave', () => { store.hover = false; rerender() });
