@@ -333,9 +333,12 @@ func main() {
 			Describe:   trust.DefaultDescribe,
 			Narrate:    ui.ShowNotification,
 			Ask: func(s trust.Step, reason string) trust.Decision {
-				if ui.AskStepChoice(reason) {
-					return trust.Retry
-				}
+				// The step already exhausted its automatic retries (the ladder's
+				// retry rung ran before this), so a "Step failed — Approve/Cancel"
+				// card is misleading: approving just re-runs a doomed call. Surface
+				// a plain, human message on the result overlay and stop, instead of
+				// dumping a raw error behind an Approve button.
+				ui.ShowOutputOverlay("Sorry, I couldn't finish that — " + reason)
 				return trust.Abort
 			},
 			Replan: func(ctx context.Context, remaining []trust.Step, failed trust.Step, err error) []trust.Step {

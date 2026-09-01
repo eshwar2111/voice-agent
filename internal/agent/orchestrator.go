@@ -121,11 +121,22 @@ func (o *Orchestrator) execSubGoal(ctx gocontext.Context, sg SubGoal) error {
 		return nil
 	}
 
-	// Build a one-task plan so the existing ExecutePlan / Phase 3 approval loop runs unchanged.
-	params, _ := json.Marshal(map[string]string{
-		"goal":    sg.Goal,
-		"context": sg.Context,
-	})
+	// Build the tool's params. The high-level agents take a {goal, context} shim
+	// and do their own internal planning. A RAW tool (create_file, open_file, …)
+	// needs its ACTUAL arguments — passing {goal, context} to create_file gave it
+	// no "filename" and it hard-failed ("create_file requires a filename") even
+	// though the request clearly named the file. Generate real args from the
+	// tool's own JSON schema.
+	var params json.RawMessage
+	if goalAgents[agentName] {
+		params, _ = json.Marshal(map[string]string{"goal": sg.Goal, "context": sg.Context})
+	} else {
+		p, err := o.generateToolParams(ctx, agentName, sg)
+		if err != nil {
+			return err
+		}
+		params = p
+	}
 
 	plan := Plan{
 		Intent: sg.Goal,
@@ -135,6 +146,66 @@ func (o *Orchestrator) execSubGoal(ctx gocontext.Context, sg SubGoal) error {
 	}
 
 	return o.Executor.ExecutePlan(ctx, plan)
+}
+
+// goalAgents take a {goal, context} shim and plan internally; every other tool
+// gets real, schema-shaped arguments via generateToolParams.
+var goalAgents = map[string]bool{
+	"google_workflow_agent":      true,
+	"spotify_workflow_agent":     true,
+	"google_workspace_assistant": true,
+	"spotify_assistant":          true,
+	"google_ai":                  true,
+	"spotify_ai_curate":          true,
+	"research":                   true,
+}
+
+// generateToolParams asks the LLM to produce a raw tool's arguments from its own
+// schema and the user's request, inferring sensible defaults for required fields
+// that weren't spelled out (so "create a file with hello world" gets a default
+// filename rather than failing).
+func (o *Orchestrator) generateToolParams(ctx gocontext.Context, tool string, sg SubGoal) (json.RawMessage, error) {
+	t, found := o.Executor.Registry.Get(tool)
+	if !found {
+		return nil, fmt.Errorf("tool not found in registry: %s", tool)
+	}
+	prompt := fmt.Sprintf(`Produce the arguments for a single tool call as JSON.
+
+Tool: %s
+What it does: %s
+Argument schema (JSON Schema):
+%s
+
+User request: %s
+Extra context (may be empty): %s
+
+Rules:
+- Return ONLY a single JSON object of arguments. No prose, no markdown fences.
+- Include every REQUIRED field. Infer values from the request.
+- If a required field is genuinely unspecified, choose a sensible default (e.g. a
+  reasonable filename like "note.txt") rather than leaving it blank.`,
+		tool, t.Description(), t.Parameters(), sg.Goal, sg.Context)
+
+	raw, err := o.Provider.Generate(ctx, prompt, nil)
+	if err != nil {
+		return nil, err
+	}
+	obj := extractJSONObject(raw)
+	var check map[string]any
+	if err := json.Unmarshal([]byte(obj), &check); err != nil {
+		return nil, fmt.Errorf("couldn't work out the details for %s", tool)
+	}
+	return json.RawMessage(obj), nil
+}
+
+// extractJSONObject returns the first {...} block in s, or "{}".
+func extractJSONObject(s string) string {
+	start := strings.Index(s, "{")
+	end := strings.LastIndex(s, "}")
+	if start == -1 || end == -1 || end <= start {
+		return "{}"
+	}
+	return s[start : end+1]
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
