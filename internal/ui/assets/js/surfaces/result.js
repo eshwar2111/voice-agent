@@ -14,15 +14,15 @@ export function render(payload){
   root.className = 'surface-result';
   root.innerHTML =
     '<div class="rhead">' +
-      '<div class="rhead-id"><svg class="ico"><use href="#i-sparkle"/></svg><span>Answer</span></div>' +
+      '<div class="rhead-id"><span class="spark"><svg class="ico"><use href="#i-sparkle"/></svg></span><span>Answer</span></div>' +
       '<button class="btn ghost sm" type="button" id="resultCopyBtn">Copy</button>' +
     '</div>' +
-    '<div class="obody md" id="outputBody"></div>' +
+    '<div class="obody md" id="outputBody"><div class="md-inner"></div></div>' +
     '<div class="footer"><div class="actions">' +
       '<button class="btn ghost" type="button" id="resultAskBtn">Ask another</button>' +
     '</div></div>';
 
-  root.querySelector('#outputBody').innerHTML = renderContent(latestOutput);
+  root.querySelector('#outputBody .md-inner').innerHTML = renderContent(latestOutput);
   root.querySelector('#resultCopyBtn').onclick = copyOutput;
   root.querySelector('#resultAskBtn').onclick = () => window.openSurface && window.openSurface('command');
   return root;

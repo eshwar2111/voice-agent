@@ -39,30 +39,49 @@ kbd{font:600 11px var(--font);color:var(--ink-2);background:rgba(255,255,255,.07
 .item-meta{font-size:11.5px;color:var(--ink-2)}
 .surface-command,.surface-result,.surface-approve{display:flex;flex-direction:column;width:100%;height:100%}
 
-/* ─── Result surface: compact header + Markdown body ──────────────────────── */
-.rhead{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:15px 20px 12px;border-bottom:1px solid var(--stroke);width:100%}
-.rhead-id{display:flex;align-items:center;gap:8px;font-size:11.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)}
-.rhead-id .ico{width:15px;height:15px}
+/* ─── Result surface: material, composed header/body, Markdown ─────────────── */
+.surface-result{position:relative}
+/* soft top-lit accent glow — depth without weight (Apple vibrancy cue) */
+.surface-result::before{content:"";position:absolute;inset:0 0 auto 0;height:190px;pointer-events:none;
+  background:radial-gradient(120% 100% at 50% -25%, color-mix(in srgb,var(--accent) 13%,transparent), transparent 70%)}
+
+.rhead{position:relative;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 20px 13px;width:100%}
+.rhead::after{content:"";position:absolute;left:20px;right:20px;bottom:0;height:1px;
+  background:linear-gradient(90deg,transparent,var(--stroke) 14%,var(--stroke) 86%,transparent)}
+.rhead-id{display:flex;align-items:center;gap:10px;font-size:11.5px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-2)}
+.rhead-id .spark{display:grid;place-items:center;width:26px;height:26px;border-radius:9px;color:var(--accent);
+  background:color-mix(in srgb,var(--accent) 16%,transparent);
+  box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 24%,transparent), 0 0 18px -5px var(--accent)}
+.rhead-id .spark .ico{width:15px;height:15px}
 .btn.sm{padding:6px 13px;font-size:12px;border-radius:9px}
 
-.obody.md{color:var(--ink);font-size:14px;line-height:1.68;max-width:70ch}
-.md > :first-child{margin-top:0}
-.md > :last-child{margin-bottom:0}
+/* obody is the flex scroll area; md-inner uses margin:auto so a SHORT answer sits
+   optically centered (no void), while a LONG answer top-aligns and scrolls. */
+.obody{position:relative;flex:1;width:100%;overflow:auto;display:flex;flex-direction:column;padding:20px 24px}
+.md-inner{margin:auto 0;width:100%;max-width:64ch;color:var(--ink);font-size:14px;line-height:1.72}
+.md-inner > :first-child{margin-top:0}
+.md-inner > :last-child{margin-bottom:0}
+.md-inner > p:first-child{font-size:15.5px;line-height:1.6;color:#f2f4f8;margin-bottom:14px}
 .md p{margin:0 0 12px}
 .md h2{font-size:16px;font-weight:660;letter-spacing:-.02em;margin:18px 0 8px}
 .md h3{font-size:14px;font-weight:660;margin:16px 0 6px}
 .md h4{font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-2);margin:16px 0 6px}
-.md ul,.md ol{margin:0 0 12px;padding-left:22px;display:flex;flex-direction:column;gap:5px}
+.md ul,.md ol{margin:0 0 12px;padding-left:22px;display:flex;flex-direction:column;gap:6px}
 .md li{padding-left:3px}
 .md li::marker{color:var(--accent)}
-.md strong{font-weight:680;color:var(--ink)}
+.md strong{font-weight:680;color:#fff}
 .md em{font-style:italic}
 .md a{color:var(--accent);text-decoration:none;border-bottom:1px solid color-mix(in srgb,var(--accent) 40%,transparent)}
 .md a:hover{border-bottom-color:var(--accent)}
 .md code{font:600 12.5px ui-monospace,"SF Mono","Cascadia Code",Consolas,monospace;background:rgba(255,255,255,.08);border:1px solid var(--stroke);border-radius:6px;padding:1px 6px}
-.md pre.code{margin:0 0 12px;padding:12px 14px;border-radius:12px;overflow-x:auto;background:rgba(0,0,0,.28);border:1px solid var(--stroke)}
+.md pre.code{margin:0 0 12px;padding:13px 15px;border-radius:12px;overflow-x:auto;background:rgba(0,0,0,.32);border:1px solid var(--stroke)}
 .md pre.code code{font:500 12.5px/1.6 ui-monospace,"SF Mono","Cascadia Code",Consolas,monospace;background:none;border:none;padding:0;color:#e8ecf3}
 .item-snippet{margin-top:8px;color:var(--ink-2);font-size:12px;line-height:1.5}
+
+/* result footer: fading top hairline (replaces the heavy full-width divider) */
+.surface-result .footer{position:relative;border-top:none;padding:14px 20px 16px}
+.surface-result .footer::before{content:"";position:absolute;left:20px;right:20px;top:0;height:1px;
+  background:linear-gradient(90deg,transparent,var(--stroke) 14%,var(--stroke) 86%,transparent)}
 
 /* ─── Buttons ─────────────────────────────────────────────────────────────── */
 .btn{border:1px solid transparent;border-radius:11px;cursor:pointer;font:600 13px var(--font);padding:9px 16px;letter-spacing:-0.01em;transition:transform .1s var(--ease),background .16s,border-color .16s}
