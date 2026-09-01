@@ -18,6 +18,13 @@ type GraphExecutor struct {
 	// classification, one-shot approval gate, verification, recovery ladder).
 	// When nil, ExecutePlan runs the legacy loop with identical behavior.
 	Trusted *trust.TrustedExecutor
+	// Allow, when non-nil, gates every tool against the active security
+	// profile's allow-list before it runs. nil means allow all (unchanged
+	// legacy behavior). This is enforced on BOTH the trust path (per-tool,
+	// covering future re-plans) and the legacy per-task loop, so LLM-
+	// decomposed plans on the Tier-1 path cannot execute a tool the profile
+	// forbids.
+	Allow func(tool string) bool
 }
 
 func NewExecutor(registry *tools.Registry) *GraphExecutor {
@@ -41,7 +48,11 @@ func (e *GraphExecutor) ExecutePlan(ctx gocontext.Context, plan Plan) error {
 		// Supply the tool-running seam only if the caller hasn't already set one.
 		if e.Trusted.Exec == nil {
 			reg := e.Registry
+			allow := e.Allow
 			e.Trusted.Exec = func(ctx gocontext.Context, tool string, params json.RawMessage) (string, error) {
+				if allow != nil && !allow(tool) {
+					return "", fmt.Errorf("tool %q not permitted by security profile", tool)
+				}
 				return RunTool(ctx, reg, tool, params)
 			}
 		}
@@ -65,6 +76,10 @@ func (e *GraphExecutor) ExecutePlan(ctx gocontext.Context, plan Plan) error {
 
 	for i, task := range plan.Tasks {
 		log.Printf("  [Step %d/%d] Executing Tool: %s\n", i+1, len(plan.Tasks), task.Tool)
+
+		if e.Allow != nil && !e.Allow(task.Tool) {
+			return fmt.Errorf("tool %q not permitted by security profile", task.Tool)
+		}
 
 		tool, found := e.Registry.Get(task.Tool)
 		if !found {

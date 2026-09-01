@@ -60,6 +60,9 @@ func (d *Deps) Handle(ctx context.Context, input string, cap agentctx.Capture) e
 		}
 		exec := agent.NewExecutor(d.Registry)
 		exec.Trusted = d.Trusted
+		if d.Profile != nil {
+			exec.Allow = d.Profile.IsAllowed
+		}
 		return exec.ExecutePlan(ctx, agent.Plan{Transcript: input, Intent: "local_resolve", Tasks: match.Tasks})
 	}
 	atomic.AddInt64(&cloudHits, 1)
@@ -82,6 +85,9 @@ func (d *Deps) Handle(ctx context.Context, input string, cap agentctx.Capture) e
 	log.Printf("[dispatch] TIER1 (cloud) %q", input)
 	exec := agent.NewExecutor(d.Registry)
 	exec.Trusted = d.Trusted
+	if d.Profile != nil {
+		exec.Allow = d.Profile.IsAllowed
+	}
 	orch := agent.NewOrchestrator(d.Provider, exec)
 	return orch.Run(ctx, input, cap.String())
 }

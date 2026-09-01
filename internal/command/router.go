@@ -138,6 +138,9 @@ func RunAICommand(input string) {
 	// user sends a free-text "ai <request>" that contains no explicit tool selection.
 	executor := agent.NewExecutor(globalRegistry)
 	executor.Trusted = globalTrusted
+	if globalProfile != nil {
+		executor.Allow = globalProfile.IsAllowed
+	}
 	orch := agent.NewOrchestrator(globalProvider, executor)
 	if err := orch.Run(globalCtx, prompt, contextStr); err != nil {
 		log.Printf("Orchestration failed: %v", err)
