@@ -120,6 +120,12 @@ var SpeakFunc func(string)
 // speakMode is toggled per command by the engine: on for a voice-originated
 // command, off for the typed path. Only ShowOutputOverlay (answers) consults it;
 // status messages via ShowNotification are never spoken.
+//
+// Invariant: correctness depends on voice and typed dispatch never overlapping,
+// which the engine's single-flight isBusy guard currently ensures. If a future
+// change lets a typed command's ShowOutputOverlay run while a voice command still
+// holds speakMode=true, the typed answer would be spoken — make speakMode
+// per-command (not a process global) before allowing concurrent dispatch.
 var speakMode atomic.Bool
 
 // SetSpeakMode enables or disables speaking of answers for the current command.
