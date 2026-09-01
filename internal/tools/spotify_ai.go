@@ -107,16 +107,16 @@ Theme analysis: Why do these songs fit "%s"?`, args.Theme, args.NumSongs, args.T
 			continue
 		}
 		var result map[string]interface{}
-		json.Unmarshal(body, &result)
-		if tracksMap, ok := result["tracks"].(map[string]interface{}); ok {
-			if items, ok := tracksMap["items"].([]interface{}); ok && len(items) > 0 {
-				if item, ok := items[0].(map[string]interface{}); ok {
-					if uri, ok := item["uri"].(string); ok {
-						uris = append(uris, uri)
-						matched = append(matched, track.Name+" — "+track.Artist)
-					}
-				}
-			}
+		if err := json.Unmarshal(body, &result); err != nil {
+			continue
+		}
+		items := arrField(asMap(result["tracks"]), "items")
+		if len(items) == 0 {
+			continue
+		}
+		if uri := str(asMap(items[0]), "uri"); uri != "" {
+			uris = append(uris, uri)
+			matched = append(matched, track.Name+" — "+track.Artist)
 		}
 	}
 
@@ -142,7 +142,9 @@ Theme analysis: Why do these songs fit "%s"?`, args.Theme, args.NumSongs, args.T
 			ID  string `json:"id"`
 			URI string `json:"uri"`
 		}
-		json.Unmarshal(body, &playlist)
+		if err := json.Unmarshal(body, &playlist); err != nil || playlist.ID == "" {
+			return "", fmt.Errorf("failed to parse created playlist response")
+		}
 
 		// Add tracks
 		trackPayload, _ := json.Marshal(map[string]interface{}{"uris": uris})
@@ -206,18 +208,31 @@ Theme analysis: Why do these songs fit "%s"?`, args.Theme, args.NumSongs, args.T
 		}
 
 		var plData map[string]interface{}
-		json.Unmarshal(body, &plData)
+		if err := json.Unmarshal(body, &plData); err != nil {
+			return "", fmt.Errorf("failed to parse playlist tracks: %w", err)
+		}
 		var currentTracks []string
-		if items, ok := plData["items"].([]interface{}); ok {
-			for _, item := range items {
-				track := item.(map[string]interface{})["track"].(map[string]interface{})
-				artists := track["artists"].([]interface{})
-				var names []string
-				for _, a := range artists {
-					names = append(names, a.(map[string]interface{})["name"].(string))
-				}
-				currentTracks = append(currentTracks, track["name"].(string)+" — "+strings.Join(names, ", "))
+		for _, item := range arrField(plData, "items") {
+			entry := asMap(item)
+			track := asMap(entry["track"])
+			if track == nil {
+				// "track" can legitimately be null (e.g. a removed/unavailable item).
+				continue
 			}
+			name := str(track, "name")
+			if name == "" {
+				continue
+			}
+			names := artistNames(arrField(track, "artists"))
+			if len(names) > 0 {
+				currentTracks = append(currentTracks, name+" — "+strings.Join(names, ", "))
+			} else {
+				currentTracks = append(currentTracks, name)
+			}
+		}
+
+		if len(currentTracks) == 0 {
+			return ToolResult{Summary: "This playlist has no readable tracks to remix."}.String(), nil
 		}
 
 		currentList := strings.Join(currentTracks, "\n")
@@ -278,7 +293,8 @@ func (t *SpotifySmartRecommendTool) Execute(ctx context.Context, params json.Raw
 	seedText := args.Seed
 	if seedText == "" {
 		body, err := spotifyGet(ctx, client, "/me/player/currently-playing")
-		if err != nil || body == nil {
+		if err != nil || len(body) == 0 {
+			// Spotify returns 204 with an empty body when nothing is playing.
 			return "No track is currently playing. Provide a seed with 'seed' parameter.", nil
 		}
 		var resp struct {
@@ -287,8 +303,14 @@ func (t *SpotifySmartRecommendTool) Execute(ctx context.Context, params json.Raw
 				Artists []struct{ Name string } `json:"artists"`
 			} `json:"item"`
 		}
-		json.Unmarshal(body, &resp)
-		seedText = resp.Item.Name + " by " + resp.Item.Artists[0].Name
+		if err := json.Unmarshal(body, &resp); err != nil || resp.Item.Name == "" {
+			return "Nothing is currently playing to seed from. Provide a seed with 'seed' parameter.", nil
+		}
+		artistName := "an unknown artist"
+		if len(resp.Item.Artists) > 0 {
+			artistName = resp.Item.Artists[0].Name
+		}
+		seedText = resp.Item.Name + " by " + artistName
 	}
 
 	// Ask LLM for recommendations
@@ -334,16 +356,16 @@ Rules:
 			continue
 		}
 		var result map[string]interface{}
-		json.Unmarshal(body, &result)
-		if tracksMap, ok := result["tracks"].(map[string]interface{}); ok {
-			if items, ok := tracksMap["items"].([]interface{}); ok && len(items) > 0 {
-				if item, ok := items[0].(map[string]interface{}); ok {
-					if uri, ok := item["uri"].(string); ok {
-						uris = append(uris, uri)
-						matched = append(matched, fmt.Sprintf("%s by %s — %s", rec.Name, rec.Artist, rec.Reason))
-					}
-				}
-			}
+		if err := json.Unmarshal(body, &result); err != nil {
+			continue
+		}
+		items := arrField(asMap(result["tracks"]), "items")
+		if len(items) == 0 {
+			continue
+		}
+		if uri := str(asMap(items[0]), "uri"); uri != "" {
+			uris = append(uris, uri)
+			matched = append(matched, fmt.Sprintf("%s by %s — %s", rec.Name, rec.Artist, rec.Reason))
 		}
 	}
 
@@ -363,7 +385,9 @@ Rules:
 			ID  string `json:"id"`
 			URI string `json:"uri"`
 		}
-		json.Unmarshal(body, &playlist)
+		if err := json.Unmarshal(body, &playlist); err != nil || playlist.ID == "" {
+			return "", fmt.Errorf("failed to parse created playlist response")
+		}
 
 		trackPayload, _ := json.Marshal(map[string]interface{}{"uris": uris})
 		tracksEndpoint := fmt.Sprintf("/playlists/%s/tracks", playlist.ID)
