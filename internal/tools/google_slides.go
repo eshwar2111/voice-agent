@@ -178,7 +178,7 @@ func (t *GoogleSlidesCreateTool) Execute(ctx context.Context, params json.RawMes
 	presID := presentation.PresentationId
 
 	// Add content slides
-	for range args.Slides {
+	for i := range args.Slides {
 		reqs := []*slides.Request{
 			{
 				CreateSlide: &slides.CreateSlideRequest{
@@ -190,9 +190,12 @@ func (t *GoogleSlidesCreateTool) Execute(ctx context.Context, params json.RawMes
 			},
 		}
 
-		_, _ = slidesSvc.Presentations.BatchUpdate(presID, &slides.BatchUpdatePresentationRequest{
+		_, err := slidesSvc.Presentations.BatchUpdate(presID, &slides.BatchUpdatePresentationRequest{
 			Requests: reqs,
 		}).Do()
+		if err != nil {
+			return "", fmt.Errorf("unable to add slide %d: %w", i+1, err)
+		}
 	}
 
 	return fmt.Sprintf("✅ Presentation created:\nTitle: %s\nURL: https://docs.google.com/presentation/d/%s/edit", args.Title, presID), nil

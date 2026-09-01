@@ -156,9 +156,12 @@ Theme analysis: Why do these songs fit "%s"?`, args.Theme, args.NumSongs, args.T
 
 		// Start playing
 		playPayload, _ := json.Marshal(map[string]interface{}{"context_uri": playlist.URI})
-		_, _ = spotifyPut(ctx, client, "/me/player/play", playPayload)
+		_, playErr := spotifyPut(ctx, client, "/me/player/play", playPayload)
 
 		result := fmt.Sprintf("🤖 AI Playlist Created\nTheme: %s\nMatched: %d/%d AI suggestions\n\nNow playing:\n", args.Theme, len(matched), args.NumSongs)
+		if playErr != nil {
+			result = fmt.Sprintf("🤖 AI Playlist Created (playback couldn't start — no active device?)\nTheme: %s\nMatched: %d/%d AI suggestions\n\nTracks:\n", args.Theme, len(matched), args.NumSongs)
+		}
 		for i, name := range matched {
 			result += fmt.Sprintf("%d. %s\n", i+1, name)
 		}
@@ -397,10 +400,17 @@ Rules:
 		}
 
 		playPayload, _ := json.Marshal(map[string]interface{}{"context_uri": playlist.URI})
-		_, _ = spotifyPut(ctx, client, "/me/player/play", playPayload)
+		_, playErr := spotifyPut(ctx, client, "/me/player/play", playPayload)
+
+		header := "🎵 Smart Recommendations Created & Playing"
+		trailer := "Now playing:\n"
+		if playErr != nil {
+			header = "🎵 Smart Recommendations Created (playback couldn't start — no active device?)"
+			trailer = "Tracks:\n"
+		}
 
 		return ToolResult{
-			Summary: fmt.Sprintf("🎵 Smart Recommendations Created & Playing\nBased on: %s\nMatched: %d/%d suggestions\n\nNow playing:\n", seedText, len(matched), len(recs)),
+			Summary: fmt.Sprintf("%s\nBased on: %s\nMatched: %d/%d suggestions\n\n%s", header, seedText, len(matched), len(recs), trailer),
 			Artifacts: map[string]interface{}{
 				"type":        "smart_recommend_play",
 				"seed":        seedText,

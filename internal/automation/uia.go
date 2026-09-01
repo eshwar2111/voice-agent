@@ -138,6 +138,9 @@ func ClickElementByName(name string) error {
 	if ret != 0 {
 		return fmt.Errorf("GetRootElement failed: %x", ret)
 	}
+	if rootElement == nil {
+		return fmt.Errorf("GetRootElement succeeded but returned no element")
+	}
 
 	// Create Property Condition (UIA_NamePropertyId = 30005)
 	var condition *IUIAutomationCondition
@@ -151,6 +154,9 @@ func ClickElementByName(name string) error {
 	ret, _, _ = syscall.SyscallN(uia.vtbl.CreatePropertyCondition, uintptr(unsafe.Pointer(uia)), uintptr(30005), uintptr(unsafe.Pointer(&variant)), uintptr(unsafe.Pointer(&condition)))
 	if ret != 0 {
 		return fmt.Errorf("CreatePropertyCondition failed: %x", ret)
+	}
+	if condition == nil {
+		return fmt.Errorf("CreatePropertyCondition succeeded but returned no condition")
 	}
 
 	// Find the first matching element (TreeScope_Descendants = 4)
