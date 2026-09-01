@@ -39,6 +39,31 @@ kbd{font:600 11px var(--font);color:var(--ink-2);background:rgba(255,255,255,.07
 .item-meta{font-size:11.5px;color:var(--ink-2)}
 .surface-command,.surface-result,.surface-approve{display:flex;flex-direction:column;width:100%;height:100%}
 
+/* ─── Result surface: compact header + Markdown body ──────────────────────── */
+.rhead{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:15px 20px 12px;border-bottom:1px solid var(--stroke);width:100%}
+.rhead-id{display:flex;align-items:center;gap:8px;font-size:11.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)}
+.rhead-id .ico{width:15px;height:15px}
+.btn.sm{padding:6px 13px;font-size:12px;border-radius:9px}
+
+.obody.md{color:var(--ink);font-size:14px;line-height:1.68;max-width:70ch}
+.md > :first-child{margin-top:0}
+.md > :last-child{margin-bottom:0}
+.md p{margin:0 0 12px}
+.md h2{font-size:16px;font-weight:660;letter-spacing:-.02em;margin:18px 0 8px}
+.md h3{font-size:14px;font-weight:660;margin:16px 0 6px}
+.md h4{font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-2);margin:16px 0 6px}
+.md ul,.md ol{margin:0 0 12px;padding-left:22px;display:flex;flex-direction:column;gap:5px}
+.md li{padding-left:3px}
+.md li::marker{color:var(--accent)}
+.md strong{font-weight:680;color:var(--ink)}
+.md em{font-style:italic}
+.md a{color:var(--accent);text-decoration:none;border-bottom:1px solid color-mix(in srgb,var(--accent) 40%,transparent)}
+.md a:hover{border-bottom-color:var(--accent)}
+.md code{font:600 12.5px ui-monospace,"SF Mono","Cascadia Code",Consolas,monospace;background:rgba(255,255,255,.08);border:1px solid var(--stroke);border-radius:6px;padding:1px 6px}
+.md pre.code{margin:0 0 12px;padding:12px 14px;border-radius:12px;overflow-x:auto;background:rgba(0,0,0,.28);border:1px solid var(--stroke)}
+.md pre.code code{font:500 12.5px/1.6 ui-monospace,"SF Mono","Cascadia Code",Consolas,monospace;background:none;border:none;padding:0;color:#e8ecf3}
+.item-snippet{margin-top:8px;color:var(--ink-2);font-size:12px;line-height:1.5}
+
 /* ─── Buttons ─────────────────────────────────────────────────────────────── */
 .btn{border:1px solid transparent;border-radius:11px;cursor:pointer;font:600 13px var(--font);padding:9px 16px;letter-spacing:-0.01em;transition:transform .1s var(--ease),background .16s,border-color .16s}
 .btn:active{transform:scale(.97)}
