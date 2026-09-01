@@ -183,7 +183,29 @@ export const kindRenderers = {
       return n;
     },
   },
+  // Fed by the Go NowPlayingProvider (internal/island/nowplaying.go) through the
+  // SAME provider -> provided -> kindRenderers path as timer/meeting, keyed by
+  // Kind. (An earlier registerActivity def lived in the push/`live` namespace the
+  // provider never reaches, so the pill rendered blank — this is the fix.)
+  // Data fields must match what the provider emits: track, artist, art.
+  'spotify.nowplaying': {
+    bubble:  (d) => albumOrGlyph(d),
+    leading: (d) => albumOrGlyph(d),
+    trailing: () => el('span', 'eq', '<i></i><i></i><i></i><i></i><i></i>'),
+    compact: (d) => el('div', null,
+      `<span class="ttl">${esc(d.track || '')} <span class="sub">· ${esc(d.artist || '')}</span></span>`),
+    expanded: (d) => el('div', null,
+      `<span class="ttl">${esc(d.track || 'Now playing')}</span><span class="sub">${esc(d.artist || '')}</span>`),
+  },
 };
+
+// Album art when the provider gives it, else the Spotify glyph. Shared by the
+// nowplaying leading + bubble slots so the split-island bubble shows the art too.
+function albumOrGlyph(d){
+  return d.art
+    ? el('span', 'art', `<img src="${esc(d.art)}" alt="" width="28" height="28" style="border-radius:6px"/>`)
+    : el('span', null, icon('spotify'));
+}
 
 function mmss(sec){
   const s = Math.max(0, sec|0);
@@ -333,14 +355,6 @@ registerActivity({
     `<span class="ttl">${esc(d.title || '')}</span><span class="sub">${esc(d.message || '')}</span>`),
 });
 
-registerActivity({
-  id: 'spotify.nowplaying', priority: 20, ttl: 0,
-  leading: (d) => d.art
-    ? el('span', 'art', `<img src="${esc(d.art)}" alt="" width="28" height="28" style="border-radius:6px"/>`)
-    : el('span', null, icon('spotify')),
-  trailing: () => el('span', 'eq', '<i></i><i></i><i></i><i></i><i></i>'),
-  compact: (d) => el('div', null,
-    `<span class="ttl">${esc(d.track || '')} <span class="sub">· ${esc(d.artist || '')}</span></span>`),
-  expanded: (d) => el('div', null,
-    `<span class="ttl">${esc(d.track || '')}</span><span class="sub">${esc(d.artist || '')}</span>`),
-});
+// NOTE: spotify.nowplaying is rendered via kindRenderers above (the provider
+// path), not here — the provider emits by Kind, which never reaches the
+// registerActivity/`live` namespace. Do not re-add a def for it here.
