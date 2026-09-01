@@ -134,6 +134,7 @@ func (t *TrustedExecutor) Run(ctx context.Context, steps []Step, command string)
 		}
 		i++
 	}
+	rep.LastOutput = lastOutput
 	return rep, nil
 }
 

@@ -43,10 +43,11 @@ const (
 
 // Report is returned by Run so the caller can render what completed vs. failed.
 type Report struct {
-	Completed []string // Describe() text of steps that ran and verified
-	FailedAt  int      // index of the failing step, or -1
-	FailNote  string   // human-readable reason for the stop
-	Aborted   bool
+	Completed  []string // Describe() text of steps that ran and verified
+	FailedAt   int      // index of the failing step, or -1
+	FailNote   string   // human-readable reason for the stop
+	Aborted    bool
+	LastOutput string // raw result of the last verified step, for the caller to surface
 }
 
 type Classifier interface {

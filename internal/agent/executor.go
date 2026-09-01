@@ -67,6 +67,13 @@ func (e *GraphExecutor) ExecutePlan(ctx gocontext.Context, plan Plan) error {
 			log.Printf("[trust] stopped: %s (completed %d/%d steps)\n", rep.FailNote, len(rep.Completed), len(plan.Tasks))
 			return fmt.Errorf("plan stopped: %s", rep.FailNote)
 		}
+		// Surface the final step's output on the overlay (and, for voice commands,
+		// speak it) — the legacy loop below does this for its last node; the trust
+		// path must too, or a command like "what time is it" runs but nothing is
+		// ever shown or spoken.
+		if disp := displayOutput(rep.LastOutput); disp != "" {
+			go importUIAndShowOutput(disp)
+		}
 		log.Printf("Plan %s execution completed successfully (trust).\n", plan.Intent)
 		return nil
 	}
@@ -229,6 +236,18 @@ func RunTool(ctx gocontext.Context, reg *tools.Registry, tool string, params jso
 	}
 
 	return result, nil
+}
+
+// displayOutput picks the human-facing text from a raw tool result: the
+// ToolResult Summary when present, else the raw string. Empty stays empty.
+func displayOutput(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	if s := tools.ParseToolResult(raw).Summary; s != "" {
+		return s
+	}
+	return raw
 }
 
 // importUIAndShowOutput breaks the circular dependency between agent and UI by directly invoking it here

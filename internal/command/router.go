@@ -15,6 +15,7 @@ import (
 	"github.com/yourname/voice-agent/internal/security"
 	"github.com/yourname/voice-agent/internal/tools"
 	"github.com/yourname/voice-agent/internal/trust"
+	"github.com/yourname/voice-agent/internal/ui"
 )
 
 var (
@@ -60,6 +61,12 @@ func Shutdown() {
 
 func ProcessCommand(input string) {
 	AddToHistory(input)
+
+	// The typed path runs OUTSIDE the engine's event loop, so nothing else
+	// returns the island to idle when the command finishes. The command sheet
+	// optimistically shows "Working…" on submit (updateUI('thinking')); without
+	// this reset that state never clears and the pill sticks on "Working…".
+	defer ui.SetState(ui.StateIdle)
 
 	if strings.HasPrefix(input, "ai ") {
 		RunAICommand(input)
