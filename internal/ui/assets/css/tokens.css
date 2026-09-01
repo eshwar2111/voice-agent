@@ -19,13 +19,29 @@
   --glass: rgba(21,22,28,0.95);          /* island / small caps */
   --glass-surface: rgba(17,18,23,0.985); /* sheets, cards, Control Center */
   --glass-solid: #14151b;
-  --hi: rgba(255,255,255,0.10);      /* top inner highlight */
-  --stroke: rgba(255,255,255,0.12);
+  --hi: rgba(255,255,255,0.16);      /* crisp lit top edge (inner highlight) */
+  --hi-soft: rgba(255,255,255,0.05); /* faint interior top glow */
+  --stroke: rgba(255,255,255,0.14);  /* hairline edge, reads as lit from above */
   --ink:#f2f3f7; --ink-2:#a6abb8; --ink-3:#6b7180;
   --accent:#0a84ff;                  /* macOS system blue */
   --accent-soft: rgba(10,132,255,.16);
   --good:#30d158; --warn:#ff9f0a; --danger:#ff453a;
   --shadow: 0 22px 60px -18px rgba(0,0,0,.72), 0 6px 18px -8px rgba(0,0,0,.55);
+  /* Real depth WITHOUT an outside drop shadow. The window is region-shaped and
+     the region hard-crops anything past the border box, so a normal
+     drop-shadow is clipped away and the surface reads flat. Instead the object
+     is sculpted from the *inside*: a crisp 1px top highlight and a faint lit
+     inner wall (as if light falls from above), a dark bottom edge, and a soft
+     vignette rising from the base plus a gentle glow under the top edge. These
+     are all `inset`, so they paint over the fill but under the content, survive
+     the region crop, and are not reset by the `background`-only surface
+     overrides below (box-shadow is left untouched there). */
+  --depth:
+    inset 0 1px 0 0 var(--hi),
+    inset 0 0 0 1px rgba(255,255,255,.035),
+    inset 0 -1px 0 0 rgba(0,0,0,.55),
+    inset 0 -16px 26px -18px rgba(0,0,0,.55),
+    inset 0 10px 22px -18px var(--hi-soft);
   --font:-apple-system,"SF Pro Text","SF Pro Display",system-ui,"Segoe UI",Roboto,sans-serif;
   --ease:cubic-bezier(.22,.7,.3,1);
 }
@@ -39,7 +55,7 @@ button,input,textarea,select{font:inherit;color:inherit}
 .glass{
   background:var(--glass);
   border:1px solid var(--stroke);
-  box-shadow:var(--shadow), inset 0 1px 0 var(--hi);
+  box-shadow:var(--shadow), var(--depth);
 }
 /* Anything large enough to read paragraphs on gets the near-solid fill.
    The command/result/approve sheets are not separate elements — they render

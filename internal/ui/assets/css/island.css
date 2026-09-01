@@ -11,6 +11,22 @@
   cursor:pointer; z-index:6;
   will-change:width,height,border-radius,left;
 }
+/* Specular sheen — a soft bloom of light across the top third, as if the
+   object is lit from above. This is the finishing touch on top of the inset
+   depth in .glass (tokens.css). It is a painted gradient, not a shadow,
+   because the region hard-crop clips anything outside the border box; kept
+   inside via border-radius:inherit + the crop the pill already has, and kept
+   BELOW the caps/label by the stacking rule that follows (the pseudo-element
+   is positioned at z-index:0; the flex children are lifted to z-index:1). */
+#island::before,#bubble::before{
+  content:""; position:absolute; inset:0; border-radius:inherit;
+  pointer-events:none; z-index:0;
+  background:linear-gradient(180deg,
+    rgba(255,255,255,.07) 0%,
+    rgba(255,255,255,.02) 36%,
+    rgba(255,255,255,0) 60%);
+}
+#island > *,#bubble > *{position:relative; z-index:1}
 /* Caps translate, never cross-fade — that is what gives the island object
    permanence when its content changes underneath. */
 #island .cap{
