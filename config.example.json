@@ -4,7 +4,18 @@
   "model": "gemini-2.5-flash",
   "base_url": "https://generativelanguage.googleapis.com/v1beta",
   "timeout_seconds": 30,
+  "enable_voice": true,
+  "privacy_mode": false,
+  "enable_proactive": false,
+  "trusted_execution": true,
+  "speak_responses": true,
   "porcupine_access_key": "YOUR_PORCUPINE_ACCESS_KEY_HERE",
   "whisper_path": "C:/whisper-local/build/bin/whisper-cli.exe",
-  "whisper_model": "C:/whisper-local/models/ggml-base.en.bin"
+  "whisper_model": "C:/whisper-local/models/ggml-base.en.bin",
+  "google_client_id": "",
+  "google_client_secret": "",
+  "microsoft_client_id": "",
+  "microsoft_client_secret": "",
+  "spotify_client_id": "",
+  "spotify_client_secret": ""
 }

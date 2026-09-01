@@ -113,6 +113,13 @@ func main() {
 		log.Fatalf("Failed to load config from %s: %v", configPath, err)
 	}
 
+	// An empty api_key is not fatal — Tier-0 local commands still work
+	// offline — but cloud commands (LLM planning, vision, etc.) will fail,
+	// so warn loudly rather than let that surface as a silent failure later.
+	if strings.TrimSpace(cfg.APIKey) == "" {
+		log.Println("[config] WARNING: api_key is empty — cloud commands will fail; set it in config.json or the Settings gear")
+	}
+
 	// Apply whisper paths from config
 	if cfg.EnableVoice {
 		asr.SetPaths(cfg.WhisperPath, cfg.WhisperModel)

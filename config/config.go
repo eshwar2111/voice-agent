@@ -42,6 +42,10 @@ type Config struct {
 	// classification, one-shot approval gate, verification, recovery ladder).
 	// Defaults to true when the key is absent from config.json.
 	TrustedExecution bool `json:"trusted_execution"`
+
+	// SpeakResponses toggles TTS output for agent responses. Defaults to
+	// true when the key is absent from config.json.
+	SpeakResponses bool `json:"speak_responses"`
 }
 
 // defaults applied when fields are missing or invalid.
@@ -85,6 +89,9 @@ func loadFromBytes(data []byte) (*Config, error) {
 	if err := json.Unmarshal(data, &raw); err == nil {
 		if _, ok := raw["trusted_execution"]; !ok {
 			cfg.TrustedExecution = true
+		}
+		if _, ok := raw["speak_responses"]; !ok {
+			cfg.SpeakResponses = true
 		}
 	}
 
