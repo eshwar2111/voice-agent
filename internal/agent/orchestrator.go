@@ -67,7 +67,12 @@ func (o *Orchestrator) Run(ctx gocontext.Context, userText, sysContext string) e
 		if sg.Context == "" {
 			sg.Context = sysContext
 		}
-		ui.ShowNotification(fmt.Sprintf("Step %d/%d: %s…", i+1, len(subGoals), sg.Goal))
+		// Feed the agent.run progress ring REAL step data (1-based index, total,
+		// and the sub-goal as the label) rather than an opaque "Step x/y" status
+		// string. This replaces the prior ShowNotification here: pushing narration
+		// through ShowNotification would overwrite agent.run's data on the JS side
+		// and drop the step/total the ring needs, so the two must not both fire.
+		ui.SetAgentProgress(i+1, len(subGoals), sg.Goal)
 		log.Printf("[Orchestrator] Sub-goal %d: agent=%s, goal=%q\n", i+1, sg.Agent, sg.Goal)
 
 		if err := o.execSubGoal(ctx, sg); err != nil {

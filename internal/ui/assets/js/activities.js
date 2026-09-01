@@ -139,9 +139,29 @@ export const kindRenderers = {
     compact: (d) => el('div', null,
       `<span class="ttl">${mmss(d.remaining)}</span>` +
       `<span class="sub">${esc(d.label || 'Timer')}</span>`),
-    expanded: (d) => el('div', null,
-      `<span class="ttl">${esc(d.label || 'Timer')}</span>` +
-      `<span class="sub">${mmss(d.remaining)} remaining</span>`),
+    // Receives (data, id) from renderProvided — id is the ACTIVITY id
+    // ("timer.<key>"); the Go bindings strip the "timer." prefix before hitting
+    // the store. Pause/Resume freezes/restarts the countdown (the store keeps
+    // draining otherwise); Cancel removes the timer outright (spec: Cancel ==
+    // Remove). stopPropagation keeps a button click from also bubbling to the
+    // island's own onclick (triggerListen).
+    expanded: (d, id) => {
+      const n = el('div', null,
+        `<span class="ttl">${esc(d.label || 'Timer')}</span>` +
+        `<span class="sub">${d.paused ? 'Paused · ' : ''}${mmss(d.remaining)} remaining</span>`);
+      const row = el('div', 'actions right');
+      const toggle = el('button', 'btn ghost', d.paused ? 'Resume' : 'Pause');
+      toggle.onclick = (ev) => {
+        ev.stopPropagation();
+        const fn = d.paused ? window.timerResume : window.timerPause;
+        fn && fn(id);
+      };
+      const cancel = el('button', 'btn ghost', 'Cancel');
+      cancel.onclick = (ev) => { ev.stopPropagation(); window.timerCancel && window.timerCancel(id) };
+      row.append(toggle, cancel);
+      n.appendChild(row);
+      return n;
+    },
   },
   meeting: {
     bubble:  () => el('span', null, icon('calendar')),
@@ -179,6 +199,19 @@ function ringSVG(remaining, total){
     `<circle cx="12" cy="12" r="9" stroke="currentColor" ` +
     `stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${(c*(1-frac)).toFixed(1)}" ` +
     `transform="rotate(-90 12 12)"/></svg>`;
+}
+
+// agent.run progress helpers. Real step data (step/total/label, pushed by
+// ui.SetAgentProgress) renders a determinate ring + "N of M · label"; its
+// absence falls back to the SP5 indeterminate glyph + phase text, so a command
+// with no structured progress is never shown a broken 0% ring.
+function agentHasSteps(d){ return !!d && (d.total | 0) > 0; }
+function agentPrimary(d){
+  if(agentHasSteps(d)){
+    const head = `${d.step | 0} of ${d.total | 0}`;
+    return d.label ? head + ' · ' + d.label : head;
+  }
+  return (d && d.text) || 'Working…';
 }
 
 export function renderProvided(id, slot) {
@@ -252,9 +285,17 @@ registerActivity({
   // inside it made the SVG overflow the dot in every direction and crowd the
   // label ("Listening…" appearing to sit on top of the mic). `.cap-glyph`
   // sizes to the cap and colours the icon; the pulse rides on it.
-  leading: (d) => el('span',
-    d.phase === 'listening' ? 'cap-glyph accent glyph-pulse' : 'cap-glyph warm',
-    icon(d.phase === 'listening' ? 'mic' : 'sparkle')),
+  leading: (d) => {
+    if (d.phase === 'listening')
+      return el('span', 'cap-glyph accent glyph-pulse', icon('mic'));
+    // A REAL determinate ring once step data is present (reuses ringSVG, the
+    // same primitive the timer uses; frac = step/total). Without step data,
+    // the SP5 warm sparkle — the equalizer/shimmer carries "busy", so this
+    // stays indeterminate rather than a misleading empty ring.
+    if (agentHasSteps(d))
+      return el('span', 'cap-glyph warm', ringSVG(d.step | 0, d.total | 0));
+    return el('span', 'cap-glyph warm', icon('sparkle'));
+  },
   trailing: (d) => {
     if (d.phase === 'listening') return el('span', 'eq', '<i></i><i></i><i></i><i></i><i></i>');
     // NOTE: this dismisses the island's progress display; it does NOT abort the
@@ -267,9 +308,9 @@ registerActivity({
     b.onclick = (ev) => { ev.stopPropagation(); window.dismissRunDisplay() };
     return b;
   },
-  compact: (d) => el('div', null, `<span class="ttl">${esc(d.text || 'Working…')}</span>`),
+  compact: (d) => el('div', null, `<span class="ttl">${esc(agentPrimary(d))}</span>`),
   expanded: (d) => el('div', null,
-    `<span class="ttl">${esc(d.text || 'Working…')}</span>` +
+    `<span class="ttl">${esc(agentPrimary(d))}</span>` +
     `<span class="sub">${esc(d.detail || '')}</span>`),
 });
 

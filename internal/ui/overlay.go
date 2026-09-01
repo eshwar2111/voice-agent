@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -15,6 +16,7 @@ import (
 	webview "github.com/webview/webview_go"
 	"github.com/yourname/voice-agent/config"
 	"github.com/yourname/voice-agent/internal/auth"
+	"github.com/yourname/voice-agent/internal/island"
 )
 
 var (
@@ -189,6 +191,27 @@ func SetMeetingAlert(title string, minutes int) {
 		"title":   title,
 		"message": text,
 		"action":  "",
+	})
+}
+
+// SetAgentProgress drives the agent.run live activity with REAL, structured
+// step data. The orchestrator calls it as it advances sub-goals — it already
+// knows the current index and the total — so the island can render a
+// determinate progress ring plus an "N of M · label" line instead of an
+// opaque status string.
+//
+// It rides the same activity:update channel the state/notify handlers use, so
+// on the JS side it REPLACES the agent.run entry's data with {phase, step,
+// total, label}. When no progress has been published (single-step commands, or
+// any tick where a state/notify update overwrote it), agent.run falls back to
+// its SP5 indeterminate glyph/shimmer: the renderer keys the ring on step/total
+// being present, so their absence is a clean fallback, never a broken 0% ring.
+func SetAgentProgress(step, total int, label string) {
+	UpdateActivity("agent.run", map[string]any{
+		"phase": "acting",
+		"step":  step,
+		"total": total,
+		"label": label,
 	})
 }
 
@@ -480,6 +503,22 @@ func StartOverlay(ctx context.Context, cfg *config.Config) {
 		if islandRegistry != nil {
 			islandRegistry.Dismiss(id)
 		}
+	})
+	// Timer controls from the timer.expanded activity (activities.js). The JS
+	// side passes the ACTIVITY id ("timer.<key>"); the store is keyed on the
+	// bare <key>, so strip the "timer." prefix before hitting DefaultTimers —
+	// the same store the island runner supervises (cmd/app/main.go). Pause
+	// freezes remaining time; Resume restarts from it; Cancel removes the timer
+	// outright (the spec's Cancel == Remove). All three are no-ops on the store
+	// for an unknown id, so a stale click can never panic.
+	w.Bind("timerPause", func(id string) {
+		island.DefaultTimers.Pause(strings.TrimPrefix(id, "timer."))
+	})
+	w.Bind("timerResume", func(id string) {
+		island.DefaultTimers.Resume(strings.TrimPrefix(id, "timer."))
+	})
+	w.Bind("timerCancel", func(id string) {
+		island.DefaultTimers.Remove(strings.TrimPrefix(id, "timer."))
 	})
 
 	assets, err := startAssetServer()
