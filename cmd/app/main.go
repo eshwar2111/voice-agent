@@ -5,7 +5,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -17,6 +19,7 @@ import (
 	"github.com/yourname/voice-agent/internal/ambient"
 	"github.com/yourname/voice-agent/internal/asr"
 	"github.com/yourname/voice-agent/internal/audit"
+	"github.com/yourname/voice-agent/internal/auth"
 	"github.com/yourname/voice-agent/internal/command"
 	agentctx "github.com/yourname/voice-agent/internal/context"
 	"github.com/yourname/voice-agent/internal/engine"
@@ -95,6 +98,97 @@ func nextMeetingFromCalendar(ctx context.Context, cfg *config.Config) (*island.N
 		}
 	}
 	return best, nil
+}
+
+// nowPlayingFromSpotify adapts Spotify's currently-playing endpoint to the
+// island.NowPlayingSource contract, fetched directly here (rather than via
+// tools.SpotifyNowPlayingTool, whose Execute returns a formatted text
+// summary, not structured data) since internal/island must not import
+// internal/tools.
+//
+// Contract, mirroring nextMeetingFromCalendar: an unlinked Spotify account
+// returns (nil, nil) — the common steady state, not an error, so the
+// runner's backoff never engages for a user who never connected Spotify. A
+// genuine API failure (network, auth refresh) is an error.
+func nowPlayingFromSpotify(ctx context.Context, cfg *config.Config) (*island.NowPlaying, error) {
+	if cfg.SpotifyToken == "" {
+		return nil, nil // not linked
+	}
+
+	client, err := auth.GetSpotifyClient(ctx, cfg)
+	if err != nil {
+		return nil, nil // not linked / token invalid — no now-playing is the correct answer
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "GET", auth.SpotifyAPIBase+"/me/player/currently-playing", nil)
+	if err != nil {
+		return nil, fmt.Errorf("now playing request: %w", err)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("now playing fetch: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNoContent {
+		return nil, nil // nothing playing
+	}
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("Spotify error (%s): %s", resp.Status, string(body))
+	}
+
+	var parsed struct {
+		Item struct {
+			Name    string `json:"name"`
+			Artists []struct {
+				Name string `json:"name"`
+			} `json:"artists"`
+			Album struct {
+				Images []struct {
+					URL string `json:"url"`
+				} `json:"images"`
+			} `json:"album"`
+		} `json:"item"`
+		IsPlaying bool `json:"is_playing"`
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("now playing read: %w", err)
+	}
+	if len(body) == 0 || parseEmptyBody(body) {
+		return nil, nil
+	}
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("now playing parse: %w", err)
+	}
+	if parsed.Item.Name == "" {
+		return nil, nil // nothing playing
+	}
+
+	artists := make([]string, 0, len(parsed.Item.Artists))
+	for _, a := range parsed.Item.Artists {
+		artists = append(artists, a.Name)
+	}
+	art := ""
+	if len(parsed.Item.Album.Images) > 0 {
+		art = parsed.Item.Album.Images[0].URL
+	}
+
+	return &island.NowPlaying{
+		Track:     parsed.Item.Name,
+		Artist:    strings.Join(artists, ", "),
+		ArtURL:    art,
+		IsPlaying: parsed.IsPlaying,
+	}, nil
+}
+
+// parseEmptyBody reports whether body is just whitespace/"null" — Spotify's
+// currently-playing endpoint can return 200 with an empty body in some
+// client states, which json.Unmarshal would otherwise reject as an error.
+func parseEmptyBody(body []byte) bool {
+	s := strings.TrimSpace(string(body))
+	return s == "" || s == "null"
 }
 
 func main() {
@@ -332,7 +426,10 @@ func main() {
 	meetings := island.NewMeetingProvider(island.SystemClock{}, func(ctx context.Context) (*island.NextMeeting, error) {
 		return nextMeetingFromCalendar(ctx, cfg)
 	})
-	islandRunner := island.NewRunner(islandReg, island.DefaultTimers, meetings)
+	nowPlaying := island.NewNowPlayingProvider(island.SystemClock{}, func(ctx context.Context) (*island.NowPlaying, error) {
+		return nowPlayingFromSpotify(ctx, cfg)
+	})
+	islandRunner := island.NewRunner(islandReg, island.DefaultTimers, meetings, nowPlaying)
 	islandRunner.Start(rootCtx)
 
 	// The WebView UI Engine *must* run on the main OS thread to avoid crashes.
