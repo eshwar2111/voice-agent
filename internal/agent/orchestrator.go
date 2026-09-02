@@ -127,10 +127,17 @@ func (o *Orchestrator) execSubGoal(ctx gocontext.Context, sg SubGoal) error {
 	// no "filename" and it hard-failed ("create_file requires a filename") even
 	// though the request clearly named the file. Generate real args from the
 	// tool's own JSON schema.
+	tool, found := o.Executor.Registry.Get(agentName)
+	if !found {
+		return fmt.Errorf("tool not found in registry: %s", agentName)
+	}
 	var params json.RawMessage
-	if goalAgents[agentName] {
+	if toolTakesGoal(tool.Parameters()) {
+		// The high-level workflow agents accept a free-form {goal, context}.
 		params, _ = json.Marshal(map[string]string{"goal": sg.Goal, "context": sg.Context})
 	} else {
+		// Everything else (research→query, *_assistant→request, create_file→
+		// filename, …) needs its real, schema-shaped arguments.
 		p, err := o.generateToolParams(ctx, agentName, sg)
 		if err != nil {
 			return err
@@ -148,16 +155,22 @@ func (o *Orchestrator) execSubGoal(ctx gocontext.Context, sg SubGoal) error {
 	return o.Executor.ExecutePlan(ctx, plan)
 }
 
-// goalAgents take a {goal, context} shim and plan internally; every other tool
-// gets real, schema-shaped arguments via generateToolParams.
-var goalAgents = map[string]bool{
-	"google_workflow_agent":      true,
-	"spotify_workflow_agent":     true,
-	"google_workspace_assistant": true,
-	"spotify_assistant":          true,
-	"google_ai":                  true,
-	"spotify_ai_curate":          true,
-	"research":                   true,
+// toolTakesGoal reports whether a tool accepts the free-form {goal, context}
+// shim — i.e. its schema declares a "goal" parameter (the high-level workflow
+// agents). Every other tool needs real schema-shaped args instead; hardcoding a
+// list got this wrong (research takes "query", the assistants take "request"),
+// so detect it from the schema.
+func toolTakesGoal(schema string) bool {
+	var m map[string]any
+	if json.Unmarshal([]byte(schema), &m) != nil {
+		return false
+	}
+	if props, ok := m["properties"].(map[string]any); ok {
+		_, has := props["goal"]
+		return has
+	}
+	_, has := m["goal"]
+	return has
 }
 
 // generateToolParams builds a raw tool's arguments from its schema and the
