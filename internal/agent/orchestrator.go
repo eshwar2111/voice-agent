@@ -291,9 +291,16 @@ Break the user's request into sub-goals, each routed to a specialist agent.
 
 Available agents:
 - "answer" — general questions, explanations, definitions, advice, calculations,
-  writing, or chit-chat that need NO specific app and NONE of the user's private
-  data. The assistant just answers directly. THIS IS THE DEFAULT for anything
-  that isn't clearly a Google or Spotify task.
+  writing, or chit-chat answerable from general knowledge, needing NO app and
+  NONE of the user's private data. THE DEFAULT for anything not clearly another
+  agent's job.
+- "research" — questions needing CURRENT info from the web (weather, news,
+  prices, sports scores, "right now", "today", live facts). It fetches and
+  returns a concise synthesized answer. PREFER this over web_search for any
+  question — web_search only dumps raw links.
+- "web_search" — use ONLY when the user explicitly wants a LIST of links/results
+  to browse ("search for…", "find pages about…", "give me links"). Never for a
+  plain question that wants an answer.
 - "google_workflow_agent"  — multi-step Google Workspace tasks (Gmail, Calendar, Drive, Docs, Sheets, Slides)
 - "spotify_workflow_agent" — multi-step Spotify tasks (play, queue, recommend, curate)
 - "google_workspace_assistant" — single-step Workspace lookups or simple drafts

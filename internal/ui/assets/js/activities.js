@@ -325,6 +325,8 @@ registerActivity({
   leading: (d) => {
     if (d.phase === 'listening')
       return el('span', 'cap-glyph accent glyph-pulse', icon('mic'));
+    if (d.phase === 'speaking')
+      return el('span', 'cap-glyph accent', icon('wave'));
     // A REAL determinate ring once step data is present (reuses ringSVG, the
     // same primitive the timer uses; frac = step/total). Without step data,
     // the SP5 warm sparkle — the equalizer/shimmer carries "busy", so this
@@ -335,6 +337,14 @@ registerActivity({
   },
   trailing: (d) => {
     if (d.phase === 'listening') return el('span', 'eq', '<i></i><i></i><i></i><i></i><i></i>');
+    // While speaking, offer a real Stop that halts TTS (executor.StopSpeaking
+    // via the stopSpeaking binding). This one genuinely stops the action.
+    if (d.phase === 'speaking') {
+      const s = el('button', 'iconbtn', icon('stop'));
+      s.title = 'Stop talking';
+      s.onclick = (ev) => { ev.stopPropagation(); window.stopSpeaking && window.stopSpeaking() };
+      return s;
+    }
     // NOTE: this dismisses the island's progress display; it does NOT abort the
     // running plan. Real cancellation needs an engine-side binding, and this
     // spec is constrained to internal/ui only. Deferred to SP6 — do not fake it

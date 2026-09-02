@@ -218,8 +218,16 @@ func main() {
 	// Wire the "Jarvis" speak-answers path. The engine enables speak-mode only
 	// for voice-originated commands, so this func is invoked solely for those
 	// answers; leaving it nil (speak_responses=false) keeps the agent silent.
+	// The island's Stop control halts speech mid-sentence.
+	ui.StopSpeakFunc = executor.StopSpeaking
 	if cfg.SpeakResponses {
-		ui.SpeakFunc = func(s string) { _ = executor.Speak(s) }
+		// Set the Speaking state around the utterance so the island shows a Stop
+		// button while it talks, then return to idle when the answer finishes.
+		ui.SpeakFunc = func(s string) {
+			ui.SetState(ui.StateSpeaking)
+			_ = executor.Speak(s)
+			ui.SetState(ui.StateIdle)
+		}
 		log.Println("[config] speak_responses=true — voice answers will be spoken aloud")
 	}
 

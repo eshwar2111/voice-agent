@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -133,6 +134,10 @@ func init() {
 // dependency on internal/executor, preserving the layering.
 var SpeakFunc func(string)
 
+// StopSpeakFunc, when non-nil, halts any in-progress speech (wired to
+// executor.StopSpeaking). Invoked by the island's Stop control while speaking.
+var StopSpeakFunc func()
+
 // speakMode is toggled per command by the engine: on for a voice-originated
 // command, off for the typed path. Only ShowOutputOverlay (answers) consults it;
 // status messages via ShowNotification are never spoken.
@@ -147,6 +152,40 @@ var speakMode atomic.Bool
 // SetSpeakMode enables or disables speaking of answers for the current command.
 func SetSpeakMode(on bool) {
 	speakMode.Store(on)
+}
+
+var (
+	gistURLRe    = regexp.MustCompile(`https?://\S+`)
+	gistMDRe     = regexp.MustCompile("[#*_`>|-]+") // markdown syntax noise
+	gistWSRe     = regexp.MustCompile(`\s+`)
+	gistSentEnd  = regexp.MustCompile(`[.!?]`)
+	gistMaxRunes = 320
+)
+
+// spokenGist reduces an answer to a short, natural spoken summary: strip URLs
+// and markdown, collapse whitespace, and keep the first sentence or two (up to
+// ~320 chars). The screen still shows the full text; only the voice is trimmed.
+func spokenGist(text string) string {
+	s := gistURLRe.ReplaceAllString(text, "")
+	s = strings.ReplaceAll(s, "```", " ")
+	s = gistMDRe.ReplaceAllString(s, " ")
+	s = strings.TrimSpace(gistWSRe.ReplaceAllString(s, " "))
+	if s == "" {
+		return ""
+	}
+	runes := []rune(s)
+	if len(runes) <= gistMaxRunes {
+		return s
+	}
+	// Cut at a sentence boundary near the cap, else a hard cut with an ellipsis.
+	head := string(runes[:gistMaxRunes])
+	if loc := gistSentEnd.FindAllStringIndex(head, -1); len(loc) > 0 {
+		last := loc[len(loc)-1][1]
+		if last > gistMaxRunes/3 {
+			return strings.TrimSpace(head[:last])
+		}
+	}
+	return strings.TrimSpace(head) + "…"
 }
 
 func SetState(s AgentState) {
@@ -245,9 +284,13 @@ func ShowOutputOverlay(text string) {
 	// ShowNotification below, but only from here — direct ShowNotification/
 	// SetState status messages never reach this call and so are never spoken).
 	// Run off the UI dispatch: SpeakFunc blocks on SAPI, and this may be called
-	// on the WebView thread. speakMode is off for the typed path.
+	// on the WebView thread. speakMode is off for the typed path. Speak only the
+	// GIST — the screen can show the full answer (lists, links, detail), but
+	// reading all of that aloud is painful; voice gets a concise spoken summary.
 	if speakMode.Load() && SpeakFunc != nil {
-		go SpeakFunc(text)
+		if gist := spokenGist(text); gist != "" {
+			go SpeakFunc(gist)
+		}
 	}
 	if len(text) < 55 {
 		ShowNotification(text)
@@ -470,6 +513,12 @@ func StartOverlay(ctx context.Context, cfg *config.Config) {
 		select {
 		case askTextChan <- askAnswer{ok: false}:
 		default:
+		}
+	})
+	// Stop control shown while the agent is speaking — halts TTS immediately.
+	w.Bind("stopSpeaking", func() {
+		if StopSpeakFunc != nil {
+			StopSpeakFunc()
 		}
 	})
 	w.Bind("suggestionAccept", func(id string) {
