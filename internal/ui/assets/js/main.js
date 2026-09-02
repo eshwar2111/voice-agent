@@ -21,6 +21,7 @@ import { registerActivity, updateActivity, endActivity, activeActivities, render
 import { render as renderCommand } from './surfaces/command.js';
 import { render as renderResult } from './surfaces/result.js';
 import { render as renderApprove } from './surfaces/approve.js';
+import { render as renderAsk } from './surfaces/ask.js';
 import { loadSettings } from './surfaces/controlcenter.js';
 
 /* ─── logging: everything goes to Go (voice-agent.log) ────────────────────── */
@@ -78,6 +79,7 @@ window.__agent.on('notify', d => {
 });
 window.__agent.on('surface:open', d => {
   if(d.id==='command') openSurface('command');
+  else if(d.id==='ask') openSurface('ask', { question: d.question });
   else if(d.id==='result') openSurface('result', { text: d.text });
   // 'approve' is no longer sent: RequestConfirmationCard/RequestConfirmation
   // (internal/ui/overlay.go) now drive the trust.approval live activity
@@ -262,7 +264,7 @@ function slotFor(presence){
 // Content for the command/result/approve surfaces (rendered inline in the
 // island body at presence="sheet") is owned by their own modules, keyed by
 // contentId === the surface id, exactly like state.js's resolve() sets it.
-const surfaceRenderers = { command: renderCommand, result: renderResult, approve: renderApprove };
+const surfaceRenderers = { command: renderCommand, result: renderResult, approve: renderApprove, ask: renderAsk };
 
 // Content beyond 'idle' is otherwise owned by whichever activity is on top
 // (see activities.js). Returning an empty div for an id with no renderer
@@ -570,6 +572,10 @@ export function getSurface(){ return store.surface }
 // Clears store.surface/payload, resets the idle clock so dormant timing
 // starts fresh from the moment a surface closes, and re-renders.
 export function closeSurface(){
+  // A clarification prompt closing WITHOUT a submit (Esc, click-away, Cancel)
+  // must cancel the blocked Go AskText, or the command that asked hangs forever.
+  // A submit already answered AskText, so this stray cancel is dropped there.
+  if(store.surface === 'ask'){ window.askTextCancel && window.askTextCancel(); }
   store.surface = null;
   store.payload = null;
   window.setInputActive && window.setInputActive(false);

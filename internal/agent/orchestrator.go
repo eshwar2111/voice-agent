@@ -160,10 +160,11 @@ var goalAgents = map[string]bool{
 	"research":                   true,
 }
 
-// generateToolParams asks the LLM to produce a raw tool's arguments from its own
-// schema and the user's request, inferring sensible defaults for required fields
-// that weren't spelled out (so "create a file with hello world" gets a default
-// filename rather than failing).
+// generateToolParams builds a raw tool's arguments from its schema and the
+// request. It asks the LLM for what the request specifies (WITHOUT inventing
+// values for genuinely-unstated required fields), then asks the USER for any
+// required field still missing — so "create a file with hello world" prompts
+// "What should I name the file?" instead of failing or guessing.
 func (o *Orchestrator) generateToolParams(ctx gocontext.Context, tool string, sg SubGoal) (json.RawMessage, error) {
 	t, found := o.Executor.Registry.Get(tool)
 	if !found {
@@ -181,21 +182,74 @@ Extra context (may be empty): %s
 
 Rules:
 - Return ONLY a single JSON object of arguments. No prose, no markdown fences.
-- Include every REQUIRED field. Infer values from the request.
-- If a required field is genuinely unspecified, choose a sensible default (e.g. a
-  reasonable filename like "note.txt") rather than leaving it blank.`,
+- Fill every field the request actually specifies or clearly implies.
+- If a REQUIRED field is genuinely not specified by the request, OMIT it
+  entirely — do NOT invent a value. The user will be asked for it.`,
 		tool, t.Description(), t.Parameters(), sg.Goal, sg.Context)
 
 	raw, err := o.Provider.Generate(ctx, prompt, nil)
 	if err != nil {
 		return nil, err
 	}
-	obj := extractJSONObject(raw)
-	var check map[string]any
-	if err := json.Unmarshal([]byte(obj), &check); err != nil {
+	obj := map[string]any{}
+	_ = json.Unmarshal([]byte(extractJSONObject(raw)), &obj) // best-effort; ask fills the gaps
+
+	// Ask the user for any required field the request didn't supply.
+	for _, field := range requiredFields(t.Parameters()) {
+		if !isBlank(obj[field]) {
+			continue
+		}
+		answer, ok := ui.AskText(questionFor(field))
+		if !ok || strings.TrimSpace(answer) == "" {
+			return nil, fmt.Errorf("cancelled — I still need the %s", field)
+		}
+		obj[field] = strings.TrimSpace(answer)
+	}
+
+	b, err := json.Marshal(obj)
+	if err != nil {
 		return nil, fmt.Errorf("couldn't work out the details for %s", tool)
 	}
-	return json.RawMessage(obj), nil
+	return b, nil
+}
+
+// isBlank reports whether a generated argument value is missing or empty.
+func isBlank(v any) bool {
+	if v == nil {
+		return true
+	}
+	s, ok := v.(string)
+	return ok && strings.TrimSpace(s) == ""
+}
+
+// requiredFields extracts the "required" list from a tool's JSON-Schema string.
+func requiredFields(schema string) []string {
+	var s struct {
+		Required []string `json:"required"`
+	}
+	_ = json.Unmarshal([]byte(schema), &s)
+	return s.Required
+}
+
+// questionFor phrases a friendly clarification question for a schema field.
+func questionFor(field string) string {
+	switch field {
+	case "filename", "file_name", "name":
+		return "What should I name the file?"
+	case "path", "file_path":
+		return "Which file or folder?"
+	case "content", "text", "body":
+		return "What should it say?"
+	case "query", "q", "search":
+		return "What should I search for?"
+	case "app_name", "app":
+		return "Which app?"
+	case "url", "website":
+		return "Which website or URL?"
+	case "message":
+		return "What's the message?"
+	}
+	return "What should the " + field + " be?"
 }
 
 // extractJSONObject returns the first {...} block in s, or "{}".

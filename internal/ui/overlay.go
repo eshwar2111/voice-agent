@@ -102,15 +102,29 @@ var (
 	// waits its turn for the island instead.
 	confirmMutex sync.Mutex
 
+	// askTextChan carries a free-text clarification answer back from the UI to a
+	// blocked AskText call; askTextMutex serializes concurrent clarifications so
+	// they can't share the one channel (same reasoning as confirmMutex).
+	askTextChan  chan askAnswer
+	askTextMutex sync.Mutex
+
 	// OnCommand is declared in command_bar.go
 	OnSettingsSaved func(cfg interface{})
 )
+
+// askAnswer is the result of a clarification prompt: the typed text and whether
+// the user submitted (ok) rather than cancelled.
+type askAnswer struct {
+	text string
+	ok   bool
+}
 
 func init() {
 	// Force WebView2 background to be transparent (0 alpha)
 	// This must be set before the webview is initialized.
 	os.Setenv("WEBVIEW2_DEFAULT_BACKGROUND_COLOR", "0")
 	confirmChan = make(chan bool)
+	askTextChan = make(chan askAnswer)
 }
 
 // SpeakFunc, when non-nil, speaks an answer aloud. It is injected once from
@@ -303,6 +317,22 @@ func RequestConfirmation(msg string) bool {
 	return <-confirmChan
 }
 
+// AskText opens a free-text clarification prompt on the island and blocks until
+// the user answers (returns text, true) or cancels / the UI is unavailable
+// (returns "", false). Used when a tool needs a value the request didn't
+// specify — the agent asks instead of failing. Serialized so two clarifications
+// can't race on the one channel.
+func AskText(question string) (string, bool) {
+	if w == nil || bridge == nil {
+		return "", false
+	}
+	askTextMutex.Lock()
+	defer askTextMutex.Unlock()
+	bridge.Push("surface:open", map[string]any{"id": "ask", "question": question})
+	ans := <-askTextChan
+	return ans.text, ans.ok
+}
+
 // waitForConfirmSlot acquires confirmMutex, logging if the caller actually
 // had to wait — i.e. another plan step's approval was already showing. Silent
 // contention here is exactly what made this bug unfindable before: two
@@ -419,6 +449,22 @@ func StartOverlay(ctx context.Context, cfg *config.Config) {
 		case confirmChan <- approved:
 		default:
 			log.Printf("[ui] confirmCallback(%v) had no pending confirmation to answer — dropped", approved)
+		}
+	})
+	// Clarification prompt answers. Non-blocking send (like confirmCallback):
+	// if no AskText is waiting, drop it rather than block the UI thread or land
+	// on an unrelated future receiver.
+	w.Bind("askTextSubmit", func(text string) {
+		select {
+		case askTextChan <- askAnswer{text: text, ok: true}:
+		default:
+			log.Printf("[ui] askTextSubmit had no pending clarification — dropped")
+		}
+	})
+	w.Bind("askTextCancel", func() {
+		select {
+		case askTextChan <- askAnswer{ok: false}:
+		default:
 		}
 	})
 	w.Bind("suggestionAccept", func(id string) {
