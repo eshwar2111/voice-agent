@@ -222,13 +222,32 @@ func isBlank(v any) bool {
 	return ok && strings.TrimSpace(s) == ""
 }
 
-// requiredFields extracts the "required" list from a tool's JSON-Schema string.
+// requiredFields extracts the required argument names from a tool's Parameters()
+// string, handling BOTH shapes used in this codebase:
+//   1. Proper JSON Schema: {"type":"object","properties":{…},"required":["x"]}
+//   2. Ad-hoc flat form:    {"path":"string (required - …)","content":"…"}
+// Missing this second form is why write_file failed on "missing path parameter"
+// instead of asking — its schema has no "required" array.
 func requiredFields(schema string) []string {
-	var s struct {
-		Required []string `json:"required"`
+	var m map[string]any
+	if json.Unmarshal([]byte(schema), &m) != nil {
+		return nil
 	}
-	_ = json.Unmarshal([]byte(schema), &s)
-	return s.Required
+	if _, isSchema := m["properties"]; isSchema {
+		var s struct {
+			Required []string `json:"required"`
+		}
+		_ = json.Unmarshal([]byte(schema), &s)
+		return s.Required
+	}
+	// Flat form: a field is required when its description mentions "required".
+	var req []string
+	for k, v := range m {
+		if s, ok := v.(string); ok && strings.Contains(strings.ToLower(s), "required") {
+			req = append(req, k)
+		}
+	}
+	return req
 }
 
 // questionFor phrases a friendly clarification question for a schema field.

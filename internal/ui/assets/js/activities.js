@@ -287,9 +287,24 @@ registerActivity({
   trailing: () => el('span'),
   compact: (d) => el('div', null, `<span class="ttl">${esc(d.title || 'Approve action?')}</span>`),
   expanded: (d) => {
-    const n = el('div', null,
-      `<span class="ttl">${esc(d.title || 'Approve action?')}</span>` +
-      `<span class="sub">${esc(d.goal || '')}</span>`);
+    const n = el('div', 'approval');
+    let head = `<div class="ttl">${esc(d.title || 'Approve action?')}</div>`;
+    if(d.goal) head += `<div class="sub">${esc(d.goal)}</div>`;
+    n.innerHTML = head;
+    // The steps the user is actually authorising — plain-English label + detail,
+    // scrollable if long — instead of a raw JSON blob.
+    if(Array.isArray(d.steps) && d.steps.length){
+      const list = el('div', 'approval-steps');
+      d.steps.forEach(s => {
+        const risky = /risky/i.test(s.label || '');
+        const item = el('div', 'approval-step' + (risky ? ' risky' : ''));
+        item.innerHTML =
+          `<span class="astep-label">${esc(s.label || 'Step')}</span>` +
+          `<span class="astep-value">${esc(s.value || '')}</span>`;
+        list.appendChild(item);
+      });
+      n.appendChild(list);
+    }
     const row = el('div', 'actions right');
     const no = el('button', 'btn ghost', 'Cancel');
     const yes = el('button', 'btn primary', 'Approve');

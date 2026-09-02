@@ -266,27 +266,32 @@ func canDeliverConfirmation(hasWindow, hasBridge bool) bool {
 	return hasWindow && hasBridge
 }
 
-// approvalCardFields best-effort extracts a headline and a goal/body string
-// out of the plan-card JSON built by callers (agent.executor, security).
-// It never fails the request on a parse miss — worst case the raw JSON shows
-// up as the goal text, which is still readable, just unformatted.
-func approvalCardFields(cardJSON string) (title, goal string) {
-	title, goal = "Approve action?", cardJSON
+// approvalCardFields extracts a readable headline, a one-line goal, and the list
+// of steps being approved out of the plan-card JSON (agent.executor / security /
+// trust preview). It NEVER dumps the raw JSON as the body — an unparseable card
+// yields an empty goal and no steps, and the card still shows a clear title.
+func approvalCardFields(cardJSON string) (title, goal string, steps []map[string]string) {
+	title = "Approve action?"
 	var p struct {
 		Title string `json:"title"`
 		Plan  struct {
-			Goal string `json:"goal"`
+			Goal  string `json:"goal"`
+			Steps []struct {
+				Label string `json:"label"`
+				Value string `json:"value"`
+			} `json:"steps"`
 		} `json:"plan"`
 	}
 	if err := json.Unmarshal([]byte(cardJSON), &p); err == nil {
 		if p.Title != "" {
 			title = p.Title
 		}
-		if p.Plan.Goal != "" {
-			goal = p.Plan.Goal
+		goal = p.Plan.Goal
+		for _, s := range p.Plan.Steps {
+			steps = append(steps, map[string]string{"label": s.Label, "value": s.Value})
 		}
 	}
-	return title, goal
+	return title, goal, steps
 }
 
 // RequestConfirmationCard and RequestConfirmation both drive the
@@ -301,8 +306,8 @@ func RequestConfirmationCard(cardJSON string) bool {
 	}
 	waitForConfirmSlot()
 	defer confirmMutex.Unlock()
-	title, goal := approvalCardFields(cardJSON)
-	UpdateActivity("trust.approval", map[string]any{"title": title, "goal": goal})
+	title, goal, steps := approvalCardFields(cardJSON)
+	UpdateActivity("trust.approval", map[string]any{"title": title, "goal": goal, "steps": steps})
 	return <-confirmChan
 }
 

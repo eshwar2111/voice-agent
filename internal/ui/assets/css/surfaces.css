@@ -78,6 +78,16 @@ kbd{font:600 11px var(--font);color:var(--ink-2);background:rgba(255,255,255,.07
 .md pre.code code{font:500 12.5px/1.6 ui-monospace,"SF Mono","Cascadia Code",Consolas,monospace;background:none;border:none;padding:0;color:#e8ecf3}
 .item-snippet{margin-top:8px;color:var(--ink-2);font-size:12px;line-height:1.5}
 
+/* ─── Approval card (trust.approval): readable steps, not raw JSON ─────────── */
+.approval{display:flex;flex-direction:column;gap:7px;width:100%}
+.approval .sub{color:var(--ink-2);font-size:12px;line-height:1.4}
+.approval-steps{display:flex;flex-direction:column;gap:5px;max-height:84px;overflow-y:auto;padding-right:2px}
+.approval-step{display:flex;flex-direction:column;gap:1px;padding:6px 9px;border-radius:9px;background:rgba(255,255,255,.05);border:1px solid var(--stroke)}
+.approval-step.risky{border-color:color-mix(in srgb,var(--warn,#e0a94a) 45%,var(--stroke));background:color-mix(in srgb,var(--warn,#e0a94a) 10%,transparent)}
+.astep-label{font-size:9.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
+.approval-step.risky .astep-label{color:var(--warn,#e0a94a)}
+.astep-value{font-size:12.5px;color:var(--ink);line-height:1.35}
+
 /* result footer: fading top hairline (replaces the heavy full-width divider) */
 .surface-result .footer{position:relative;border-top:none;padding:14px 20px 16px}
 .surface-result .footer::before{content:"";position:absolute;left:20px;right:20px;top:0;height:1px;
