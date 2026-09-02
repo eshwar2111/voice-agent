@@ -47,7 +47,9 @@ func (o *OpenFileTool) Execute(ctx context.Context, rawParams json.RawMessage) (
 		return "", fmt.Errorf("invalid parameters: %w", err)
 	}
 
-	path := strings.TrimSpace(params.FilePath)
+	// Resolve folder aliases ("downloads/x.txt", "~/x") to real paths; a bare
+	// name to search (not a known folder) is returned unchanged for resolveFile.
+	path := resolveUserPath(strings.TrimSpace(params.FilePath))
 
 	// Same trap open_explorer had: a spoken file name ("open my notes file")
 	// arrives as a NAME, not a path, and the planner has no way to know where

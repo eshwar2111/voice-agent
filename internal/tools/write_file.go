@@ -39,12 +39,12 @@ func (w *WriteFileTool) Execute(ctx context.Context, rawParams json.RawMessage) 
 		return "", fmt.Errorf("invalid parameters: %w", err)
 	}
 
-	path := params.Path
-	content := params.Content
-
-	if strings.TrimSpace(path) == "" {
+	if strings.TrimSpace(params.Path) == "" {
 		return "", errors.New("missing path parameter")
 	}
+	// Resolve folder aliases ("downloads/notes.txt", "~/x", %VAR%) to real paths.
+	path := resolveUserPath(params.Path)
+	content := params.Content
 
 	lowerPath := strings.ToLower(path)
 	for _, restricted := range RestrictedPaths {

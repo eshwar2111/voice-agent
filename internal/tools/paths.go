@@ -1,0 +1,99 @@
+package tools
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+)
+
+// knownFolders maps common spoken/typed folder names to their location under the
+// user's home directory ("" means home itself). Case-insensitive on the caller.
+var knownFolders = map[string]string{
+	"downloads": "Downloads",
+	"download":  "Downloads",
+	"desktop":   "Desktop",
+	"documents": "Documents",
+	"docs":      "Documents",
+	"pictures":  "Pictures",
+	"photos":    "Pictures",
+	"music":     "Music",
+	"videos":    "Videos",
+	"video":     "Videos",
+	"home":      "",
+}
+
+// resolveUserPath expands a loosely-specified path into a real one:
+//   - "~" / "~/x"                 → the home dir (and below)
+//   - "downloads", "desktop", …   → the matching known folder under home
+//   - "downloads/reports"         → known folder + sub-path
+//   - %VAR% and $VAR              → environment variables
+// An already-absolute or unrecognised path is returned unchanged (so a genuinely
+// bad path still surfaces its error). This is why "keep it in downloads" used to
+// fail — "downloads" was taken literally instead of the user's Downloads folder.
+func resolveUserPath(p string) string {
+	p = strings.TrimSpace(p)
+	if p == "" {
+		return p
+	}
+	// Environment variables first (both %WINDOWS% and $unix styles).
+	p = expandWinEnv(os.ExpandEnv(p))
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return p
+	}
+
+	if p == "~" {
+		return home
+	}
+	if strings.HasPrefix(p, "~/") || strings.HasPrefix(p, "~\\") {
+		return filepath.Join(home, filepath.FromSlash(strings.TrimLeft(p[1:], `/\`)))
+	}
+	if filepath.IsAbs(p) {
+		return filepath.Clean(p)
+	}
+
+	// First path segment as a known-folder alias.
+	norm := strings.ReplaceAll(p, `\`, "/")
+	parts := strings.SplitN(norm, "/", 2)
+	if sub, ok := knownFolders[strings.ToLower(strings.TrimSpace(parts[0]))]; ok {
+		base := home
+		if sub != "" {
+			base = filepath.Join(home, sub)
+		}
+		if len(parts) == 2 && strings.TrimSpace(parts[1]) != "" {
+			return filepath.Join(base, filepath.FromSlash(parts[1]))
+		}
+		return base
+	}
+	return p
+}
+
+// expandWinEnv expands %VAR% references (os.ExpandEnv only handles $VAR).
+func expandWinEnv(s string) string {
+	if !strings.Contains(s, "%") {
+		return s
+	}
+	var b strings.Builder
+	for {
+		i := strings.Index(s, "%")
+		if i < 0 {
+			b.WriteString(s)
+			break
+		}
+		j := strings.Index(s[i+1:], "%")
+		if j < 0 {
+			b.WriteString(s)
+			break
+		}
+		b.WriteString(s[:i])
+		name := s[i+1 : i+1+j]
+		if v, ok := os.LookupEnv(name); ok {
+			b.WriteString(v)
+		} else {
+			b.WriteString("%" + name + "%") // leave unknown refs intact
+		}
+		s = s[i+1+j+1:]
+	}
+	return b.String()
+}

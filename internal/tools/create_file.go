@@ -88,7 +88,10 @@ func (c *CreateFileTool) Execute(ctx context.Context, rawParams json.RawMessage)
 		// produces a nonsense path on Windows.
 		fullPath = filepath.Clean(filename)
 	default:
-		dir := strings.TrimSpace(params.Path)
+		// Resolve folder aliases ("downloads", "desktop", "~/x", %VAR%) to real
+		// paths before checking them — otherwise "keep it in downloads" is taken
+		// literally and fails "path does not exist".
+		dir := resolveUserPath(strings.TrimSpace(params.Path))
 		if dir == "" {
 			// Defaulting to the process working directory put files next to the
 			// executable, where the user would never find them. The Desktop is
