@@ -61,9 +61,11 @@ type AnthropicProvider struct {
 }
 
 func init() {
-	Register("anthropic", func(key, model, baseURL string) Provider {
+	factory := func(key, model, baseURL string) Provider {
 		return NewAnthropic(key, model, baseURL)
-	})
+	}
+	Register("anthropic", factory)
+	Register("claude", factory) // friendly alias
 }
 
 func NewAnthropic(apiKey, model, baseURL string) *AnthropicProvider {

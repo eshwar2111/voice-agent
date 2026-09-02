@@ -56,6 +56,24 @@ Rename `config.example.json` to `config.json` and add your API keys:
 ```
 *(Note: You can also update the LLM Provider and API key directly through the UI settings panel by clicking the ⚙ gear icon).*
 
+#### LLM providers (BYOK, fully swappable)
+
+The agent depends only on the `llm.Provider` interface, so the provider is pure config — set `llm_provider`, `api_key`, and `model`:
+
+| `llm_provider` | Service | Default `base_url` (override with `base_url`) |
+|---|---|---|
+| `gemini` | Google Gemini | built-in |
+| `openai` | OpenAI | `https://api.openai.com/v1` |
+| `anthropic` / `claude` | Anthropic Claude | built-in |
+| `openrouter` | OpenRouter (100s of models) | `https://openrouter.ai/api/v1` |
+| `groq` | Groq | `https://api.groq.com/openai/v1` |
+| `together` | Together AI | `https://api.together.xyz/v1` |
+| `ollama` / `local` | Local Ollama | `http://localhost:11434/v1` |
+| `lmstudio` | Local LM Studio | `http://localhost:1234/v1` |
+| `custom` | Any OpenAI-compatible endpoint | **required**: set `base_url` |
+
+**Automatic failover:** set `fallback_provider`, `fallback_api_key`, and `fallback_model` and any failure on the primary (e.g. a rate-limit 429) transparently retries on the fallback — so one provider's quota wall never stops the agent.
+
 ### Building
 ```bash
 # Format the code

@@ -59,13 +59,26 @@ type OpenAICompatibleProvider struct {
 }
 
 func init() {
-	factory := func(key, model, baseURL string) Provider {
-		return NewOpenAICompatible(key, model, baseURL)
+	// Every OpenAI-compatible service (OpenAI, OpenRouter, Groq, Together, and
+	// local runtimes like Ollama / LM Studio) speaks the same /chat/completions
+	// API — only the base URL differs. Register each name with its default base
+	// URL so the user just picks a provider + key; a config base_url still wins.
+	reg := func(name, defaultBase string) {
+		Register(name, func(key, model, baseURL string) Provider {
+			if strings.TrimSpace(baseURL) == "" {
+				baseURL = defaultBase
+			}
+			return NewOpenAICompatible(key, model, baseURL)
+		})
 	}
-	Register("openai", factory)
-	Register("groq", factory)
-	Register("ollama", factory)
-	Register("custom", factory)
+	reg("openai", "https://api.openai.com/v1")
+	reg("openrouter", "https://openrouter.ai/api/v1")
+	reg("groq", "https://api.groq.com/openai/v1")
+	reg("together", "https://api.together.xyz/v1")
+	reg("ollama", "http://localhost:11434/v1")
+	reg("lmstudio", "http://localhost:1234/v1")
+	reg("local", "http://localhost:11434/v1")
+	reg("custom", "") // caller MUST supply base_url
 }
 
 func NewOpenAICompatible(apiKey, model, baseURL string) *OpenAICompatibleProvider {
