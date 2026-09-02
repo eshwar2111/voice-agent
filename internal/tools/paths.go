@@ -49,6 +49,11 @@ func resolveUserPath(p string) string {
 	if strings.HasPrefix(p, "~/") || strings.HasPrefix(p, "~\\") {
 		return filepath.Join(home, filepath.FromSlash(strings.TrimLeft(p[1:], `/\`)))
 	}
+	// Bare drive "E:" is drive-RELATIVE on Windows (current dir on E:), almost
+	// never what's meant — normalise to the drive root "E:\".
+	if len(p) == 2 && p[1] == ':' && isDriveLetter(p[0]) {
+		return strings.ToUpper(p[:1]) + `:\`
+	}
 	if filepath.IsAbs(p) {
 		return filepath.Clean(p)
 	}
@@ -67,6 +72,32 @@ func resolveUserPath(p string) string {
 		return base
 	}
 	return p
+}
+
+func isDriveLetter(b byte) bool {
+	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z')
+}
+
+// driveRoot returns "X:\" if s names a drive — "e", "E:", "e drive", "the e
+// folder" — and that drive actually exists; otherwise "". This is why "open e
+// folder" used to fail: it was searched as a folder named "E folder" instead of
+// being read as the E: drive.
+func driveRoot(s string) string {
+	t := strings.ToLower(strings.TrimSpace(s))
+	for _, w := range []string{"the ", "my "} {
+		t = strings.TrimPrefix(t, w)
+	}
+	for _, w := range []string{" drive", " folder", " directory", " dir"} {
+		t = strings.TrimSuffix(t, w)
+	}
+	t = strings.TrimSpace(strings.TrimSuffix(t, ":"))
+	if len(t) == 1 && isDriveLetter(t[0]) {
+		root := strings.ToUpper(t) + `:\`
+		if info, err := os.Stat(root); err == nil && info.IsDir() {
+			return root
+		}
+	}
+	return ""
 }
 
 // expandWinEnv expands %VAR% references (os.ExpandEnv only handles $VAR).

@@ -49,21 +49,38 @@ func (o *OpenExplorerTool) Execute(ctx context.Context, rawParams json.RawMessag
 		return "", fmt.Errorf("invalid parameters: %w", err)
 	}
 
+	// An explicit path may be a drive ("E:"), an alias ("downloads"), "~/x", or a
+	// real absolute path — resolve all of those.
 	path := strings.TrimSpace(params.Path)
-
-	// A spoken folder name ("open voice agent folder") arrives as `query`, not
-	// `path` — the planner has no idea where that folder lives. Resolve it
-	// against the file index before falling back.
-	if path == "" && strings.TrimSpace(params.Query) != "" {
-		if found := resolveFolder(params.Query); found != "" {
-			path = found
+	if path != "" {
+		if d := driveRoot(path); d != "" {
+			path = d
 		} else {
-			// Naming a folder we cannot find must FAIL, not silently open the
-			// default window. An earlier version of this fix opened bare
-			// explorer whenever `path` was empty, which turned "open voice
-			// agent folder" into "open something else entirely" — a wrong
-			// result is worse than a clear error.
-			return "", fmt.Errorf("could not find a folder matching %q", params.Query)
+			path = resolveUserPath(path)
+		}
+	}
+
+	// A spoken folder name ("open the E folder", "open downloads", "open voice
+	// agent folder") arrives as `query`. Try, in order: a drive letter, a
+	// known-folder alias, then the file index.
+	if path == "" {
+		q := strings.TrimSpace(params.Query)
+		if q != "" {
+			switch {
+			case driveRoot(q) != "":
+				path = driveRoot(q)
+			case aliasDir(q) != "":
+				path = aliasDir(q)
+			default:
+				if found := resolveFolder(q); found != "" {
+					path = found
+				} else {
+					// A named folder we cannot find must FAIL, not silently open
+					// the default window (a wrong result is worse than a clear
+					// error).
+					return "", fmt.Errorf("could not find a folder matching %q", q)
+				}
+			}
 		}
 	}
 
@@ -96,6 +113,21 @@ func (o *OpenExplorerTool) Execute(ctx context.Context, rawParams json.RawMessag
 		return "", err
 	}
 	return "Explorer opened", nil
+}
+
+// aliasDir resolves a spoken folder alias ("downloads", "my desktop") to a real
+// existing directory via resolveUserPath, or "" if it isn't a known alias.
+func aliasDir(query string) string {
+	a := cleanFolderQuery(query)
+	if a == "" {
+		return ""
+	}
+	if r := resolveUserPath(a); r != a {
+		if info, err := os.Stat(r); err == nil && info.IsDir() {
+			return r
+		}
+	}
+	return ""
 }
 
 // folderNouns are the words people append when naming a directory out loud —
