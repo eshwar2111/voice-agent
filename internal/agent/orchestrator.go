@@ -322,6 +322,11 @@ Available agents:
 %s
 
 Rules:
+-1. Play/pause/resume/stop/skip/volume of whatever is CURRENTLY playing (a
+   movie, a video, music on screen) is "media_control" — a single Windows media
+   key, no vision needed. NEVER use find_and_click / a vision tool just to press
+   play or pause. Reserve find_and_click for locating a specific on-screen
+   element that has no keyboard shortcut.
 0. NEVER invent an agent or tool name. If a request is a general question or
    explanation ("explain X", "what is Y", "how do I…", "write me…"), route the
    WHOLE thing to a single "answer" sub-goal — do NOT send it to a Google or

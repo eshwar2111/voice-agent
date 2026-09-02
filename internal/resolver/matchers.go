@@ -191,9 +191,20 @@ func (MediaMatcher) Match(in NormalizedInput) (*Match, bool) {
 	// "play" case below was already anchored.
 	case isCommandPhrase(l, "pause"):
 		action = "pause"
-	case containsAny(l, "pause music", "pause the music", "pause playback", "pause the song"):
+	case containsAny(l, "pause music", "pause the music", "pause playback", "pause the song",
+		"pause the movie", "pause the video", "pause the film", "pause the show",
+		"pause it", "pause the media", "pause what"):
+		// Generic play/pause via the Windows media key (media_control) works on
+		// whatever is playing — a movie, a browser video, Spotify — with NO vision
+		// model and NO cloud call. "play the movie on my screen" used to fall
+		// through to Tier 1 → find_and_click (vision), which burned the LLM quota
+		// for something a single keystroke does.
 		action = "pause"
-	case l == "play" || containsAny(l, "play music", "resume music", "resume playback"):
+	case l == "play" || l == "resume" || l == "continue" || l == "unpause" ||
+		containsAny(l, "play music", "resume music", "resume playback", "resume playing",
+			"continue playing", "continue watching", "resume the", "continue the",
+			"play the movie", "play the video", "play the film", "play the show",
+			"play it", "resume it", "unpause", "play the paused", "play what"):
 		action = "play"
 	default:
 		return nil, false

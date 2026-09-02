@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 )
 
@@ -189,11 +190,23 @@ func (g *GeminiProvider) makeGeminiRequest(ctx context.Context, payload map[stri
 	if resp.StatusCode != http.StatusOK {
 		bodyBytes, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
+		// Turn a rate-limit / quota response into a short human message instead of
+		// dumping the multi-KB error JSON onto the result overlay.
+		if resp.StatusCode == http.StatusTooManyRequests {
+			msg := "the AI service is rate-limited right now (free-tier quota reached)"
+			if d := geminiRetryDelayRe.FindSubmatch(bodyBytes); len(d) == 2 {
+				msg += " — try again in " + string(d[1])
+			}
+			return nil, fmt.Errorf("%s", msg)
+		}
 		return nil, fmt.Errorf("gemini API error (status %d): %s", resp.StatusCode, string(bodyBytes))
 	}
 
 	return resp, nil
 }
+
+// geminiRetryDelayRe pulls the "retryDelay":"44s" hint out of a 429 body.
+var geminiRetryDelayRe = regexp.MustCompile(`"retryDelay":\s*"([^"]+)"`)
 
 // parseGeminiResponse extracts text from a Gemini API response body.
 func parseGeminiResponse(bodyBytes []byte) (string, error) {
