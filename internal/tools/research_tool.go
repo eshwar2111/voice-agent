@@ -88,7 +88,16 @@ func (t *ResearchTool) Execute(ctx context.Context, rawParams json.RawMessage) (
 
 	// 4. Synthesize answer using LLM
 	ui.ShowNotification("Synthesizing answer...")
-	prompt := fmt.Sprintf("Based on the following web research results, provide a comprehensive and detailed answer to the question: \"%s\". Use a professional and helpful tone. Cite sources if possible.\n\n%s", query, researchContext.String())
+	prompt := fmt.Sprintf(`Answer the question directly and CONCISELY from the web results below, like a helpful assistant speaking aloud. Rules:
+- Lead with the direct answer in the first sentence.
+- Keep it to 2–4 short sentences. Do NOT produce a long report, bullet lists of every figure, or a "Sources:" section.
+- Mention only the single most relevant number/fact; skip the rest.
+- If the results are a forecast for a specific date rather than live data, say so in a few words ("as of <date>") — don't refuse or over-explain.
+
+Question: "%s"
+
+Web results:
+%s`, query, researchContext.String())
 
 	finalAnswer, err := t.Provider.Generate(ctx, prompt, nil)
 	if err != nil {
