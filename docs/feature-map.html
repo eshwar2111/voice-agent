@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Voice Agent — Feature Map</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --panel:#ffffff; --panel-2:#f0f2f5; --ink:#1a1d23; --ink-2:#5b6470;
+    --line:#e2e6ec; --accent:#0a84ff; --accent-soft:rgba(10,132,255,.10);
+    --ok:#1f9d55; --ok-bg:rgba(31,157,85,.12);
+    --warn:#b7791f; --warn-bg:rgba(183,121,31,.13);
+    --gap:#c2410c; --gap-bg:rgba(194,65,12,.12);
+    --dormant:#6b7280; --dormant-bg:rgba(107,114,128,.13);
+    --star:#d4a017;
+    --mono:ui-monospace,"SF Mono","Cascadia Code","Segoe UI Mono",Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  @media (prefers-color-scheme:dark){ :root:not([data-theme="light"]){
+    --bg:#0d1014; --panel:#161a20; --panel-2:#1c2129; --ink:#e8ecf1; --ink-2:#9aa4b2;
+    --line:#262c35; --accent:#4aa3ff; --accent-soft:rgba(74,163,255,.14);
+    --ok:#43c07d; --ok-bg:rgba(67,192,125,.14);
+    --warn:#e0a94a; --warn-bg:rgba(224,169,74,.14);
+    --gap:#f0834e; --gap-bg:rgba(240,131,78,.14);
+    --dormant:#8b95a3; --dormant-bg:rgba(139,149,163,.15);
+    --star:#e6bd47;
+  }}
+  :root[data-theme="dark"]{
+    --bg:#0d1014; --panel:#161a20; --panel-2:#1c2129; --ink:#e8ecf1; --ink-2:#9aa4b2;
+    --line:#262c35; --accent:#4aa3ff; --accent-soft:rgba(74,163,255,.14);
+    --ok:#43c07d; --ok-bg:rgba(67,192,125,.14);
+    --warn:#e0a94a; --warn-bg:rgba(224,169,74,.14);
+    --gap:#f0834e; --gap-bg:rgba(240,131,78,.14);
+    --dormant:#8b95a3; --dormant-bg:rgba(139,149,163,.15);
+    --star:#e6bd47;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+    line-height:1.5;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1000px;margin:0 auto;padding:32px 22px 80px}
+  header.top{display:flex;flex-direction:column;gap:14px;margin-bottom:26px}
+  h1{font-size:26px;font-weight:680;letter-spacing:-.02em;margin:0}
+  .sub{color:var(--ink-2);font-size:14.5px;max-width:66ch}
+  .build{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    padding:12px 14px;font-family:var(--mono);font-size:12.5px;color:var(--ink-2);
+    overflow-x:auto;white-space:nowrap}
+  .build b{color:var(--accent);font-weight:600}
+  .legend{display:flex;flex-wrap:wrap;gap:8px 14px;font-size:12.5px;color:var(--ink-2);
+    align-items:center;padding-top:2px}
+  .pill{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;
+    padding:2.5px 9px;border-radius:999px;letter-spacing:.01em;white-space:nowrap}
+  .pill.ok{color:var(--ok);background:var(--ok-bg)}
+  .pill.warn{color:var(--warn);background:var(--warn-bg)}
+  .pill.gap{color:var(--gap);background:var(--gap-bg)}
+  .pill.dormant{color:var(--dormant);background:var(--dormant-bg)}
+  .star{color:var(--star);font-size:12px}
+  section{margin-top:30px}
+  .grp{display:flex;align-items:baseline;gap:10px;margin:0 0 12px;
+    padding-bottom:8px;border-bottom:1px solid var(--line)}
+  .grp h2{font-size:15px;font-weight:640;letter-spacing:.04em;text-transform:uppercase;margin:0}
+  .grp .count{font-size:12px;color:var(--ink-2)}
+  .rows{display:flex;flex-direction:column;gap:10px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px;
+    display:grid;grid-template-columns:1fr auto;gap:6px 12px;align-items:start}
+  .card.prio{border-color:color-mix(in srgb,var(--accent) 45%,var(--line))}
+  .name{font-weight:600;font-size:15px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .what{grid-column:1/2;color:var(--ink-2);font-size:13.5px}
+  .states{grid-column:2;justify-self:end;display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+  .test{grid-column:1/-1;margin-top:6px;border-top:1px dashed var(--line);padding-top:9px;
+    display:flex;flex-direction:column;gap:4px}
+  .test .lbl{font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2)}
+  .test .say{font-family:var(--mono);font-size:12.5px;color:var(--ink);
+    background:var(--panel-2);border-radius:7px;padding:6px 9px;overflow-x:auto}
+  .test .exp{font-size:12.5px;color:var(--ink-2)}
+  .test .exp b{color:var(--ink);font-weight:600}
+  .qacode{font-family:var(--mono);font-size:11px;color:var(--accent);background:var(--accent-soft);
+    padding:1px 6px;border-radius:5px;font-weight:600}
+  footer{margin-top:40px;color:var(--ink-2);font-size:12.5px;border-top:1px solid var(--line);padding-top:16px}
+  a{color:var(--accent)}
+  @media (max-width:560px){ .card{grid-template-columns:1fr} .states{grid-column:1;justify-self:start} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1>Voice Agent — Feature Map</h1>
+    <p class="sub">Everything built so far, the state it's in, and one concrete thing to try for each. Rows with a
+      <span class="star">★</span> are the nine highest-value desktop checks — do those first. Codes like
+      <span class="qacode">C1</span> point to the full <b>consolidated QA run sheet</b>.</p>
+    <div class="build">build &amp; run &nbsp;→&nbsp; <b>export PATH="$PATH:/c/w64devkit/bin"</b> &amp;&amp; <b>go build -tags whisper -ldflags="-s -w -H windowsgui" -o voice-agent.exe ./cmd/app</b> &amp;&amp; ./voice-agent.exe
+      &nbsp;&nbsp;·&nbsp;&nbsp; <span style="color:var(--gap)">-tags whisper is required</span>, else voice silently fails (check voice-agent.log)</div>
+    <div class="legend">
+      <span class="pill ok">Verified</span> tests pass
+      <span class="pill warn">Needs desktop check</span> built, only you can confirm
+      <span class="pill gap">Has gap</span> works with a known limit
+      <span class="pill dormant">Dormant</span> code exists, not reachable
+    </div>
+  </header>
+  <div id="app"></div>
+  <footer>
+    Generated from the codebase audit + ledgers. State is code-level confidence — <b>a “Needs desktop check” means the code and unit tests are in, but the runtime/visual behavior has never been observed on a real machine.</b>
+    That gap is exactly what this session is here to close. Paste results as <span class="qacode">A1 pass</span> / <span class="qacode">C1 fail</span> + a log line or screenshot.
+  </footer>
+</div>
+<script>
+const S={OK:['ok','Verified'],WARN:['warn','Needs desktop check'],GAP:['gap','Has gap'],DORM:['dormant','Dormant']};
+const F=[
+ {g:'Voice I/O',items:[
+  {n:'Voice capture (Whisper)',s:['WARN'],p:1,qa:'A1',what:'In-process Whisper transcription with dynamic recording that waits through pauses.',say:'Click the pill · wait 3s in silence · say "open notepad"',exp:'Notepad opens. Before the fix, the pause ended the recording ("audio too short").'},
+  {n:'No-speech bailout',s:['WARN'],qa:'A3',what:'Empty audio is dropped fast instead of holding the mic for the full 10s.',say:'Click the pill · say nothing',exp:'Log shows <b>🤐 No speech detected</b> within ~4s, island returns to idle.'},
+  {n:'Voice-out / speaks answers',s:['WARN'],what:'NEW — answers to VOICE commands are spoken (gated by speak_responses, default on). Typed commands stay silent.',say:'By voice: "what time is it"  ·  then type the same',exp:'Voice answer is <b>spoken aloud</b>; the typed one is silent.'},
+  {n:'Wake word (Porcupine)',s:['GAP'],what:'Hands-free trigger. Needs a valid porcupine_access_key or it degrades gracefully.',say:'Say the wake word',exp:'Capture starts. If <b>ACTIVATION_REFUSED</b> in the log, the key is invalid (pill still works).'},
+ ]},
+ {g:'Dispatch & intelligence',items:[
+  {n:'Tiered dispatch (local / cloud)',s:['OK'],what:'Common commands resolve offline with zero tokens (Tier 0); the rest go to the cloud LLM (Tier 1).',say:'"what time is it"  vs  "explain quantum tunneling"',exp:'First is instant/offline; second goes to the cloud. Check the log for <b>TIER0</b> / <b>TIER1</b>.'},
+  {n:'Local resolver (7 matchers)',s:['OK'],what:'Deterministic app/file/web/media/system/window/datetime recognition.',say:'"open chrome" · "next song" · "lock my pc" · "minimize window" · "search for X"',exp:'Each acts locally and correctly.'},
+  {n:'Trust layer (gate · verify · recover)',s:['OK','WARN'],p:1,qa:'H1',what:'Multi-step or risky plans show one preview + approve gate before anything runs; steps verify; failures retry→ask.',say:'A multi-step/risky command, e.g. "delete the file qa-test.txt"',exp:'A <b>preview card</b> appears first. Cancel → nothing ran. Approve → it runs.'},
+  {n:'Security profile enforcement',s:['OK'],what:'Tool allow-list + confirmation, now enforced on BOTH typed and voice/cloud paths.',say:'(covered by unit tests)',exp:'A disallowed tool is rejected before executing on either path.'},
+ ]},
+ {g:'Tools & capabilities',items:[
+  {n:'Apps · websites · folders · files open',s:['WARN'],qa:'D2/D3',what:'Launch apps, open URLs, open Explorer folders and files by name.',say:'"open the voice agent folder"  ·  "open example.com"',exp:'Opens E:\\Voice Agent / the site. No "no path given".'},
+  {n:'File ops (no-clobber create)',s:['WARN'],p:1,qa:'D1',what:'create/read/write/delete; create refuses to silently overwrite.',say:'"create a file called qa-test.txt with the text hello world" · then run it again',exp:'First: file on your <b>Desktop</b> with the text. Second: refuses, <b>original survives</b>.'},
+  {n:'Web search (real results)',s:['WARN'],qa:'D4',what:'Returns title/URL/snippet results the agent reasons over (no longer just opens a browser).',say:'"search for the weather in delhi"',exp:'Results about Delhi weather — not a search for the literal phrase.'},
+  {n:'Research (deep synthesis)',s:['WARN'],what:'Searches, reads top pages, and synthesizes a cited answer.',say:'"research the history of the go programming language"',exp:'A synthesized multi-source answer.'},
+  {n:'Media / window / system control',s:['WARN'],qa:'D5/D6',what:'Play/pause/skip/volume, window min/max/close, lock/sleep/shutdown.',say:'Play music, say "pause" · then "pause for a second, what\'s on my calendar"',exp:'Bare "pause" pauses; the second answers calendar (not stolen).'},
+  {n:'Spotify — playback + seek/save/transfer',s:['WARN','GAP'],what:'Play/queue/volume + jump to a time, like the current song, move playback to a device. Auto-recovers "no active device".',say:'"play on my laptop" · "jump to 1:30" · "like this song"',exp:'Transfers / seeks / saves. Saving needs <b>one Spotify re-link</b> first (⚙ → Spotify).'},
+  {n:'Spotify — AI curate / mood',s:['WARN'],what:'LLM builds themed playlists and mood sessions.',say:'"make me a focus playlist"',exp:'A curated playlist is created and added.'},
+  {n:'Google Workspace + morning brief',s:['WARN'],qa:'D7/D8',what:'Gmail/Calendar/Docs/Sheets/Slides/Drive + a day brief. Needs Google linked.',say:'"read my latest email" · "give me my morning brief"',exp:'Returns a real email / brief (needs 0.1 Google link).'},
+  {n:'Automation — click/type/vision',s:['WARN'],what:'Native UIA clicks, keyboard/mouse, screenshot-driven find-and-click.',say:'"click the Save button" in a focused app',exp:'The button is clicked via UIA (not blind coordinates).'},
+  {n:'run_python',s:['WARN'],what:'Writes and runs a Python script on the fly.',say:'"run python to compute the 20th fibonacci number"',exp:'Returns 6765.'},
+  {n:'Clipboard tools',s:['WARN'],what:'Summarize / rewrite clipboard, explain selection.',say:'Copy a paragraph · "summarize my clipboard"',exp:'A concise summary.'},
+  {n:'Memory (remember / recall)',s:['WARN'],what:'Persistent SQLite memory with dedup.',say:'"remember my project is called Atlas" · later "what\'s my project called?"',exp:'Recalls "Atlas".'},
+ ]},
+ {g:'Ambient & proactive',items:[
+  {n:'Ambient context capture',s:['OK'],what:'Grabs active window / clipboard / selection at each trigger.',say:'Select text in an app · Ctrl+Space · "explain this"',exp:'Uses the selected text as context.'},
+  {n:'Visual / screen path',s:['WARN'],what:'Screenshot is captured and analyzed when the request needs on-screen context.',say:'"what\'s on my screen"',exp:'An answer grounded in a screenshot.'},
+  {n:'Proactive suggestions',s:['WARN'],what:'Downloads/Calendar/Clipboard watchers surface one-tap cards. Off by default.',say:'Set enable_proactive:true · drop a .zip in Downloads',exp:'An "Unzip?" card appears on the island.'},
+ ]},
+ {g:'Dynamic island (SP5 / SP6)',items:[
+  {n:'Click-through island',s:['WARN'],p:1,qa:'E1',what:'The overlay only intercepts clicks on what it actually draws.',say:'Idle island up · click a browser tab in the row beside it',exp:'The tab activates — the overlay does <b>not</b> eat the click.'},
+  {n:'Morph grow / shrink',s:['WARN'],qa:'E2/E3',what:'Region widens smoothly before the content lands; no rectangular crop.',say:'Ctrl+Space to open, Esc to close · watch the edge',exp:'Edge grows organically, no hard snap, no bounce on close.'},
+  {n:'Click-through during a morph',s:['WARN'],p:1,qa:'J7',what:'The click-through region stays correct while the shape is animating (bug that recurred 3×).',say:'Start music with a timer up (a morph), and mid-animation click the desktop just outside the island',exp:'The click reaches the desktop.'},
+  {n:'Auto-shy / dormant',s:['WARN'],qa:'E6',what:'Idle island shrinks and dims, wakes on hover.',say:'Leave it idle 6s with the cursor away · then hover',exp:'Shrinks to a small dim pill; hover wakes it.'},
+  {n:'Command sheet (typed)',s:['WARN'],qa:'F1',what:'Ctrl+Space text field that survives pauses and cursor movement.',say:'Ctrl+Space · type a multi-word command · pause 5s · keep typing',exp:'Your text survives (no textarea rebuild wiping it).'},
+  {n:'Results · toasts · copy',s:['WARN'],p:1,qa:'G1',what:'Long answers render in a card; Copy grabs the current one.',say:'Get one long answer, then let a second long result arrive',exp:'The second <b>replaces</b> the first; Copy copies the <b>new</b> text.'},
+  {n:'Approvals UI',s:['WARN'],p:1,qa:'H1',what:'Approve/Cancel cards for gated actions; executor never hangs.',say:'Trigger a gated action · try Approve, Cancel, Esc, and clicking the island body',exp:'Every path resolves cleanly.'},
+  {n:'Live activity — timer ring',s:['WARN'],qa:'I1/I2',what:'Countdown ring that drains smoothly and wakes the island at zero.',say:'"set a timer for 2 minutes" · watch it',exp:'Ring drains smoothly; at 0:00 the island wakes immediately.'},
+  {n:'Live activity — meeting countdown',s:['WARN'],qa:'K1',what:'Counts down to a calendar event, peeking at T-5m / T-1m. Needs Google linked.',say:'Have an event within the hour',exp:'Countdown at T-60m; single peeks at T-5m and T-1m.'},
+  {n:'Live activity — Spotify split',s:['WARN'],qa:'J1-J5',what:'NOW WIRED — a Go NowPlayingProvider feeds spotify.nowplaying (album art/track/artist), rendered via kindRenderers; the split machinery pairs it with a timer. Needs Spotify linked + playing.',say:'Timer running · then start music (Spotify linked)',exp:'Island splits pill+bubble (album art in the bubble), stays centered; click bubble to swap.'},
+  {n:'Settings / Control Center',s:['WARN'],qa:'M2/M3',what:'OAuth linking + config, reachable in every state.',say:'Gear while idle, while music plays, while a command runs, while an approval is open',exp:'Opens in all four; link + Save round-trip cleanly.'},
+  {n:'Kill switch (Ctrl+Esc)',s:['WARN'],what:'NEW — halts the current command only, leaving the app alive.',say:'Start a long command · press Ctrl+Esc',exp:'The command stops; the island/app stay alive (no half-dead state).'},
+  {n:'DPI correctness',s:['WARN'],p:1,qa:'L3',what:'Geometry + reachable controls across DPI scales.',say:'Set 150% DPI, restart, open Control Center',exp:'<b>Close and Quit both reachable.</b> (175%/200% known out of scope.)'},
+ ]},
+ {g:'Resilience & first-run',items:[
+  {n:'Network-wedge recovery',s:['WARN'],p:1,qa:'C1',what:'A cloud command on a dead network unwinds instead of freezing the agent forever.',say:'Start "what\'s the weather in tokyo" · disable Wi-Fi within 1s · wait ~60s · re-enable · run anything',exp:'Island returns to <b>idle with an error</b>, then later commands <b>work</b> (no permanent stick).'},
+  {n:'Double-fire guard',s:['WARN'],p:1,qa:'B1',what:'Rapid triggers collapse to a single capture.',say:'Double-click the pill as fast as you can',exp:'Exactly one capture; log: <b>island click ignored — cooldown</b>.'},
+  {n:'First-run seamlessness',s:['OK'],what:'NEW — empty api_key warns clearly (not a cryptic later failure); complete example config.',say:'Run with an empty api_key',exp:'Clear <b>[config] api_key is empty</b> warning; local commands still work.'},
+  {n:'Auto-migrating storage',s:['OK'],what:'memory.db / audit_logs.db create their own schemas on first run; TTL prunes old rows.',say:'First launch',exp:'DBs appear next to the exe; no manual migration.'},
+ ]},
+ {g:'Known gaps & dormant (not yet wired)',items:[
+  {n:'Microsoft (Outlook/Word/Excel/OneDrive)',s:['DORM'],what:'7 tools fully built but NOT registered — the agent can\'t call them. Deferred (you\'re Google-first).',say:'—',exp:'Activation is a future slice.'},
+  {n:'Trust re-plan',s:['GAP'],what:'v1 no-op: the recovery ladder degrades Replan → Ask (a real LLM re-plan isn\'t wired yet).',say:'—',exp:'Spec-correct fallthrough; follow-up.'},
+  {n:'Sub-agent profile depth',s:['GAP'],what:'The Tier-1 allow-list checks the agent-level tool, not sub-tools a workflow agent calls internally.',say:'—',exp:'Future hardening pass.'},
+  {n:'Real search API',s:['GAP'],what:'Web search uses a DuckDuckGo scraper (fragile). A real API (Brave/etc.) is slice B.',say:'—',exp:'Works today, upgrade later.'},
+  {n:'Google write depth',s:['GAP'],what:'No Gmail drafts/reply/labels, no Calendar edit/delete, Drive is read-only. Slice C.',say:'—',exp:'Read + basic write only for now.'},
+  {n:'Sports mode',s:['DORM'],what:'Not built — greenfield (slice D).',say:'—',exp:'Planned.'},
+  {n:'Misc dormant tools',s:['DORM'],what:'terminal / vault / vscode / windows_settings / schedule_task / play_music exist but are unregistered.',say:'—',exp:'Register (with a security decision) or delete.'},
+ ]},
+];
+const app=document.getElementById('app');
+F.forEach(group=>{
+  const sec=document.createElement('section');
+  const h=document.createElement('div');h.className='grp';
+  h.innerHTML=`<h2>${group.g}</h2><span class="count">${group.items.length}</span>`;
+  sec.appendChild(h);
+  const rows=document.createElement('div');rows.className='rows';
+  group.items.forEach(it=>{
+    const c=document.createElement('div');c.className='card'+(it.p?' prio':'');
+    const pills=it.s.map(k=>`<span class="pill ${S[k][0]}">${S[k][1]}</span>`).join('');
+    const star=it.p?'<span class="star" title="Top-9 priority check">★</span>':'';
+    const qa=it.qa?`<span class="qacode">${it.qa}</span>`:'';
+    const testBlock=(it.say&&it.say!=='—')?`<div class="test">
+        <span class="lbl">Try it</span>
+        <div class="say">${it.say}</div>
+        <div class="exp">Expect: ${it.exp}</div></div>`:
+      (it.exp?`<div class="test"><div class="exp">${it.exp}</div></div>`:'');
+    c.innerHTML=`<div class="name">${it.n} ${star} ${qa}</div>
+      <div class="states">${pills}</div>
+      <div class="what">${it.what}</div>
+      ${testBlock}`;
+    rows.appendChild(c);
+  });
+  sec.appendChild(rows);app.appendChild(sec);
+});
+</script>
+</body>
+</html>
