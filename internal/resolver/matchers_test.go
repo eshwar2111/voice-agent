@@ -272,3 +272,37 @@ func TestMediaMatcherPauseIsAnchored(t *testing.T) {
 		}
 	}
 }
+
+func TestNaturalFileMatcher(t *testing.T) {
+	resolve := func(q string) (string, bool) {
+		if strings.Contains(q, "resume") {
+			return `C:\Users\me\Documents\Eshwar Resume AI Engineer.pdf`, true
+		}
+		return "", false // no confident hit
+	}
+	m := NaturalFileMatcher{Resolve: resolve}
+
+	// Natural phrasing must resolve locally to open_file.
+	for _, q := range []string{
+		"open my latest resume", "pull up my resume", "show me the resume",
+		"open resume", "get my resume file",
+	} {
+		match, ok := m.Match(Normalize(q, ""))
+		if !ok || match.Tasks[0].Tool != "open_file" {
+			t.Errorf("%q: expected open_file, ok=%v", q, ok)
+			continue
+		}
+		if !strings.Contains(strings.ToLower(string(match.Tasks[0].Params)), "resume") {
+			t.Errorf("%q: params missing path: %s", q, match.Tasks[0].Params)
+		}
+	}
+
+	// No confident index hit -> no match (falls through to Tier 1, not a wrong open).
+	if _, ok := m.Match(Normalize("open my quarterly budget", "")); ok {
+		t.Error("unresolved name must NOT claim a match")
+	}
+	// A bare app launch (no file cue, empty remainder) must not match.
+	if _, ok := m.Match(Normalize("open", "")); ok {
+		t.Error("bare 'open' must not match")
+	}
+}

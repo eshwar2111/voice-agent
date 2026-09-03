@@ -167,6 +167,58 @@ func (f FileMatcher) Match(in NormalizedInput) (*Match, bool) {
 	}, true
 }
 
+// naturalOpenPrefixes are the ways people actually ask to open a file out loud —
+// "open my latest resume", "pull up the budget", "show me my notes". They carry
+// no explicit "file" cue, so they only become a file-open AFTER the app matcher
+// has passed (a real app always wins) and ONLY when the file index resolves a
+// CONFIDENT hit. Ordered longest-first so "open my " strips before "open ".
+var naturalOpenPrefixes = []string{
+	"open up my ", "open up the ", "open up ",
+	"open my ", "open the ", "open a ", "open ",
+	"pull up my ", "pull up the ", "pull up ",
+	"bring up my ", "bring up the ", "bring up ",
+	"show me my ", "show me the ", "show me ", "show my ", "show the ", "show ",
+	"get me my ", "get me the ", "get my ", "get me ", "get the ",
+	"find my ", "find the ",
+}
+
+// NaturalFileMatcher is the last-resort local resolver for natural "open my X"
+// phrasing. It never needs the cloud, and never opens the wrong thing: it emits
+// an open_file plan ONLY when the file index confidently resolves the spoken
+// name to a real path (Resolve applies the index's own rank threshold), so a
+// query with no good file match falls through to Tier 1 rather than opening
+// something random. Placed after AppMatcher so app launches keep priority.
+type NaturalFileMatcher struct {
+	Resolve func(query string) (path string, ok bool)
+}
+
+func (NaturalFileMatcher) Name() string { return "natural-file" }
+func (n NaturalFileMatcher) Match(in NormalizedInput) (*Match, bool) {
+	if n.Resolve == nil {
+		return nil, false
+	}
+	var query string
+	matched := false
+	for _, p := range naturalOpenPrefixes {
+		if strings.HasPrefix(in.Lower, p) {
+			query = strings.TrimSpace(strings.TrimPrefix(in.Lower, p))
+			matched = true
+			break
+		}
+	}
+	if !matched || query == "" {
+		return nil, false
+	}
+	path, ok := n.Resolve(query)
+	if !ok || path == "" {
+		return nil, false
+	}
+	return &Match{
+		Tasks:      []agent.Task{taskJSON("open_file", map[string]string{"file_path": path})},
+		Confidence: 0.8, Reason: "natural open + confident index hit",
+	}, true
+}
+
 type MediaMatcher struct{}
 
 func (MediaMatcher) Name() string { return "media" }
@@ -288,5 +340,10 @@ func Default() *Resolver {
 		WebMatcher{},
 		FileMatcher{Search: fileSearch},
 		AppMatcher{Lookup: appLookup},
+		// Last resort: natural "open my X" phrasing, resolved locally against the
+		// file index. Only fires on a confident hit, so it never steals an app
+		// launch or opens the wrong file — but it keeps common file opens OFFLINE
+		// instead of burning a cloud call (and failing when the quota is spent).
+		NaturalFileMatcher{Resolve: search.Resolve},
 	)
 }
