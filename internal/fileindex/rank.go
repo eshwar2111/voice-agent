@@ -62,27 +62,78 @@ func usageNorm(score float64) float64 {
 	return v
 }
 
-// textMatch scores how well name matches the (already lowercased) query:
-// exact match=1.0, prefix=0.8, whole-token=0.6, substring=0.4, else 0.
+// fileStopwords are filler words that must not drive or dilute file matching —
+// "open my latest resume file" should match on "resume", not on "my"/"file".
+var fileStopwords = map[string]bool{
+	"my": true, "the": true, "a": true, "an": true, "of": true, "to": true,
+	"for": true, "about": true, "that": true, "this": true, "please": true,
+	"open": true, "find": true, "show": true, "get": true, "give": true,
+	"file": true, "files": true, "document": true, "documents": true,
+	"doc": true, "docs": true, "folder": true, "me": true, "up": true,
+}
+
+// splitTokens lowercases and splits on spaces and every filename separator.
+func splitTokens(s string) []string {
+	return strings.FieldsFunc(strings.ToLower(s), func(r rune) bool {
+		return r == ' ' || r == '_' || r == '-' || r == '.' || r == '/' || r == '\\'
+	})
+}
+
+// significantTokens drops stopwords and 1-char noise; falls back to all tokens
+// if everything was a stopword (e.g. a query that is only filler).
+func significantTokens(s string) []string {
+	all := splitTokens(s)
+	sig := make([]string, 0, len(all))
+	for _, t := range all {
+		if len(t) > 1 && !fileStopwords[t] {
+			sig = append(sig, t)
+		}
+	}
+	if len(sig) == 0 {
+		return all
+	}
+	return sig
+}
+
+// textMatch scores name against query by TOKEN OVERLAP — robust to word order,
+// to filename separators (space/_/-/.), and to extra filler words in the query.
+// Exact/prefix on the joined significant query still score highest.
 func textMatch(query, name string) float64 {
-	q := strings.ToLower(strings.TrimSpace(query))
-	n := strings.ToLower(name)
-	if q == "" {
+	lower := strings.ToLower(name)
+	base := strings.TrimSuffix(lower, extOf(lower))
+	nameToks := splitTokens(base)
+	if len(nameToks) == 0 {
 		return 0
 	}
-	base := strings.TrimSuffix(n, extOf(n))
+	nameSet := make(map[string]bool, len(nameToks))
+	for _, t := range nameToks {
+		nameSet[t] = true
+	}
+	qToks := significantTokens(query)
+	if len(qToks) == 0 {
+		return 0
+	}
+	joinedName, joinedQ := strings.Join(nameToks, " "), strings.Join(qToks, " ")
 	switch {
-	case n == q || base == q:
+	case joinedName == joinedQ:
 		return 1.0
-	case strings.HasPrefix(n, q) || strings.HasPrefix(base, q):
-		return 0.8
-	case hasToken(base, q):
-		return 0.6
-	case strings.Contains(n, q):
-		return 0.4
-	default:
+	case strings.HasPrefix(joinedName, joinedQ):
+		return 0.9
+	}
+	matched := 0
+	for _, t := range qToks {
+		if nameSet[t] {
+			matched++
+		}
+	}
+	if matched == 0 {
+		if strings.Contains(joinedName, joinedQ) {
+			return 0.5
+		}
 		return 0
 	}
+	// 0.55 (one of several query tokens present) → 0.95 (all present).
+	return 0.55 + 0.4*(float64(matched)/float64(len(qToks)))
 }
 
 func extOf(name string) string {
@@ -90,20 +141,6 @@ func extOf(name string) string {
 		return name[i:]
 	}
 	return ""
-}
-
-// hasToken reports whether q appears as a whole token in name once split on
-// common filename separators (space, _, -, .).
-func hasToken(name, q string) bool {
-	tokens := strings.FieldsFunc(name, func(r rune) bool {
-		return r == ' ' || r == '_' || r == '-' || r == '.'
-	})
-	for _, t := range tokens {
-		if t == q {
-			return true
-		}
-	}
-	return false
 }
 
 // hotLookup checks the Tier-1 cache for an exact normalized alias/memory hit,
@@ -136,48 +173,63 @@ func (ix *Index) hotLookup(query string, kind Kind) (string, bool) {
 // Search returns indexed entries matching query, narrowed by kind, ranked by
 // rankScore (text + recency + usage + alias) and sorted best-first. A Tier-1 hot
 // cache hit (explicit memory / alias) short-circuits to that single path.
+// searchCandidates is the shared ranked engine used by BOTH Search and Resolve:
+// FTS/fuzzy metadata candidates, re-ranked, plus the live filesystem safety net
+// merged in when nothing indexed matched confidently. (Hot-cache and semantic
+// are handled by the callers so each can short-circuit / apply its own rule.)
+func (ix *Index) searchCandidates(query string, kind Kind) []Candidate {
+	files, err := ix.store.SearchFTS(query, 50)
+	if err != nil {
+		files = nil
+	}
+	aliasSet := ix.aliasMatches(query)
+	now := nowUnix()
+
+	score := func(fs []File) []Candidate {
+		cs := make([]Candidate, 0, len(fs))
+		for _, f := range fs {
+			if kind == KindFile && f.IsDir || kind == KindFolder && !f.IsDir {
+				continue
+			}
+			cs = append(cs, Candidate{
+				File:       f,
+				TextMatch:  textMatch(query, f.Name),
+				AliasMatch: aliasMatchScore(aliasSet, f.ID),
+			})
+		}
+		return cs
+	}
+	byScore := func(cs []Candidate) {
+		sort.SliceStable(cs, func(i, j int) bool { return rankScore(cs[i], now) > rankScore(cs[j], now) })
+	}
+
+	cands := score(files)
+	byScore(cands)
+
+	// Safety net: a live filesystem walk of the roots when nothing indexed
+	// matched confidently — an existing file is still found even if the index
+	// missed it (stale, a dropped watcher event, a just-created file).
+	if len(cands) == 0 || rankScore(cands[0], now) < resolveThreshold {
+		cands = append(cands, score(ix.filesystemFallback(query, kind))...)
+		byScore(cands)
+	}
+	return cands
+}
+
 func (ix *Index) Search(query string, kind Kind) []FileRecord {
 	query = strings.TrimSpace(query)
 	if query == "" {
 		return nil
 	}
-
 	if path, ok := ix.hotLookup(query, kind); ok {
 		return []FileRecord{{Path: path, Name: filepath.Base(path)}}
 	}
 
-	files, err := ix.store.SearchFTS(query, 50)
-	if err != nil {
-		return nil
-	}
-
-	aliasSet := ix.aliasMatches(query)
+	cands := ix.searchCandidates(query, kind)
 	now := nowUnix()
-	cands := make([]Candidate, 0, len(files))
-	for _, f := range files {
-		switch kind {
-		case KindFile:
-			if f.IsDir {
-				continue
-			}
-		case KindFolder:
-			if !f.IsDir {
-				continue
-			}
-		}
-		cands = append(cands, Candidate{
-			File:       f,
-			TextMatch:  textMatch(query, f.Name),
-			AliasMatch: aliasMatchScore(aliasSet, f.ID),
-		})
-	}
 
-	sort.SliceStable(cands, func(i, j int) bool {
-		return rankScore(cands[i], now) > rankScore(cands[j], now)
-	})
-
-	// Tier 3 — semantic fallback: only when Tiers 1-2 found nothing confident
-	// AND an embedder is configured. A confident metadata hit skips it entirely.
+	// Tier 3 — semantic fallback: only when metadata+filesystem found nothing
+	// confident AND an embedder is configured.
 	if ix.embedder != nil && (len(cands) == 0 || rankScore(cands[0], now) < resolveThreshold) {
 		if sem := ix.semanticSearch(query, kind); len(sem) > 0 {
 			return sem
@@ -211,36 +263,18 @@ func (ix *Index) Resolve(query string, kind Kind) (string, bool) {
 		return path, true
 	}
 
-	files, err := ix.store.SearchFTS(query, 50)
-	if err != nil {
-		return "", false
-	}
-
-	aliasSet := ix.aliasMatches(query)
+	cands := ix.searchCandidates(query, kind)
 	now := nowUnix()
-	var best Candidate
-	var bestScore float64
-	found := false
-	for _, f := range files {
-		switch kind {
-		case KindFile:
-			if f.IsDir {
-				continue
-			}
-		case KindFolder:
-			if !f.IsDir {
-				continue
-			}
-		}
-		c := Candidate{File: f, TextMatch: textMatch(query, f.Name), AliasMatch: aliasMatchScore(aliasSet, f.ID)}
-		s := rankScore(c, now)
-		if !found || s > bestScore {
-			best, bestScore, found = c, s, true
-		}
+	if len(cands) > 0 && rankScore(cands[0], now) >= resolveThreshold {
+		return cands[0].File.Path, true
 	}
 
-	if !found || bestScore < resolveThreshold {
-		return "", false
+	// Tier 3 — semantic fallback, mirroring Search: only when metadata +
+	// filesystem produced nothing confident and an embedder is configured.
+	if ix.embedder != nil {
+		if sem := ix.semanticSearch(query, kind); len(sem) > 0 {
+			return sem[0].Path, true
+		}
 	}
-	return best.File.Path, true
+	return "", false
 }

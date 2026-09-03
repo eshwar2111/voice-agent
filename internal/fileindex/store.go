@@ -254,10 +254,11 @@ func (s *Store) SearchFTS(query string, limit int) ([]File, error) {
 // normalized to spaces (so "startup brainstorm" matches "startup_brainstorm.txt",
 // "my-notes", "report.final", etc.). All tokens must be present (AND).
 func (s *Store) searchLike(query string, limit int) ([]File, error) {
-	toks := strings.Fields(strings.ToLower(query))
+	toks := significantTokens(query)
 	if len(toks) == 0 {
 		return nil, nil
 	}
+	// OR across tokens (any match is a candidate); the ranker rewards overlap.
 	const norm = `lower(replace(replace(replace(name,'_',' '),'-',' '),'.',' '))`
 	conds := make([]string, 0, len(toks))
 	args := make([]any, 0, len(toks)+1)
@@ -268,7 +269,7 @@ func (s *Store) searchLike(query string, limit int) ([]File, error) {
 	args = append(args, limit)
 	rows, err := s.db.Query(`
 		SELECT id, path, name, ext, parent, is_dir, size, created_at, modified_at, last_accessed, content_hash, usage_score
-		FROM files WHERE `+strings.Join(conds, " AND ")+` LIMIT ?`, args...)
+		FROM files WHERE `+strings.Join(conds, " OR ")+` LIMIT ?`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("fileindex: like fallback: %w", err)
 	}
@@ -428,23 +429,22 @@ func (s *Store) AllMemory() (map[string]string, error) {
 	return out, rows.Err()
 }
 
-// ftsPrefixQuery turns free text into an FTS5 MATCH query of prefix tokens,
-// e.g. "resume 2026" -> `"resume"* "2026"*`.
+// ftsPrefixQuery turns free text into an FTS5 MATCH query of prefix tokens
+// combined with OR, e.g. "next resume idea" -> `"next"* OR "resume"* OR "idea"*`.
+// OR (not AND) is deliberate: a file matching even one significant token becomes
+// a candidate, and the ranker (textMatch) then rewards higher token overlap — so
+// extra filler words in the query never exclude the right file. Stopwords are
+// dropped so common words don't flood the candidate set.
 func ftsPrefixQuery(query string) string {
-	fields := strings.Fields(query)
-	if len(fields) == 0 {
-		return `""`
-	}
-	tokens := make([]string, 0, len(fields))
-	for _, tok := range fields {
+	tokens := make([]string, 0, 8)
+	for _, tok := range significantTokens(query) {
 		tok = strings.ReplaceAll(tok, `"`, "")
-		if tok == "" {
-			continue
+		if tok != "" {
+			tokens = append(tokens, fmt.Sprintf(`"%s"*`, tok))
 		}
-		tokens = append(tokens, fmt.Sprintf(`"%s"*`, tok))
 	}
 	if len(tokens) == 0 {
 		return `""`
 	}
-	return strings.Join(tokens, " ")
+	return strings.Join(tokens, " OR ")
 }

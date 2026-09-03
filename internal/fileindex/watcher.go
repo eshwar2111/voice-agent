@@ -317,6 +317,63 @@ func (d *debouncer) stop() {
 	}
 }
 
+// maxFallbackWalk bounds the live safety-net walk so an index miss can never
+// become a multi-second whole-disk scan.
+const maxFallbackWalk = 60000
+
+// filesystemFallback is the last-resort safety net: when the index returns
+// nothing confident, walk the configured roots LIVE and return files whose name
+// contains any significant query token (separators normalized). Guarantees an
+// existing file under a root is found even if the index missed it (stale, a
+// dropped watcher event, a just-created file). Bounded in files walked and
+// results returned so it stays fast; anything it finds is opportunistically
+// indexed so the next lookup is a fast hit.
+func (ix *Index) filesystemFallback(query string, kind Kind) []File {
+	toks := significantTokens(query)
+	if len(toks) == 0 {
+		return nil
+	}
+	repl := strings.NewReplacer("_", " ", "-", " ", ".", " ")
+	out := make([]File, 0, 8)
+	walked := 0
+	for _, root := range ix.roots {
+		if root == "" {
+			continue
+		}
+		_ = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return nil
+			}
+			if walked >= maxFallbackWalk || len(out) >= 25 {
+				return filepath.SkipAll
+			}
+			walked++
+			if d.IsDir() {
+				if ix.skipDir(d.Name()) {
+					return filepath.SkipDir
+				}
+				if kind == KindFile {
+					return nil
+				}
+			} else if kind == KindFolder {
+				return nil
+			}
+			norm := repl.Replace(strings.ToLower(d.Name()))
+			for _, t := range toks {
+				if strings.Contains(norm, t) {
+					if f, ok := ix.fileFromEntry(p, d); ok {
+						out = append(out, f)
+						_, _ = ix.upsertFile(f) // index for next time
+					}
+					break
+				}
+			}
+			return nil
+		})
+	}
+	return out
+}
+
 // skipDir reports whether a directory with the given base name should be skipped.
 func (ix *Index) skipDir(name string) bool {
 	if strings.HasPrefix(name, ".") {

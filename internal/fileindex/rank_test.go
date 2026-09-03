@@ -2,6 +2,29 @@ package fileindex
 
 import "testing"
 
+func TestTextMatchTokenOverlap(t *testing.T) {
+	// The reported miss: multi-word query vs underscored filename.
+	if got := textMatch("startup brainstorm", "startup_brainstorm.txt"); got < 0.9 {
+		t.Errorf(`"startup brainstorm" vs startup_brainstorm.txt = %f, want ~1.0`, got)
+	}
+	// Extra filler words must NOT drop the match (partial overlap still scores).
+	if got := textMatch("next startup brainstorm idea", "startup_brainstorm.txt"); got < 0.55 {
+		t.Errorf("extra words should still match: %f", got)
+	}
+	// Stopwords ignored: "open my resume file" keys on "resume".
+	if got := textMatch("open my resume file", "Resume_2026.pdf"); got < 0.55 {
+		t.Errorf("stopword-heavy query should match on resume: %f", got)
+	}
+	// Word order independent.
+	if got := textMatch("brainstorm startup", "startup_brainstorm.txt"); got < 0.9 {
+		t.Errorf("word order should not matter: %f", got)
+	}
+	// A totally unrelated name scores 0.
+	if got := textMatch("startup brainstorm", "budget_q3.xlsx"); got != 0 {
+		t.Errorf("unrelated name should be 0, got %f", got)
+	}
+}
+
 func TestLatestResumeWins(t *testing.T) {
 	now := int64(1_700_000_000)
 	day := int64(86400)
