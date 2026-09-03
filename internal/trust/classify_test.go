@@ -11,16 +11,24 @@ func TestClassifyTable(t *testing.T) {
 		tool string
 		want Risk
 	}{
+		// Safe: opening/reading/searching/creating/launching/automating.
 		{"get_datetime", Safe},
 		{"list_files", Safe},
 		{"read_file", Safe},
-		{"search", Safe},
+		{"open_file", Safe},
+		{"open_app", Safe},
+		{"create_file", Safe},
+		{"write_file", Safe},
+		{"keyboard_type", Safe},
+		{"native_click", Safe},
+		{"find_file", Safe},
+		{"some_unknown_tool", Safe}, // unknown default = Safe (narrow risk policy)
+		// Risky: destructive, outbound, or arbitrary code.
 		{"delete_file", Risky},
-		{"keyboard_type", Risky},
-		{"native_click", Risky},
+		{"move_file", Risky},
+		{"gmail_send", Risky},
 		{"run_python", Risky},
-		{"google_workflow_agent", Risky},
-		{"some_unknown_tool", Risky}, // unknown default = Risky
+		{"run_terminal", Risky},
 	}
 	for _, tc := range cases {
 		if got := c.Classify(tc.tool, nil); got != tc.want {
@@ -36,14 +44,19 @@ func TestClassifyParamBump(t *testing.T) {
 	if c.Classify("system_control", sd) != Risky {
 		t.Error("system_control shutdown should be Risky")
 	}
-	// window_control close → Risky
+	// window_control close is no longer risky (recoverable) → Safe
 	cl, _ := json.Marshal(map[string]string{"action": "close"})
-	if c.Classify("window_control", cl) != Risky {
-		t.Error("window_control close should be Risky")
+	if c.Classify("window_control", cl) != Safe {
+		t.Error("window_control close should be Safe")
 	}
-	// media_control play (read-ish action) → Safe
+	// media_control play → Safe
 	pl, _ := json.Marshal(map[string]string{"action": "play"})
 	if c.Classify("media_control", pl) != Safe {
 		t.Error("media_control play should be Safe")
+	}
+	// system_control lock (non-destructive) → Safe
+	lk, _ := json.Marshal(map[string]string{"action": "lock"})
+	if c.Classify("system_control", lk) != Safe {
+		t.Error("system_control lock should be Safe")
 	}
 }

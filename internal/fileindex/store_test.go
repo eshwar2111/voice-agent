@@ -36,6 +36,21 @@ func TestUpsertGetSearch(t *testing.T) {
 	}
 }
 
+func TestSearchMatchesUnderscoreMultiWord(t *testing.T) {
+	s := openTestStore(t)
+	s.Upsert(File{Path: `C:\U\Documents\startup_brainstorm.txt`, Name: "startup_brainstorm.txt", Ext: "txt", Parent: "Documents"})
+	// A two-word query must match the underscored filename (the reported miss).
+	res, err := s.SearchFTS("startup brainstorm", 10)
+	if err != nil { t.Fatal(err) }
+	if len(res) != 1 || res[0].Name != "startup_brainstorm.txt" {
+		t.Fatalf(`"startup brainstorm" should match startup_brainstorm.txt; got %+v`, res)
+	}
+	// Single token still works.
+	if r2, _ := s.SearchFTS("brainstorm", 10); len(r2) != 1 {
+		t.Fatalf("single token miss: %+v", r2)
+	}
+}
+
 func TestDeleteCascadesAliasesAndUsage(t *testing.T) {
 	s := openTestStore(t)
 	p := `C:\x\resume.pdf`

@@ -241,13 +241,34 @@ func (s *Store) SearchFTS(query string, limit int) ([]File, error) {
 	if err := rows.Err(); err != nil {
 		return s.searchLike(query, limit)
 	}
+	// Even when FTS ran cleanly, a zero result can be a tokenization miss
+	// (e.g. "startup brainstorm" vs the single FTS token "startup_brainstorm").
+	// Fall through to the normalized token LIKE so the query still resolves.
+	if len(out) == 0 {
+		return s.searchLike(query, limit)
+	}
 	return out, nil
 }
 
+// searchLike matches every query token against the file name with separators
+// normalized to spaces (so "startup brainstorm" matches "startup_brainstorm.txt",
+// "my-notes", "report.final", etc.). All tokens must be present (AND).
 func (s *Store) searchLike(query string, limit int) ([]File, error) {
+	toks := strings.Fields(strings.ToLower(query))
+	if len(toks) == 0 {
+		return nil, nil
+	}
+	const norm = `lower(replace(replace(replace(name,'_',' '),'-',' '),'.',' '))`
+	conds := make([]string, 0, len(toks))
+	args := make([]any, 0, len(toks)+1)
+	for _, t := range toks {
+		conds = append(conds, norm+" LIKE ?")
+		args = append(args, "%"+t+"%")
+	}
+	args = append(args, limit)
 	rows, err := s.db.Query(`
 		SELECT id, path, name, ext, parent, is_dir, size, created_at, modified_at, last_accessed, content_hash, usage_score
-		FROM files WHERE name LIKE ? LIMIT ?`, "%"+query+"%", limit)
+		FROM files WHERE `+strings.Join(conds, " AND ")+` LIMIT ?`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("fileindex: like fallback: %w", err)
 	}
