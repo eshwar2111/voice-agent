@@ -52,10 +52,13 @@ func New(dbPath string, roots, exclude []string, embedder Embedder) (*Index, err
 	}, nil
 }
 
-// Start kicks off the initial scan in a background goroutine. The live fsnotify
-// watcher is added in Task 3.
+// Start kicks off the initial scan in a background goroutine, then launches the
+// live fsnotify watcher for incremental updates.
 func (ix *Index) Start(ctx context.Context) {
-	go ix.scan()
+	go func() {
+		ix.scan()
+		ix.watch(ctx)
+	}()
 }
 
 // Close releases the underlying store.

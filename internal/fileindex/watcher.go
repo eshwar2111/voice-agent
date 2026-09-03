@@ -1,10 +1,16 @@
 package fileindex
 
 import (
+	"context"
 	"io/fs"
 	"log"
+	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
+
+	"github.com/fsnotify/fsnotify"
 )
 
 // builtinSkipDirs are directory names always skipped during scans regardless of
@@ -70,6 +76,245 @@ func (ix *Index) scan() {
 	}
 
 	ix.reconcile(seenPaths)
+}
+
+// watch runs a live fsnotify watcher over the configured roots, translating
+// filesystem events into incremental store upserts (create/write) and deletes
+// (remove/rename-away). It recursively watches subdirectories, adding newly
+// created ones on the fly, and debounces rapid write bursts per path. It runs
+// until ctx is cancelled.
+func (ix *Index) watch(ctx context.Context) {
+	w, err := fsnotify.NewWatcher()
+	if err != nil {
+		log.Printf("fileindex: watcher: %v", err)
+		return
+	}
+	defer w.Close()
+
+	// Register each root and every existing subdirectory (honoring skips).
+	for _, root := range ix.roots {
+		if root == "" {
+			continue
+		}
+		abs, aerr := filepath.Abs(root)
+		if aerr != nil {
+			abs = root
+		}
+		ix.addWatchTree(w, abs)
+	}
+
+	deb := newDebouncer(300*time.Millisecond, func(path string) {
+		ix.handleUpsert(w, path)
+	})
+	defer deb.stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case event, ok := <-w.Events:
+			if !ok {
+				return
+			}
+			ix.handleEvent(w, event, deb)
+		case werr, ok := <-w.Errors:
+			if !ok {
+				return
+			}
+			log.Printf("fileindex: watch error: %v", werr)
+		}
+	}
+}
+
+// handleEvent routes a single fsnotify event.
+func (ix *Index) handleEvent(w *fsnotify.Watcher, event fsnotify.Event, deb *debouncer) {
+	path := event.Name
+
+	// Removals/renames-away: drop the row (and cancel any pending upsert).
+	if event.Op&(fsnotify.Remove|fsnotify.Rename) != 0 {
+		deb.cancel(path)
+		if err := ix.store.DeleteByPath(path); err != nil {
+			log.Printf("fileindex: watch delete %s: %v", path, err)
+		}
+		return
+	}
+
+	if event.Op&(fsnotify.Create|fsnotify.Write) != 0 {
+		// A newly created directory must be watched (and its contents scanned).
+		if event.Op&fsnotify.Create != 0 {
+			if info, err := os.Stat(path); err == nil && info.IsDir() {
+				if ix.pathExcluded(path) {
+					return
+				}
+				ix.addWatchTree(w, path)
+				return
+			}
+		}
+		deb.trigger(path)
+	}
+}
+
+// handleUpsert stats a path and upserts it, unless excluded or gone.
+func (ix *Index) handleUpsert(w *fsnotify.Watcher, path string) {
+	if ix.pathExcluded(path) {
+		return
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		// Vanished between event and handling: ensure it's not stale.
+		_ = ix.store.DeleteByPath(path)
+		return
+	}
+	if info.IsDir() {
+		ix.addWatchTree(w, path)
+		return
+	}
+	f := ix.fileFromInfo(path, info)
+	if _, uerr := ix.store.Upsert(f); uerr != nil {
+		log.Printf("fileindex: watch upsert %s: %v", path, uerr)
+	}
+}
+
+// addWatchTree adds path and every non-skipped subdirectory to the watcher,
+// upserting files it encounters (so a freshly created directory tree is indexed).
+func (ix *Index) addWatchTree(w *fsnotify.Watcher, path string) {
+	_ = filepath.WalkDir(path, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			if p != path && ix.skipDir(d.Name()) {
+				return filepath.SkipDir
+			}
+			if aerr := w.Add(p); aerr != nil {
+				log.Printf("fileindex: watch add %s: %v", p, aerr)
+			}
+			return nil
+		}
+		if f, ok := ix.fileFromEntry(p, d); ok {
+			if _, uerr := ix.store.Upsert(f); uerr != nil {
+				log.Printf("fileindex: watch scan upsert %s: %v", p, uerr)
+			}
+		}
+		return nil
+	})
+}
+
+// pathExcluded reports whether any directory component of path *below its
+// containing root* is excluded, hidden, or a built-in system dir. Components at
+// or above the root itself are never checked (the root may legitimately live
+// under a normally-skipped dir, e.g. a temp dir under AppData).
+func (ix *Index) pathExcluded(path string) bool {
+	root, ok := ix.containingRoot(path)
+	if !ok {
+		return true // outside every watched root
+	}
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		return false
+	}
+	// Check every segment except the last (the file/dir's own base name).
+	segs := strings.Split(rel, string(filepath.Separator))
+	for _, seg := range segs[:len(segs)-1] {
+		if seg == "" || seg == "." {
+			continue
+		}
+		if ix.skipDir(seg) {
+			return true
+		}
+	}
+	return false
+}
+
+// containingRoot returns the watched root that contains path (case-insensitive
+// prefix match on Windows), if any.
+func (ix *Index) containingRoot(path string) (string, bool) {
+	lp := strings.ToLower(path)
+	for _, root := range ix.roots {
+		if root == "" {
+			continue
+		}
+		abs, err := filepath.Abs(root)
+		if err != nil {
+			abs = root
+		}
+		la := strings.ToLower(abs)
+		if lp == la || strings.HasPrefix(lp, la+string(filepath.Separator)) {
+			return abs, true
+		}
+	}
+	return "", false
+}
+
+// fileFromInfo builds a File from a stat result (watcher path, no DirEntry).
+func (ix *Index) fileFromInfo(path string, info os.FileInfo) File {
+	f := File{
+		Path:   path,
+		Name:   info.Name(),
+		Parent: filepath.Base(filepath.Dir(path)),
+		IsDir:  info.IsDir(),
+	}
+	if !info.IsDir() {
+		f.Ext = strings.TrimPrefix(strings.ToLower(filepath.Ext(path)), ".")
+		f.Size = info.Size()
+	}
+	mod := info.ModTime().Unix()
+	f.ModifiedAt = mod
+	f.CreatedAt = mod
+	return f
+}
+
+// debouncer coalesces rapid triggers for the same key, firing fn once per key
+// after the quiet period elapses.
+type debouncer struct {
+	mu    sync.Mutex
+	delay time.Duration
+	fn    func(string)
+	timers map[string]*time.Timer
+	closed bool
+}
+
+func newDebouncer(delay time.Duration, fn func(string)) *debouncer {
+	return &debouncer{delay: delay, fn: fn, timers: make(map[string]*time.Timer)}
+}
+
+func (d *debouncer) trigger(key string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.closed {
+		return
+	}
+	if t, ok := d.timers[key]; ok {
+		t.Stop()
+	}
+	d.timers[key] = time.AfterFunc(d.delay, func() {
+		d.mu.Lock()
+		delete(d.timers, key)
+		closed := d.closed
+		d.mu.Unlock()
+		if !closed {
+			d.fn(key)
+		}
+	})
+}
+
+func (d *debouncer) cancel(key string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if t, ok := d.timers[key]; ok {
+		t.Stop()
+		delete(d.timers, key)
+	}
+}
+
+func (d *debouncer) stop() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.closed = true
+	for k, t := range d.timers {
+		t.Stop()
+		delete(d.timers, k)
+	}
 }
 
 // skipDir reports whether a directory with the given base name should be skipped.
