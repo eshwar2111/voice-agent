@@ -35,10 +35,13 @@ hop, never the whole PC.
    via `0.40·text + 0.25·recency + 0.20·usage + 0.15·alias`.
 5. **Learns:** repeatedly opening a file raises its usage score; "this is my
    latest resume" pins an explicit alias that resolves instantly thereafter.
-6. **Lazy/cheap semantic:** one file-level embedding per *content hash*, generated
-   only on interaction or on a metadata miss, cached quantized, dedup'd across
-   identical copies, over whitelisted types in configured folders only. Semantic
-   auto-disables when no embedder is configured — everything else still works.
+6. **Lazy/cheap semantic, fully local:** embeddings come from an in-process
+   **BGE-small (bge-small-en-v1.5, 384-dim, MIT)** ONNX model — no cloud, no
+   quota, private (content never leaves the machine). One file-level embedding per
+   *content hash*, generated only on interaction or on a metadata miss, cached
+   quantized, dedup'd across identical copies, over whitelisted types in configured
+   folders only. Semantic auto-disables when the model/runtime is unavailable —
+   everything else still works.
 7. **Non-breaking:** `resolveFile`/`resolveFolder` keep working; the old in-memory
    `internal/search` is retired without regressing `open_file`/`open_explorer`.
 
@@ -74,12 +77,14 @@ hop, never the whole PC.
 | `alias.go` | Heuristic alias derivation (filename tokens + keyword rules) + explicit user memory. |
 | `hotcache.go` | Tier-1 in-process LRU + alias map (recent/frequent/explicit), rebuilt from SQLite on start. |
 | `content.go` | Lazy text extraction: txt/md/code/json/csv (stdlib); pdf (Go lib); docx/pptx/xlsx (archive/zip + XML). Whitelisted types only. |
-| `embed.go` | Embedder interface + cloud embeddings, float16 quantization, cosine, SQLite vector cache keyed by content_hash, rate-limited backfill. |
+| `embed.go` | `Embedder` interface + float16 quantization, cosine, SQLite vector cache keyed by content_hash, lazy backfill. |
+| `bge.go` | In-process **ONNX BGE-small** embedder: WordPiece tokenizer + onnxruntime inference → 384-d vectors, mean-pooled + L2-normalized. |
 | `fileindex.go` | The public API: `Search`, `Resolve(file/folder)`, `RecordOpen`, `Remember`, `Start(ctx)`. |
 
 `internal/fileindex` imports only stdlib + `mattn/go-sqlite3`, `fsnotify`, the pdf
-lib, and (for embeddings) an injected `Embedder` — it does NOT import
-`internal/llm` (the embedder is injected from `main`, like the trust layer's funcs).
+lib, and the ONNX runtime binding. Embeddings are produced by an injected
+`Embedder` (the BGE impl is wired in from `main`), so semantic can be swapped or
+disabled without touching the index — and the index never imports `internal/llm`.
 
 ---
 
@@ -193,23 +198,32 @@ disambiguation UI.
 - **What gets embedded:** whitelisted extensions (`pdf, docx, pptx, xlsx, txt, md,
   py, js, ts, go, json, csv, …`) inside configured folders only. Never
   `exe/dll/sys`, caches, `node_modules`, `.git`, images.
+- **Model:** **bge-small-en-v1.5** (384-dim, MIT), run **in-process via ONNX**
+  (onnxruntime). Query text is embedded the same way — all local, no network, no
+  quota. `bge.go` does WordPiece tokenization (from the model's `vocab.txt`),
+  onnxruntime inference, mean-pooling over token states, and L2 normalization →
+  a 384-float vector. BGE convention: the query is prefixed with the model's
+  retrieval instruction ("Represent this sentence for searching relevant
+  passages:"); documents are embedded as-is.
 - **When:** lazily — (a) when the user *interacts* with a file (open), or (b) on a
   metadata **miss**, embed a bounded set of likely candidates. Never a blanket
-  embed-the-whole-PC pass. A slow, **rate-limited** background backfill may embed
-  recently-used files during idle, respecting the LLM quota (and the fallback
-  provider). Nothing blocks a query on embedding.
+  embed-the-whole-PC pass. A slow, throttled background backfill may embed
+  recently-used files during idle (throttled to avoid a CPU spike, not a quota).
+  Nothing blocks a query on embedding.
 - **Granularity:** **one file-level embedding** first (mean of the first N content
   chunks). Chunk-level embeddings are deferred until a specific file needs deep
   in-document search (out of this spec's first cut).
 - **Dedup:** vectors keyed by `content_hash` — identical copies (`Resume.pdf`,
   `Resume - Copy.pdf`) share one embedding; multiple `files` rows point at the same
   hash.
-- **Storage:** **float16** quantized blobs (2 bytes/dim). Cosine similarity is
-  brute-force in Go over the cached set — at personal file counts (thousands, not
-  the whole disk since only whitelisted+interacted files are embedded) this is well
-  under budget; no FAISS/HNSW dependency in the first cut.
+- **Storage:** **float16** quantized blobs — 384 dims × 2 bytes = **768 B/vector**
+  (~75 MB even at 100k embedded files, and far fewer in practice since only
+  whitelisted+interacted files are embedded). Cosine similarity is brute-force in Go
+  over the cached set; no FAISS/HNSW dependency in the first cut.
 - **Embedder:** an injected interface, `Embed(ctx, texts []string) ([][]float32,
-  error)`, implemented for the cloud provider(s); nil → semantic disabled cleanly.
+  error)`, implemented by `bge.go` (in-process ONNX). nil (model/runtime absent) →
+  semantic disabled cleanly. The interface leaves room to slot a cloud or Ollama
+  embedder behind it later without touching the index.
 
 ---
 
@@ -229,11 +243,14 @@ disambiguation UI.
 ```jsonc
 "index_roots":   ["Documents","Desktop","Downloads","Projects"], // resolved under home; absolute ok
 "index_exclude": ["node_modules",".git","build","dist","AppData","Windows","Program Files"],
-"semantic_search": true,          // default true; auto-off if no embedder
-"embedding_model": "text-embedding-3-small" // provider-specific; empty = provider default
+"semantic_search": true,                 // default true; auto-off if the model isn't found
+"bge_model_path": "models/bge-small-en-v1.5.onnx", // ONNX model; empty = default path
+"bge_vocab_path": "models/bge-vocab.txt"           // WordPiece vocab; empty = default path
 ```
 Roots default to the common user folders + the working directory; excludes have
-sensible defaults merged with user additions.
+sensible defaults merged with user additions. If the ONNX model/vocab or the
+onnxruntime library isn't present, semantic silently disables and Tiers 1–2 carry
+on.
 
 ---
 
@@ -258,10 +275,21 @@ sensible defaults merged with user additions.
 - **`sqlite_fts5` build tag** added to both build commands (documented in
   CLAUDE.md/README/BUILD-VOICE.md).
 - **New deps:** a pure-Go PDF text lib (e.g. `github.com/ledongthuc/pdf`);
-  docx/pptx/xlsx via `archive/zip` + `encoding/xml` (no new dep). Vetted for
+  docx/pptx/xlsx via `archive/zip` + `encoding/xml` (no new dep); the **ONNX
+  runtime Go binding** (e.g. `github.com/yalue/onnxruntime_go`) for BGE. Vetted for
   license/size in the plan.
+- **ONNX runtime native lib + model assets:** `onnxruntime.dll` must be shippable /
+  discoverable at runtime (same pattern as the vendored pvrecorder DLLs), and the
+  `bge-small-en-v1.5.onnx` (~130 MB) + `vocab.txt` placed under `models/` (shipped
+  or downloaded on first run; kept out of git via `.gitignore`, like the whisper
+  model). Absence → semantic disabled, no crash.
+- **WordPiece tokenizer:** a small in-repo WordPiece implementation reading the
+  BGE `vocab.txt` (avoids a heavy tokenizer dependency); table-tested against known
+  token ids.
 - All go commands still prefixed with the w64devkit PATH; `internal/fileindex`
-  links CGO (sqlite) so its tests run under the toolchain.
+  links CGO (sqlite + onnxruntime) so its tests run under the toolchain. Tests that
+  need the model are skipped when the model/runtime is absent (`t.Skip`), so the
+  suite stays green without the ~130 MB asset.
 
 ---
 
@@ -271,7 +299,7 @@ sensible defaults merged with user additions.
 2. **Live watcher:** fsnotify incremental create/rename/delete/modify.
 3. **Ranked search:** `rank.go` (pure, tested) + `fileindex.Search`/`Resolve`; wire `resolveFile`/`resolveFolder`.
 4. **Aliases + usage + explicit memory:** `alias.go`, `hotcache.go`, `RecordOpen`, `Remember`, `find_file` + `remember_file` tools.
-5. **Lazy semantic:** `content.go` + `embed.go` (extraction, float16 cache, dedup, cosine, rate-limited lazy embedding) + the Tier-3 fallback in `Search`.
+5. **Lazy semantic:** `content.go` (extraction) + `bge.go` (WordPiece + ONNX BGE-small → 384-d) + `embed.go` (float16 cache, dedup, cosine, throttled lazy embedding) + the Tier-3 fallback in `Search`. Model/runtime absent → the whole tier no-ops.
 
 Each phase is independently testable and leaves the app working.
 
@@ -302,7 +330,8 @@ Each phase is independently testable and leaves the app working.
 - Chunk-level in-document semantic search (file-level embedding only for now).
 - FAISS/HNSW ANN index (brute-force cosine suffices at this scale).
 - int8 quantization (float16 first; int8 only if scale demands).
-- Local embedding models (cloud embeddings chosen); a local embedder can slot into
-  the same `Embedder` interface later.
+- Cloud / Ollama embedders (local ONNX BGE chosen); either can slot into the same
+  `Embedder` interface later without touching the index.
+- GPU inference for BGE (CPU ONNX is the target; the model is small enough).
 - OCR / image content understanding.
 - A full personal knowledge graph UI (the data supports it; the graph view is later).
