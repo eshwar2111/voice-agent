@@ -66,13 +66,75 @@ curl -L -o /c/whisper-local/models/ggml-base.en.bin \
 
 ## Build + enable
 
+The voice build carries **two** build tags: `whisper` (local ASR) and
+`sqlite_fts5` (the file-intelligence index's SQLite FTS5 full-text search). The
+`sqlite_fts5` tag is required whenever `internal/fileindex` is compiled — leaving
+it off breaks file search — so it belongs in every build, test, and vet command
+that touches the index.
+
 ```bash
 export PATH="$PATH:/c/w64devkit/bin"
-go build -tags whisper -ldflags="-s -w -H windowsgui" -o voice-agent.exe ./cmd/app
+go build -tags "whisper sqlite_fts5" -ldflags="-s -w -H windowsgui" -o voice-agent.exe ./cmd/app
+
+# File-index tests (also need the tag):
+go test -tags sqlite_fts5 ./internal/fileindex/... ./config/...
 ```
 
 Set `"enable_voice": true` in `config.json`. On startup you should see
 `✅ Whisper model loaded successfully.`
+
+## File-intelligence index (SQLite + FTS5 + optional local BGE)
+
+`internal/fileindex` is a persistent file/folder index: a SQLite+FTS5 metadata
+store scanned + watched (fsnotify) over the roots in `config.json`'s
+`index_roots` (default: the user's `Documents`, `Desktop`, `Downloads`,
+`Projects`, plus the working directory), with alias/usage/memory tiers and a
+`0.40·text + 0.25·recency + 0.20·usage + 0.15·alias` rank. It replaces the old
+in-memory `search.InitIndexer` walk. The DB lives at `fileindex.db` in the
+working directory (gitignored).
+
+Relevant `config.json` fields (all optional, sensible defaults applied):
+
+```jsonc
+{
+  "index_roots":     ["C:/Users/you/Documents", "C:/Users/you/Projects"],
+  "index_exclude":   ["node_modules", "AppData"], // merged with built-in excludes
+  "semantic_search": true,                          // default true
+  "bge_model_path":  "models/bge-small-en-v1.5/model.onnx",
+  "bge_vocab_path":  "models/bge-small-en-v1.5/vocab.txt"
+}
+```
+
+### Optional: local semantic fallback (BGE-small + onnxruntime)
+
+Tier 3 is a **lazy, local, in-process** ONNX embedder — BGE-small-en-v1.5
+(384-dim, MIT). It is entirely optional: when `semantic_search` is false, or the
+model/vocab is missing, or the onnxruntime shared library cannot be loaded,
+`fileindex.NewBGEEmbedder` returns an error, `main` logs it, and the index runs
+on Tiers 1–2 (in-RAM alias/hot cache + SQLite/FTS5) only. No network, ever — all
+embedding is local.
+
+To enable it:
+
+1. Fetch the BGE-small ONNX model + `vocab.txt` (~130 MB) into
+   `models/bge-small-en-v1.5/` (the `models/` folder is gitignored):
+
+   ```bash
+   mkdir -p models/bge-small-en-v1.5
+   curl -L -o models/bge-small-en-v1.5/model.onnx \
+     https://huggingface.co/BAAI/bge-small-en-v1.5/resolve/main/onnx/model.onnx
+   curl -L -o models/bge-small-en-v1.5/vocab.txt \
+     https://huggingface.co/BAAI/bge-small-en-v1.5/resolve/main/vocab.txt
+   ```
+
+2. Make the ONNX Runtime shared library loadable (`onnxruntime.dll` on `PATH`,
+   or next to `voice-agent.exe`). Download the matching Windows x64 release from
+   https://github.com/microsoft/onnxruntime/releases. `github.com/yalue/onnxruntime_go`
+   loads it dynamically at runtime, so it is not needed at link time — the build
+   links without it; semantic search simply stays off until the DLL is present.
+
+On success startup logs `[fileindex] local BGE semantic search enabled`;
+otherwise `[fileindex] semantic search disabled (...)`.
 
 ## Using voice
 

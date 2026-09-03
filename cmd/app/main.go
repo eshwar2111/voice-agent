@@ -24,6 +24,7 @@ import (
 	agentctx "github.com/yourname/voice-agent/internal/context"
 	"github.com/yourname/voice-agent/internal/engine"
 	"github.com/yourname/voice-agent/internal/executor"
+	"github.com/yourname/voice-agent/internal/fileindex"
 	"github.com/yourname/voice-agent/internal/island"
 	"github.com/yourname/voice-agent/internal/llm"
 	"github.com/yourname/voice-agent/internal/memory"
@@ -380,20 +381,38 @@ func main() {
 		log.Printf("[settings] LLM provider switched to %q (model %q)", cfg.LLMProvider, cfg.Model)
 	}
 
-	// Setup Search Indexer
-	userProfile := os.Getenv("USERPROFILE")
-	if userProfile == "" {
-		userProfile = "C:\\"
-	}
-	// Index the working directory too, not just the profile. The agent's own
-	// project — and most of what someone names out loud — often lives on
-	// another drive ("E:\Voice Agent"), which a profile-only walk can never
-	// see, so file and folder lookups silently found nothing.
-	indexRoots := []string{userProfile}
+	// Setup the persistent file-intelligence index (internal/fileindex): a
+	// SQLite+FTS5 metadata store, ranked search, alias/usage/memory tiers, and a
+	// lazy local ONNX BGE semantic fallback. This replaces the old in-memory
+	// search.InitIndexer walk.
+	indexRoots := cfg.IndexRoots
+	// Index the working directory too, not just the configured roots. The agent's
+	// own project — and most of what someone names out loud — often lives on
+	// another drive ("E:\Voice Agent"), which a home-only scan can never see, so
+	// file and folder lookups silently found nothing.
 	if wd, werr := os.Getwd(); werr == nil {
 		indexRoots = append(indexRoots, wd)
 	}
-	search.InitIndexer(indexRoots...) // async
+	// Build the BGE embedder nil-safe: when semantic search is off, or the model/
+	// vocab/onnxruntime is absent, NewBGEEmbedder returns (nil, err) and the index
+	// runs with Tiers 1–2 only. A nil embedder is a clean no-op inside fileindex.
+	var embedder fileindex.Embedder
+	if cfg.SemanticSearch {
+		if bge, berr := fileindex.NewBGEEmbedder(cfg.BGEModelPath, cfg.BGEVocabPath); berr != nil {
+			log.Printf("[fileindex] semantic search disabled (BGE embedder unavailable): %v", berr)
+		} else {
+			embedder = bge
+			log.Println("[fileindex] local BGE semantic search enabled")
+		}
+	} else {
+		log.Println("[fileindex] semantic search disabled (semantic_search=false)")
+	}
+	if ix, ierr := fileindex.New("fileindex.db", indexRoots, cfg.IndexExclude, embedder); ierr != nil {
+		log.Printf("[fileindex] failed to open index, file search unavailable: %v", ierr)
+	} else {
+		search.SetIndex(ix)
+		ix.Start(rootCtx) // async: initial scan + fsnotify watcher
+	}
 
 	fmt.Println("======================================")
 	fmt.Println("🤖 Voice Agent MVP - Listening Mode Active")

@@ -41,3 +41,26 @@ func TestSpeakResponsesRespectsFalse(t *testing.T) {
 		t.Error("explicit false must be honored")
 	}
 }
+
+func TestFileIndexDefaults(t *testing.T) {
+	cfg, err := loadFromBytes([]byte(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.SemanticSearch {
+		t.Error("semantic_search should default true")
+	}
+	if len(cfg.IndexRoots) == 0 {
+		t.Error("index_roots should have defaults")
+	}
+}
+
+func TestSemanticSearchRespectsFalse(t *testing.T) {
+	cfg, err := loadFromBytes([]byte(`{"semantic_search":false}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.SemanticSearch {
+		t.Error("explicit false must be honored")
+	}
+}

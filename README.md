@@ -80,9 +80,25 @@ The agent depends only on the `llm.Provider` interface, so the provider is pure 
 go fmt ./...
 
 # Build the executable. -s -w strips the symbol/debug tables to shrink the binary;
-# -H windowsgui hides the background terminal.
-go build -ldflags="-s -w -H windowsgui" -o voice-agent.exe ./cmd/app
+# -H windowsgui hides the background terminal. The sqlite_fts5 tag is REQUIRED —
+# the file-intelligence index (internal/fileindex) uses SQLite FTS5 full-text
+# search, and the package fails to compile/run correctly without it.
+go build -tags sqlite_fts5 -ldflags="-s -w -H windowsgui" -o voice-agent.exe ./cmd/app
 ```
+
+> **`sqlite_fts5` build tag (required):** the file index uses SQLite's FTS5
+> full-text search. Every `go build`/`go test`/`go vet` that touches
+> `internal/fileindex` must pass `-tags sqlite_fts5` (voice build:
+> `-tags "whisper sqlite_fts5"`).
+
+> **Local semantic search (optional, BGE + onnxruntime):** file search adds a
+> lazy local ONNX embedding fallback (BGE-small-en-v1.5, 384-dim). It is fully
+> optional — set `"semantic_search": false` in `config.json` to disable it, and
+> if the model/vocab or the onnxruntime shared library is absent it disables
+> itself cleanly (metadata + FTS5 tiers still work). To enable it, drop the model
+> at `models/bge-small-en-v1.5/model.onnx` and `vocab.txt` (paths overridable via
+> `bge_model_path` / `bge_vocab_path`) and make `onnxruntime.dll` loadable
+> (on `PATH`). The `models/` folder is gitignored — see **[docs/BUILD-VOICE.md](docs/BUILD-VOICE.md)**.
 
 > For the voice-enabled build (`-tags whisper`), see **[docs/BUILD-VOICE.md](docs/BUILD-VOICE.md)**.
 

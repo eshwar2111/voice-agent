@@ -28,6 +28,9 @@ screen_analysis.txt
 *.db-wal
 memory.db
 audit_logs.db
+fileindex.db
+fileindex.db-shm
+fileindex.db-wal
 
 # Secrets / local config (contains API keys + OAuth tokens)
 config.json
@@ -57,7 +60,7 @@ go.work.sum
 # Project specific
 stitch_generated_screen/
 stitch_assets/
-models/
+models/ # BGE-small ONNX model + vocab (~130 MB), fetched locally per BUILD-VOICE.md
 
 # Vendored pvrecorder binding: its embedded native lib must be committed
 !third_party/**/*.dll
