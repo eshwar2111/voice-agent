@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 
 	"github.com/yourname/voice-agent/internal/search"
@@ -67,8 +66,7 @@ func (o *OpenFileTool) Execute(ctx context.Context, rawParams json.RawMessage) (
 		return "", fmt.Errorf("missing file_path parameter")
 	}
 
-	cmd := exec.Command("cmd.exe", "/c", "start", `""`, path)
-	if err := cmd.Start(); err != nil {
+	if err := openWithDefaultApp(path); err != nil {
 		return "", fmt.Errorf("failed to open file: %w", err)
 	}
 

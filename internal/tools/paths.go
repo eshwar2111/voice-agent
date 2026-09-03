@@ -1,10 +1,33 @@
 package tools
 
 import (
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 )
+
+// openWithDefaultApp launches path with its default handler.
+//
+// It deliberately avoids cmd.exe's `start` builtin: opening a file needs an
+// empty title argument (`start "" "file"`), but Go's Windows arg escaping turns
+// the literal "" into `"\"\""`, which `start` mis-parses as a path of `\` —
+// producing the "Windows cannot find '\\'" dialog. rundll32's
+// FileProtocolHandler opens any file or URL with its default program and takes
+// a single, cleanly-escaped path argument, so it has none of that ambiguity.
+// (This is the same entry point the auth/ambient code already uses.)
+func openWithDefaultApp(path string) error {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return fmt.Errorf("no path to open")
+	}
+	// A clear error beats a bare Windows dialog when the path is wrong.
+	if _, err := os.Stat(path); err != nil {
+		return fmt.Errorf("path not found: %s", path)
+	}
+	return exec.Command("rundll32", "url.dll,FileProtocolHandler", path).Start()
+}
 
 // knownFolders maps common spoken/typed folder names to their location under the
 // user's home directory ("" means home itself). Case-insensitive on the caller.
