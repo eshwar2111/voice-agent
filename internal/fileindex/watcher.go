@@ -66,7 +66,7 @@ func (ix *Index) scan() {
 			if !ok {
 				return nil
 			}
-			if _, uerr := ix.store.Upsert(f); uerr != nil {
+			if _, uerr := ix.upsertFile(f); uerr != nil {
 				log.Printf("fileindex: upsert %s: %v", path, uerr)
 				return nil
 			}
@@ -170,7 +170,7 @@ func (ix *Index) handleUpsert(w *fsnotify.Watcher, path string) {
 		return
 	}
 	f := ix.fileFromInfo(path, info)
-	if _, uerr := ix.store.Upsert(f); uerr != nil {
+	if _, uerr := ix.upsertFile(f); uerr != nil {
 		log.Printf("fileindex: watch upsert %s: %v", path, uerr)
 	}
 }
@@ -192,7 +192,7 @@ func (ix *Index) addWatchTree(w *fsnotify.Watcher, path string) {
 			return nil
 		}
 		if f, ok := ix.fileFromEntry(p, d); ok {
-			if _, uerr := ix.store.Upsert(f); uerr != nil {
+			if _, uerr := ix.upsertFile(f); uerr != nil {
 				log.Printf("fileindex: watch scan upsert %s: %v", p, uerr)
 			}
 		}

@@ -72,6 +72,9 @@ func (o *OpenFileTool) Execute(ctx context.Context, rawParams json.RawMessage) (
 		return "", fmt.Errorf("failed to open file: %w", err)
 	}
 
+	// Usage learning: opening a file raises its rank for future resolves.
+	search.RecordOpen(path)
+
 	return fmt.Sprintf("Successfully opened file: %s", path), nil
 }
 

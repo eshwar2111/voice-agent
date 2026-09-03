@@ -92,6 +92,8 @@ func DefaultRegistryWithConfig(provider llm.Provider, cfg *config.Config) *Regis
 	r.Register(&CreateFileTool{})
 	r.Register(&OpenExplorerTool{})
 	r.Register(&OpenFileTool{})
+	r.Register(&FindFileTool{})
+	r.Register(&RememberFileTool{})
 	r.Register(&ListFilesTool{})
 	r.Register(&DeleteFileTool{})
 	r.Register(&MoveFileTool{})

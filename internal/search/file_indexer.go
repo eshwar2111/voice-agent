@@ -1,6 +1,7 @@
 package search
 
 import (
+	"errors"
 	"log"
 	"os"
 	"path/filepath"
@@ -9,6 +10,44 @@ import (
 
 	"github.com/yourname/voice-agent/internal/fileindex"
 )
+
+// errNoIndex is returned by the delegating helpers when no persistent index has
+// been installed yet.
+var errNoIndex = errors.New("file index not available")
+
+// Resolve returns the single best path for query from the persistent index, or
+// false if none is confident (or the index isn't installed yet).
+func Resolve(query string) (string, bool) {
+	mu.RLock()
+	idx := ix
+	mu.RUnlock()
+	if idx == nil {
+		return "", false
+	}
+	return idx.Resolve(query, fileindex.KindAny)
+}
+
+// RecordOpen tells the persistent index that path was opened (usage learning).
+// A no-op when no index is installed.
+func RecordOpen(path string) {
+	mu.RLock()
+	idx := ix
+	mu.RUnlock()
+	if idx != nil {
+		idx.RecordOpen(path)
+	}
+}
+
+// Remember pins an explicit alias key to a path in the persistent index.
+func Remember(key, path string) error {
+	mu.RLock()
+	idx := ix
+	mu.RUnlock()
+	if idx == nil {
+		return errNoIndex
+	}
+	return idx.Remember(key, path)
+}
 
 type FileRecord struct {
 	Path string

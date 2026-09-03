@@ -275,6 +275,134 @@ func scanFile(rows rowScanner) (File, error) {
 	return f, nil
 }
 
+// SetAliases replaces the heuristic aliases for fileID and updates the FTS
+// keywords column (space-joined aliases). User-pinned aliases (source!='heuristic')
+// are left untouched.
+func (s *Store) SetAliases(fileID int64, aliases []string) error {
+	if _, err := s.db.Exec(`DELETE FROM aliases WHERE file_id = ? AND source = 'heuristic'`, fileID); err != nil {
+		return fmt.Errorf("fileindex: clear aliases: %w", err)
+	}
+	for _, a := range aliases {
+		if a == "" {
+			continue
+		}
+		if _, err := s.db.Exec(`INSERT OR IGNORE INTO aliases (file_id, alias, source) VALUES (?, ?, 'heuristic')`, fileID, a); err != nil {
+			return fmt.Errorf("fileindex: insert alias: %w", err)
+		}
+	}
+	if _, err := s.db.Exec(`UPDATE files_fts SET keywords = ? WHERE rowid = ?`, strings.Join(aliases, " "), fileID); err != nil {
+		return fmt.Errorf("fileindex: update fts keywords: %w", err)
+	}
+	return nil
+}
+
+// FileIDsForAlias returns the set of file ids that carry the given alias.
+func (s *Store) FileIDsForAlias(alias string) (map[int64]bool, error) {
+	rows, err := s.db.Query(`SELECT file_id FROM aliases WHERE alias = ?`, alias)
+	if err != nil {
+		return nil, fmt.Errorf("fileindex: file ids for alias: %w", err)
+	}
+	defer rows.Close()
+
+	out := make(map[int64]bool)
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("fileindex: scan alias file id: %w", err)
+		}
+		out[id] = true
+	}
+	return out, rows.Err()
+}
+
+// UniqueAliasPaths returns alias->path for aliases that resolve to exactly one
+// file, for rebuilding the hot cache unambiguously on start.
+func (s *Store) UniqueAliasPaths() (map[string]string, error) {
+	rows, err := s.db.Query(`
+		SELECT a.alias, MIN(f.path)
+		FROM aliases a JOIN files f ON f.id = a.file_id
+		GROUP BY a.alias
+		HAVING COUNT(*) = 1`)
+	if err != nil {
+		return nil, fmt.Errorf("fileindex: unique alias paths: %w", err)
+	}
+	defer rows.Close()
+
+	out := make(map[string]string)
+	for rows.Next() {
+		var alias, path string
+		if err := rows.Scan(&alias, &path); err != nil {
+			return nil, fmt.Errorf("fileindex: scan alias path: %w", err)
+		}
+		out[alias] = path
+	}
+	return out, rows.Err()
+}
+
+// RecordUsage bumps open_count/last_opened for path and recomputes the file's
+// usage_score (currently the open count; usageNorm caps its influence). A path
+// not in the index is a no-op.
+func (s *Store) RecordUsage(path string, now int64) error {
+	var id int64
+	err := s.db.QueryRow(`SELECT id FROM files WHERE path = ?`, path).Scan(&id)
+	if err == sql.ErrNoRows {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("fileindex: lookup id for usage: %w", err)
+	}
+
+	if _, err := s.db.Exec(`
+		INSERT INTO file_usage (file_id, open_count, last_opened)
+		VALUES (?, 1, ?)
+		ON CONFLICT(file_id) DO UPDATE SET
+			open_count = open_count + 1,
+			last_opened = excluded.last_opened`, id, now); err != nil {
+		return fmt.Errorf("fileindex: bump usage: %w", err)
+	}
+
+	var count int64
+	if err := s.db.QueryRow(`SELECT open_count FROM file_usage WHERE file_id = ?`, id).Scan(&count); err != nil {
+		return fmt.Errorf("fileindex: read usage count: %w", err)
+	}
+	if _, err := s.db.Exec(`UPDATE files SET usage_score = ?, last_accessed = ? WHERE id = ?`, float64(count), now, id); err != nil {
+		return fmt.Errorf("fileindex: update usage score: %w", err)
+	}
+	return nil
+}
+
+// SetMemory upserts an explicit key->path memory ("this is my latest resume").
+func (s *Store) SetMemory(key, path string, now int64) error {
+	if _, err := s.db.Exec(`
+		INSERT INTO file_memory (key, path, created_at)
+		VALUES (?, ?, ?)
+		ON CONFLICT(key) DO UPDATE SET
+			path = excluded.path,
+			created_at = excluded.created_at`, key, path, now); err != nil {
+		return fmt.Errorf("fileindex: set memory: %w", err)
+	}
+	return nil
+}
+
+// AllMemory returns every explicit key->path memory, for rebuilding the hot cache.
+func (s *Store) AllMemory() (map[string]string, error) {
+	rows, err := s.db.Query(`SELECT key, path FROM file_memory`)
+	if err != nil {
+		return nil, fmt.Errorf("fileindex: all memory: %w", err)
+	}
+	defer rows.Close()
+
+	out := make(map[string]string)
+	for rows.Next() {
+		var key, path string
+		if err := rows.Scan(&key, &path); err != nil {
+			return nil, fmt.Errorf("fileindex: scan memory: %w", err)
+		}
+		out[key] = path
+	}
+	return out, rows.Err()
+}
+
 // ftsPrefixQuery turns free text into an FTS5 MATCH query of prefix tokens,
 // e.g. "resume 2026" -> `"resume"* "2026"*`.
 func ftsPrefixQuery(query string) string {

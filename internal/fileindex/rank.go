@@ -6,6 +6,8 @@ package fileindex
 
 import (
 	"math"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 )
@@ -104,12 +106,44 @@ func hasToken(name, q string) bool {
 	return false
 }
 
+// hotLookup checks the Tier-1 cache for an exact normalized alias/memory hit,
+// returning its path only if it still exists on disk and matches kind.
+func (ix *Index) hotLookup(query string, kind Kind) (string, bool) {
+	if ix.hot == nil {
+		return "", false
+	}
+	path, ok := ix.hot.lookup(normalizeKey(query))
+	if !ok {
+		return "", false
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return "", false
+	}
+	switch kind {
+	case KindFile:
+		if info.IsDir() {
+			return "", false
+		}
+	case KindFolder:
+		if !info.IsDir() {
+			return "", false
+		}
+	}
+	return path, true
+}
+
 // Search returns indexed entries matching query, narrowed by kind, ranked by
-// rankScore (text + recency + usage + alias) and sorted best-first.
+// rankScore (text + recency + usage + alias) and sorted best-first. A Tier-1 hot
+// cache hit (explicit memory / alias) short-circuits to that single path.
 func (ix *Index) Search(query string, kind Kind) []FileRecord {
 	query = strings.TrimSpace(query)
 	if query == "" {
 		return nil
+	}
+
+	if path, ok := ix.hotLookup(query, kind); ok {
+		return []FileRecord{{Path: path, Name: filepath.Base(path)}}
 	}
 
 	files, err := ix.store.SearchFTS(query, 50)
@@ -117,6 +151,7 @@ func (ix *Index) Search(query string, kind Kind) []FileRecord {
 		return nil
 	}
 
+	aliasSet := ix.aliasMatches(query)
 	now := nowUnix()
 	cands := make([]Candidate, 0, len(files))
 	for _, f := range files {
@@ -131,8 +166,9 @@ func (ix *Index) Search(query string, kind Kind) []FileRecord {
 			}
 		}
 		cands = append(cands, Candidate{
-			File:      f,
-			TextMatch: textMatch(query, f.Name),
+			File:       f,
+			TextMatch:  textMatch(query, f.Name),
+			AliasMatch: aliasMatchScore(aliasSet, f.ID),
 		})
 	}
 
@@ -147,6 +183,14 @@ func (ix *Index) Search(query string, kind Kind) []FileRecord {
 	return out
 }
 
+// aliasMatchScore is 1.0 when the file id is in the alias-match set, else 0.
+func aliasMatchScore(set map[int64]bool, id int64) float64 {
+	if set[id] {
+		return 1.0
+	}
+	return 0
+}
+
 // Resolve returns the single best path for query narrowed by kind, or false
 // if no candidate clears resolveThreshold.
 func (ix *Index) Resolve(query string, kind Kind) (string, bool) {
@@ -155,11 +199,16 @@ func (ix *Index) Resolve(query string, kind Kind) (string, bool) {
 		return "", false
 	}
 
+	if path, ok := ix.hotLookup(query, kind); ok {
+		return path, true
+	}
+
 	files, err := ix.store.SearchFTS(query, 50)
 	if err != nil {
 		return "", false
 	}
 
+	aliasSet := ix.aliasMatches(query)
 	now := nowUnix()
 	var best Candidate
 	var bestScore float64
@@ -175,7 +224,7 @@ func (ix *Index) Resolve(query string, kind Kind) (string, bool) {
 				continue
 			}
 		}
-		c := Candidate{File: f, TextMatch: textMatch(query, f.Name)}
+		c := Candidate{File: f, TextMatch: textMatch(query, f.Name), AliasMatch: aliasMatchScore(aliasSet, f.ID)}
 		s := rankScore(c, now)
 		if !found || s > bestScore {
 			best, bestScore, found = c, s, true
