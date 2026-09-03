@@ -7,12 +7,14 @@ require (
 	github.com/Picovoice/pvrecorder/binding/go v1.2.4
 	github.com/atotto/clipboard v0.1.4
 	github.com/chromedp/chromedp v0.15.1
+	github.com/fsnotify/fsnotify v1.10.1
 	github.com/gen2brain/malgo v0.11.24
 	github.com/ggerganov/whisper.cpp/bindings/go v0.0.0-20260227185758-9453b4b9be9b
 	github.com/go-ole/go-ole v1.3.0
 	github.com/go-vgo/robotgo v1.0.1
 	github.com/gorilla/websocket v1.5.3
 	github.com/kbinani/screenshot v0.0.0-20250624051815-089614a94018
+	github.com/ledongthuc/pdf v0.0.0-20260903153007-b3c860c23753
 	github.com/lxn/win v0.0.0-20210218163916-a377121e959e
 	github.com/mattn/go-sqlite3 v1.14.34
 	github.com/moutend/go-hook v0.1.0
@@ -32,7 +34,6 @@ require (
 	github.com/dblohm7/wingoes v0.0.0-20250822163801-6d8e6105c62d // indirect
 	github.com/ebitengine/purego v0.9.1 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
-	github.com/fsnotify/fsnotify v1.10.1 // indirect
 	github.com/gen2brain/shm v0.1.1 // indirect
 	github.com/go-json-experiment/json v0.0.0-20260214004413-d219187c3433 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
