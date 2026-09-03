@@ -87,7 +87,11 @@ CREATE TABLE IF NOT EXISTS embeddings (
 // OpenStore opens (creating if needed) the SQLite index at path in WAL mode
 // and runs migrations.
 func OpenStore(path string) (*Store, error) {
-	db, err := sql.Open("sqlite3", path+"?_journal=WAL&_busy_timeout=5000")
+	// _foreign_keys=on is REQUIRED for the ON DELETE CASCADE on aliases/file_usage
+	// to fire — SQLite ignores FK constraints otherwise, orphaning usage rows whose
+	// open_count then leaks onto a later file that reuses the deleted rowid, skewing
+	// ranking. (mattn/go-sqlite3 honors this DSN param per-connection.)
+	db, err := sql.Open("sqlite3", path+"?_journal=WAL&_busy_timeout=5000&_foreign_keys=on")
 	if err != nil {
 		return nil, fmt.Errorf("fileindex: open db: %w", err)
 	}

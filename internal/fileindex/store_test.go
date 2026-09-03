@@ -36,6 +36,23 @@ func TestUpsertGetSearch(t *testing.T) {
 	}
 }
 
+func TestDeleteCascadesAliasesAndUsage(t *testing.T) {
+	s := openTestStore(t)
+	p := `C:\x\resume.pdf`
+	id, _ := s.Upsert(File{Path: p, Name: "resume.pdf", Ext: "pdf"})
+	if err := s.SetAliases(id, []string{"resume", "cv"}); err != nil { t.Fatal(err) }
+	if err := s.RecordUsage(p, 1700000000); err != nil { t.Fatal(err) }
+
+	if err := s.DeleteByPath(p); err != nil { t.Fatalf("delete: %v", err) }
+
+	var aliasN, usageN int
+	s.db.QueryRow(`SELECT COUNT(*) FROM aliases`).Scan(&aliasN)
+	s.db.QueryRow(`SELECT COUNT(*) FROM file_usage`).Scan(&usageN)
+	if aliasN != 0 || usageN != 0 {
+		t.Fatalf("delete did not cascade: aliases=%d usage=%d (want 0,0) — is _foreign_keys=on set?", aliasN, usageN)
+	}
+}
+
 func TestUpsertIdempotentAndDelete(t *testing.T) {
 	s := openTestStore(t)
 	p := `C:\x\a.txt`
