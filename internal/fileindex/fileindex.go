@@ -2,8 +2,7 @@ package fileindex
 
 import (
 	"context"
-	"log"
-	"strings"
+	"time"
 )
 
 // Embedder produces vector embeddings for a batch of texts. It is injected from
@@ -69,33 +68,9 @@ func (ix *Index) Close() error {
 	return ix.store.Close()
 }
 
-// Search returns indexed entries matching query, narrowed by kind. This is a
-// stub over store.SearchFTS for now; the full ranking pipeline lands in Task 4.
-func (ix *Index) Search(query string, kind Kind) []FileRecord {
-	query = strings.TrimSpace(query)
-	if query == "" {
-		return nil
-	}
+// nowUnix returns the current time as a Unix timestamp; a var so tests could
+// stub it if ever needed.
+var nowUnix = func() int64 { return time.Now().Unix() }
 
-	files, err := ix.store.SearchFTS(query, 50)
-	if err != nil {
-		log.Printf("fileindex: search %q: %v", query, err)
-		return nil
-	}
-
-	out := make([]FileRecord, 0, len(files))
-	for _, f := range files {
-		switch kind {
-		case KindFile:
-			if f.IsDir {
-				continue
-			}
-		case KindFolder:
-			if !f.IsDir {
-				continue
-			}
-		}
-		out = append(out, FileRecord{Path: f.Path, Name: f.Name})
-	}
-	return out
-}
+// Search and Resolve (the ranked pipeline: text + recency + usage + alias)
+// are implemented in rank.go (Task 4).
