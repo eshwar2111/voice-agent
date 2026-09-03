@@ -138,6 +138,11 @@ var SpeakFunc func(string)
 // executor.StopSpeaking). Invoked by the island's Stop control while speaking.
 var StopSpeakFunc func()
 
+// ReloadProvider, when set (by main), rebuilds the LLM provider from the updated
+// config and hot-swaps it into the running app after Settings are saved — so a
+// provider/key/model/fallback change from the Models tab applies immediately.
+var ReloadProvider func()
+
 // speakMode is toggled per command by the engine: on for a voice-originated
 // command, off for the typed path. Only ShowOutputOverlay (answers) consults it;
 // status messages via ShowNotification are never spoken.
@@ -541,26 +546,36 @@ func StartOverlay(ctx context.Context, cfg *config.Config) {
 	w.Bind("jslog", func(msg string) { log.Printf("%s", msg) })
 	w.Bind("getSettings", func() map[string]interface{} {
 		return map[string]interface{}{
-			"llm_provider": cfg.LLMProvider,
-			"api_key":      cfg.APIKey,
-			"model":        cfg.Model,
-			"base_url":     cfg.BaseURL,
-			"enable_voice": cfg.EnableVoice,
-			"privacy_mode": cfg.PrivacyMode,
+			"llm_provider":      cfg.LLMProvider,
+			"api_key":           cfg.APIKey,
+			"model":             cfg.Model,
+			"base_url":          cfg.BaseURL,
+			"fallback_provider": cfg.FallbackProvider,
+			"fallback_api_key":  cfg.FallbackAPIKey,
+			"fallback_model":    cfg.FallbackModel,
+			"enable_voice":      cfg.EnableVoice,
+			"privacy_mode":      cfg.PrivacyMode,
 		}
 	})
-	w.Bind("saveSettings", func(provider, apiKey, model, baseURL string, enableVoice, privacyMode bool) bool {
+	w.Bind("saveSettings", func(provider, apiKey, model, baseURL, fbProvider, fbAPIKey, fbModel string, enableVoice, privacyMode bool) bool {
 		if provider != "" {
 			cfg.LLMProvider = provider
 		}
 		cfg.APIKey = apiKey
 		cfg.Model = model
 		cfg.BaseURL = baseURL
+		cfg.FallbackProvider = fbProvider
+		cfg.FallbackAPIKey = fbAPIKey
+		cfg.FallbackModel = fbModel
 		cfg.EnableVoice = enableVoice
 		cfg.PrivacyMode = privacyMode
 		if err := config.SaveConfig("config.json", cfg); err != nil {
 			fmt.Printf("Save settings error: %v\n", err)
 			return false
+		}
+		// Hot-swap the live provider so the change takes effect without a restart.
+		if ReloadProvider != nil {
+			ReloadProvider()
 		}
 		return true
 	})

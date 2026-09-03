@@ -9,6 +9,7 @@ import { esc } from '../activities.js';
 import { jlog, toast, openSurface, closeSurface } from '../main.js';
 
 let settingsState = { llm_provider:'gemini', api_key:'', model:'', base_url:'',
+                       fallback_provider:'', fallback_api_key:'', fallback_model:'',
                        enable_voice:false, privacy_mode:false };
 let integrationTimer = null;
 
@@ -28,6 +29,9 @@ export async function loadSettings(){
   modelInput.value = settingsState.model || '';
   apiKeyInput.value = settingsState.api_key || '';
   baseUrlInput.value = settingsState.base_url || '';
+  if(window.fbProviderSelect) fbProviderSelect.value = settingsState.fallback_provider || '';
+  if(window.fbModelInput) fbModelInput.value = settingsState.fallback_model || '';
+  if(window.fbApiKeyInput) fbApiKeyInput.value = settingsState.fallback_api_key || '';
   voiceToggle.classList.toggle('active', !!settingsState.enable_voice);
   privacyToggle.classList.toggle('active', !!settingsState.privacy_mode);
   metricProvider.textContent = (settingsState.llm_provider||'gemini').toUpperCase();
@@ -53,12 +57,18 @@ export async function persistSettings(){
   settingsState.model = modelInput.value.trim();
   settingsState.api_key = apiKeyInput.value.trim();
   settingsState.base_url = baseUrlInput.value.trim();
-  const ok = await window.saveSettings(settingsState.llm_provider, settingsState.api_key,
-    settingsState.model, settingsState.base_url, settingsState.enable_voice, settingsState.privacy_mode);
+  settingsState.fallback_provider = (window.fbProviderSelect ? fbProviderSelect.value : '') || '';
+  settingsState.fallback_model = (window.fbModelInput ? fbModelInput.value.trim() : '');
+  settingsState.fallback_api_key = (window.fbApiKeyInput ? fbApiKeyInput.value.trim() : '');
+  // Arg order must match the saveSettings Go binding exactly.
+  const ok = await window.saveSettings(
+    settingsState.llm_provider, settingsState.api_key, settingsState.model, settingsState.base_url,
+    settingsState.fallback_provider, settingsState.fallback_api_key, settingsState.fallback_model,
+    settingsState.enable_voice, settingsState.privacy_mode);
   if(ok){
     metricProvider.textContent = settingsState.llm_provider.toUpperCase();
     overviewProvider.textContent = 'Model: '+settingsState.llm_provider;
-    toast('Settings saved');
+    toast('Saved — provider switched to '+settingsState.llm_provider);
   } else toast('Save failed');
 }
 

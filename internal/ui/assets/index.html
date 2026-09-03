@@ -106,12 +106,19 @@
           </div>
         </div>
         <div class="tab" id="tab-model">
-          <div class="surface"><h4>Core model configuration</h4><p>Choose the provider and runtime settings that shape planning and responses.</p>
+          <div class="surface"><h4>Core model configuration</h4><p>Choose the provider and model that shape planning and responses. Changes apply immediately — no restart.</p>
             <div class="fields">
-              <div class="field"><label for="providerSelect">Provider</label><select id="providerSelect"><option value="gemini">Gemini</option><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="ollama">Ollama</option><option value="custom">Custom</option></select></div>
-              <div class="field"><label for="modelInput">Model</label><input id="modelInput" placeholder="gemini-2.5-flash"/></div>
-              <div class="field full"><label for="apiKeyInput">API key</label><input id="apiKeyInput" type="password" placeholder="Enter provider key"/></div>
-              <div class="field full"><label for="baseUrlInput">Base URL</label><input id="baseUrlInput" placeholder="Optional for compatible providers"/></div>
+              <div class="field"><label for="providerSelect">Provider</label><select id="providerSelect"><option value="gemini">Gemini</option><option value="openai">OpenAI</option><option value="anthropic">Anthropic (Claude)</option><option value="openrouter">OpenRouter</option><option value="groq">Groq</option><option value="together">Together</option><option value="ollama">Ollama (local)</option><option value="lmstudio">LM Studio (local)</option><option value="custom">Custom (OpenAI-compatible)</option></select></div>
+              <div class="field"><label for="modelInput">Model</label><input id="modelInput" placeholder="e.g. gemini-2.5-flash / gpt-4o / llama3.1"/></div>
+              <div class="field full"><label for="apiKeyInput">API key</label><input id="apiKeyInput" type="password" placeholder="Provider key (leave blank for local)"/></div>
+              <div class="field full"><label for="baseUrlInput">Base URL</label><input id="baseUrlInput" placeholder="Only for Custom, or to override a default endpoint"/></div>
+            </div>
+          </div>
+          <div class="surface"><h4>Fallback provider</h4><p>Optional. If the primary fails (e.g. a rate-limit quota), the assistant retries on this one automatically.</p>
+            <div class="fields">
+              <div class="field"><label for="fbProviderSelect">Fallback</label><select id="fbProviderSelect"><option value="">None</option><option value="gemini">Gemini</option><option value="openai">OpenAI</option><option value="anthropic">Anthropic (Claude)</option><option value="openrouter">OpenRouter</option><option value="groq">Groq</option><option value="together">Together</option><option value="ollama">Ollama (local)</option><option value="lmstudio">LM Studio (local)</option></select></div>
+              <div class="field"><label for="fbModelInput">Fallback model</label><input id="fbModelInput" placeholder="optional"/></div>
+              <div class="field full"><label for="fbApiKeyInput">Fallback API key</label><input id="fbApiKeyInput" type="password" placeholder="optional"/></div>
             </div>
           </div>
         </div>

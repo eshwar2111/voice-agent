@@ -238,10 +238,14 @@ func main() {
 		log.Println("Voice disabled (enable_voice=false); skipping Whisper init.")
 	}
 
-	provider, err := llm.NewProvider(cfg)
+	baseProvider, err := llm.NewProvider(cfg)
 	if err != nil {
 		log.Fatalf("Failed to initialize LLM provider: %v", err)
 	}
+	// Wrap in a ProxyProvider so the provider/key/model can be swapped LIVE from
+	// the Settings → Models tab (ui.ReloadProvider below) without a restart —
+	// every consumer holds this one proxy and picks up the swap.
+	provider := llm.NewProxyProvider(baseProvider)
 
 	err = audit.InitDB("audit_logs.db")
 	if err != nil {
@@ -362,6 +366,19 @@ func main() {
 	ui.OnCommand = command.ProcessCommand
 	ui.OnHistoryUp = command.GetPreviousHistory
 	ui.OnHistoryDown = command.GetNextHistory
+
+	// Rebuild + hot-swap the LLM provider when the user saves the Models tab, so a
+	// provider/key/model/fallback change applies immediately (no restart). cfg has
+	// already been updated + persisted by saveSettings before this runs.
+	ui.ReloadProvider = func() {
+		np, perr := llm.NewProvider(cfg)
+		if perr != nil {
+			log.Printf("[settings] provider reload failed, keeping current: %v", perr)
+			return
+		}
+		provider.SetProvider(np)
+		log.Printf("[settings] LLM provider switched to %q (model %q)", cfg.LLMProvider, cfg.Model)
+	}
 
 	// Setup Search Indexer
 	userProfile := os.Getenv("USERPROFILE")
