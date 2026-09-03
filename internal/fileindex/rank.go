@@ -176,6 +176,14 @@ func (ix *Index) Search(query string, kind Kind) []FileRecord {
 		return rankScore(cands[i], now) > rankScore(cands[j], now)
 	})
 
+	// Tier 3 — semantic fallback: only when Tiers 1-2 found nothing confident
+	// AND an embedder is configured. A confident metadata hit skips it entirely.
+	if ix.embedder != nil && (len(cands) == 0 || rankScore(cands[0], now) < resolveThreshold) {
+		if sem := ix.semanticSearch(query, kind); len(sem) > 0 {
+			return sem
+		}
+	}
+
 	out := make([]FileRecord, 0, len(cands))
 	for _, c := range cands {
 		out = append(out, FileRecord{Path: c.File.Path, Name: c.File.Name})

@@ -19,6 +19,7 @@ require (
 	github.com/mattn/go-sqlite3 v1.14.34
 	github.com/moutend/go-hook v0.1.0
 	github.com/webview/webview_go v0.0.0-20240831120633-6173450d4dd6
+	github.com/yalue/onnxruntime_go v1.35.0
 	golang.org/x/oauth2 v0.35.0
 	golang.org/x/sys v0.42.0
 	google.golang.org/api v0.269.0

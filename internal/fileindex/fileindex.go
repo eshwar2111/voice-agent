@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sort"
 	"strings"
 	"time"
 )
@@ -38,6 +39,9 @@ type Index struct {
 	exclude  []string
 	embedder Embedder // nil ok
 	hot      *hotCache
+	// embedSem throttles background lazy-embed goroutines to one at a time so a
+	// burst of opens can't queue many CPU-heavy ONNX runs.
+	embedSem chan struct{}
 }
 
 // New opens (creating if needed) the index at dbPath over the given roots,
@@ -53,6 +57,7 @@ func New(dbPath string, roots, exclude []string, embedder Embedder) (*Index, err
 		exclude:  exclude,
 		embedder: embedder,
 		hot:      newHotCache(defaultHotCap),
+		embedSem: make(chan struct{}, 1),
 	}
 	ix.rebuildHotCache()
 	return ix, nil
@@ -128,6 +133,144 @@ func (ix *Index) RecordOpen(path string) {
 	} else {
 		ix.hot.recordOpen(path, nil)
 	}
+	// A file the user actually opened is a prime candidate for the semantic
+	// cache; embed it lazily in the background (throttled, best-effort).
+	ix.lazyEmbed(path)
+}
+
+// lazyEmbed embeds path's content in the background if an embedder is present
+// and the throttle slot is free. It's a no-op when semantic is disabled or a
+// background embed is already running.
+func (ix *Index) lazyEmbed(path string) {
+	if ix == nil || ix.embedder == nil || ix.embedSem == nil {
+		return
+	}
+	select {
+	case ix.embedSem <- struct{}{}:
+	default:
+		return // an embed is already running; skip (it'll be picked up later)
+	}
+	go func() {
+		defer func() { <-ix.embedSem }()
+		if _, err := ix.ensureVector(context.Background(), path); err != nil {
+			log.Printf("fileindex: lazy embed %s: %v", path, err)
+		}
+	}()
+}
+
+// ensureVector returns the cached embedding for path's content, computing and
+// caching it (keyed by content hash, deduped across copies) on a miss. It also
+// records the content hash on the file row. Returns ("", nil) semantics via the
+// hash: an empty hash means the file wasn't embeddable / couldn't be read.
+func (ix *Index) ensureVector(ctx context.Context, path string) (string, error) {
+	if ix.embedder == nil {
+		return "", nil
+	}
+	text, ok := extractText(path)
+	if !ok || strings.TrimSpace(text) == "" {
+		return "", nil
+	}
+	hash := contentHash(text)
+	_ = ix.store.SetContentHash(path, hash)
+
+	if _, ok, _ := ix.store.GetVector(hash); ok {
+		return hash, nil // already cached (possibly from a copy)
+	}
+	vecs, err := ix.embedder.Embed(ctx, []string{text})
+	if err != nil {
+		return "", err
+	}
+	if len(vecs) == 0 || len(vecs[0]) == 0 {
+		return "", nil
+	}
+	if err := ix.store.PutVector(hash, len(vecs[0]), vecs[0], "bge-small-en-v1.5"); err != nil {
+		return "", err
+	}
+	return hash, nil
+}
+
+// maxSemanticCandidates bounds how many likely files the semantic tier will
+// consider (and lazily embed) on a single metadata miss — never a whole-PC pass.
+const maxSemanticCandidates = 64
+
+// semanticThreshold is the minimum cosine similarity for a semantic hit to be
+// returned, keeping unrelated content out of the results.
+const semanticThreshold = 0.55
+
+// semanticSearch is the Tier-3 fallback: embed the query, ensure a bounded set
+// of likely candidates have cached vectors, then brute-force cosine-rank. It is
+// only called when Tiers 1-2 found nothing confident and an embedder is present.
+func (ix *Index) semanticSearch(query string, kind Kind) []FileRecord {
+	if ix.embedder == nil {
+		return nil
+	}
+	ctx := context.Background()
+
+	qvecs, err := ix.embedder.Embed(ctx, []string{bgeQueryPrefix + query})
+	if err != nil || len(qvecs) == 0 || len(qvecs[0]) == 0 {
+		if err != nil {
+			log.Printf("fileindex: semantic query embed: %v", err)
+		}
+		return nil
+	}
+	qv := qvecs[0]
+
+	cands, err := ix.store.RecentFiles(maxSemanticCandidates)
+	if err != nil {
+		log.Printf("fileindex: semantic candidates: %v", err)
+		return nil
+	}
+
+	cached, err := ix.store.AllVectors()
+	if err != nil {
+		cached = map[string][]float32{}
+	}
+
+	type scored struct {
+		path  string
+		name  string
+		score float64
+	}
+	var hits []scored
+	for _, f := range cands {
+		if kind == KindFolder || f.IsDir {
+			continue // semantic is over file content only
+		}
+		if !isEmbeddable(f.Ext) {
+			continue
+		}
+		text, ok := extractText(f.Path)
+		if !ok || strings.TrimSpace(text) == "" {
+			continue
+		}
+		hash := contentHash(text)
+		vec, ok := cached[hash]
+		if !ok {
+			// Lazily embed this candidate now (bounded by maxSemanticCandidates).
+			h, eerr := ix.ensureVector(ctx, f.Path)
+			if eerr != nil || h == "" {
+				continue
+			}
+			if v, ok2, _ := ix.store.GetVector(h); ok2 {
+				vec = v
+				cached[h] = v
+			} else {
+				continue
+			}
+		}
+		hits = append(hits, scored{path: f.Path, name: f.Name, score: cosine(qv, vec)})
+	}
+
+	sort.Slice(hits, func(i, j int) bool { return hits[i].score > hits[j].score })
+
+	out := make([]FileRecord, 0, len(hits))
+	for _, h := range hits {
+		if h.score < semanticThreshold {
+			break
+		}
+		out = append(out, FileRecord{Path: h.path, Name: h.name})
+	}
+	return out
 }
 
 // Remember pins an explicit alias ("this is my latest resume") to a path so the
