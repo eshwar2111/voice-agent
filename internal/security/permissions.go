@@ -46,6 +46,9 @@ func DeveloperProfile() Profile {
 			"get_datetime":        true,
 			"system_status":       true,
 			"start_timer":         true,
+			// File intelligence index
+			"find_file":     true,
+			"remember_file": true,
 			// Memory tools
 			"remember":      true,
 			"recall":        true,
