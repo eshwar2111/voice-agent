@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"github.com/yourname/voice-agent/internal/fileindex"
 )
 
 type FileRecord struct {
@@ -13,30 +15,40 @@ type FileRecord struct {
 	Name string
 }
 
-// index and ready are written by the background walk in InitIndexer and read
-// by SearchFiles from arbitrary goroutines (the resolver's file matcher, the
-// explorer tool). Both were previously unsynchronised: a search running while
-// the walk was still populating the map is a concurrent map read/write, which
-// Go treats as a FATAL runtime error and kills the process. It is reachable in
-// normal use — indexing a user profile takes seconds, and the first thing
-// someone does is speak a command.
+// index and ready back the legacy in-memory walk (InitIndexer/SearchFiles). They
+// remain as a fallback for callers/tests that have not yet been migrated to the
+// persistent fileindex. Once SetIndex has installed a *fileindex.Index,
+// SearchFiles delegates there instead. Both are written by the background walk
+// and read from arbitrary goroutines, so access is guarded.
 var (
 	mu    sync.RWMutex
 	index map[string][]FileRecord
 	ready bool
+
+	ix *fileindex.Index // set via SetIndex; nil until main wires it
 )
 
-// Ready reports whether the initial index walk has completed.
+// SetIndex installs the persistent fileindex.Index that SearchFiles delegates to.
+// Passing nil reverts to the legacy in-memory index.
+func SetIndex(idx *fileindex.Index) {
+	mu.Lock()
+	ix = idx
+	mu.Unlock()
+}
+
+// Ready reports whether a file index is available to serve queries — either the
+// persistent fileindex (once installed) or the completed legacy walk.
 func Ready() bool {
 	mu.RLock()
 	defer mu.RUnlock()
-	return ready
+	return ix != nil || ready
 }
 
 // InitIndexer walks rootDir in the background and publishes the finished index
-// atomically. The walk builds into a local map and swaps it in under the lock,
-// so readers never observe a half-populated index and the lock is not held for
-// the duration of a filesystem walk.
+// atomically. Retained as a fallback for callers not yet migrated to the
+// persistent fileindex (main wiring moves to fileindex in Task 8). When a
+// persistent index has been installed via SetIndex, SearchFiles ignores this
+// legacy index.
 func InitIndexer(roots ...string) {
 	mu.Lock()
 	index = nil
