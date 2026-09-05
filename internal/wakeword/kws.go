@@ -10,6 +10,7 @@ import "C"
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 
@@ -56,9 +57,13 @@ func NewKWS(modelDir, wakeWord string) (WakeEngine, error) {
 			NumThreads: 1,
 			Provider:   "cpu",
 		},
-		KeywordsFile:      kwFile,
-		KeywordsScore:     1.0,
-		KeywordsThreshold: 0.25,
+		KeywordsFile: kwFile,
+		// Boost + a lower trigger threshold than the 0.25 default: real-mic
+		// detection of a single short wake phrase (with room noise) needs more
+		// sensitivity than clean test audio. Raise the threshold later if it
+		// false-triggers.
+		KeywordsScore:     2.0,
+		KeywordsThreshold: 0.15,
 		MaxActivePaths:    4,
 	}
 	spotter := sherpa.NewKeywordSpotter(&cfg)
@@ -101,7 +106,8 @@ func (d *kwsDetector) Process(frame []int16) (int, error) {
 	for d.spotter.IsReady(d.stream) {
 		d.spotter.Decode(d.stream)
 	}
-	if d.spotter.GetResult(d.stream).Keyword != "" {
+	if kw := d.spotter.GetResult(d.stream).Keyword; kw != "" {
+		log.Printf("[kws] wake word detected: %q", kw)
 		d.spotter.Reset(d.stream)
 		return 0, nil
 	}
@@ -109,6 +115,14 @@ func (d *kwsDetector) Process(frame []int16) (int, error) {
 }
 
 func (e *kwsEngine) StartLoop(ctx context.Context, src FrameSource, onDetect func(), isBusy func() bool) error {
+	log.Printf("[kws] wake loop starting, armed phrase tokens: %q", e.keywords)
+	// runWakeLoop assumes the source is ALREADY started (its internal running
+	// flag begins true) — the old Porcupine path started its recorder before
+	// handing it over. Honor that contract, or the loop never opens the mic and
+	// blocks in Read() forever with no capture.
+	if err := src.Start(); err != nil {
+		return fmt.Errorf("kws: mic source start: %w", err)
+	}
 	return runWakeLoop(ctx, src, e.newDetector(), onDetect, isBusy)
 }
 
