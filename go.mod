@@ -3,8 +3,6 @@ module github.com/yourname/voice-agent
 go 1.26
 
 require (
-	github.com/Picovoice/porcupine/binding/go/v3 v3.0.3
-	github.com/Picovoice/pvrecorder/binding/go v1.2.4
 	github.com/atotto/clipboard v0.1.4
 	github.com/chromedp/chromedp v0.15.1
 	github.com/fsnotify/fsnotify v1.10.1
@@ -13,6 +11,7 @@ require (
 	github.com/go-ole/go-ole v1.3.0
 	github.com/go-vgo/robotgo v1.0.1
 	github.com/gorilla/websocket v1.5.3
+	github.com/k2-fsa/sherpa-onnx-go v1.13.7
 	github.com/kbinani/screenshot v0.0.0-20250624051815-089614a94018
 	github.com/ledongthuc/pdf v0.0.0-20260903153007-b3c860c23753
 	github.com/lxn/win v0.0.0-20210218163916-a377121e959e
@@ -48,7 +47,6 @@ require (
 	github.com/googleapis/enterprise-certificate-proxy v0.3.12 // indirect
 	github.com/googleapis/gax-go/v2 v2.17.0 // indirect
 	github.com/jezek/xgb v1.2.0 // indirect
-	github.com/k2-fsa/sherpa-onnx-go v1.13.7 // indirect
 	github.com/k2-fsa/sherpa-onnx-go-linux v1.13.7 // indirect
 	github.com/k2-fsa/sherpa-onnx-go-macos v1.13.7 // indirect
 	github.com/k2-fsa/sherpa-onnx-go-windows v1.13.7 // indirect
@@ -81,5 +79,3 @@ require (
 	google.golang.org/grpc v1.79.1 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 )
-
-replace github.com/Picovoice/pvrecorder/binding/go => ./third_party/pvrecorder
