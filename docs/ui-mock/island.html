@@ -22,7 +22,9 @@
   --fast:180ms; --slow:440ms;
   --shadow:0 24px 70px -18px rgba(0,0,0,.7), 0 4px 14px -6px rgba(0,0,0,.5);
   --glow:0 0 0 1px var(--stroke), var(--shadow);
-  --font:-apple-system,"SF Pro Display","SF Pro Text","Segoe UI Variable","Segoe UI",system-ui,sans-serif;
+  --font:-apple-system,"SF Pro Text","Segoe UI Variable","Segoe UI",system-ui,sans-serif;
+  /* editorial serif for display moments only — Vogue restraint, sans for the rest */
+  --serif:"Hoefler Text","Didot","Playfair Display","Bodoni 72",Georgia,Constantia,serif;
 }
 *{box-sizing:border-box}
 html,body{height:100%}
@@ -38,7 +40,7 @@ body{
 .menubar{position:fixed;top:0;left:0;right:0;height:26px;display:flex;align-items:center;
   gap:18px;padding:0 16px;font-size:12px;color:rgba(255,255,255,.35);
   background:linear-gradient(180deg,rgba(255,255,255,.04),transparent);z-index:1}
-.menubar b{color:rgba(255,255,255,.55);font-weight:600}
+.menubar b{font-family:var(--serif);color:rgba(255,255,255,.62);font-weight:500;font-size:14px;letter-spacing:.02em}
 .menubar .right{margin-left:auto;display:flex;gap:16px}
 .wallpaper-note{position:fixed;left:50%;bottom:118px;transform:translateX(-50%);
   color:rgba(255,255,255,.16);font-size:13px;letter-spacing:.02em;text-align:center;user-select:none}
@@ -76,8 +78,8 @@ body{
 .row.center{justify-content:center}
 .glyph{width:22px;height:22px;flex:0 0 auto;display:grid;place-items:center;border-radius:50%}
 .glyph.accent{color:#cfe0ff}
-.status{font-size:13.5px;font-weight:560;letter-spacing:-.01em;white-space:nowrap}
-.status .muted{color:var(--ink-2);font-weight:500}
+.status{font-size:13px;font-weight:480;letter-spacing:.01em;white-space:nowrap;color:var(--ink)}
+.status .muted{color:var(--ink-2);font-weight:420}
 
 /* listening waveform */
 .wave{display:inline-flex;align-items:center;gap:3px;height:18px}
@@ -99,25 +101,25 @@ body{
   -webkit-mask:radial-gradient(farthest-side,transparent 62%,#000 64%);mask:radial-gradient(farthest-side,transparent 62%,#000 64%)}
 
 /* ── Card interior (expanded island) ───────────────────────────── */
-.card-body{padding:16px 18px 15px;width:100%;text-align:left;animation:fadein var(--fast) var(--ease)}
-.chead{display:flex;align-items:center;gap:10px;margin-bottom:12px}
-.chead .ic{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;
+.card-body{padding:20px 22px 18px;width:100%;text-align:left;animation:fadein var(--fast) var(--ease)}
+.chead{display:flex;align-items:center;gap:13px;margin-bottom:15px}
+.chead .ic{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;font-size:15px;
   background:var(--accent-soft);color:#cfe0ff;flex:0 0 auto}
-.chead .ic.danger{background:rgba(255,69,58,.16);color:#ffb3ad}
-.eyebrow{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);font-weight:700}
-.title{font-size:16px;font-weight:640;letter-spacing:-.02em;line-height:1.2;margin:1px 0 0}
-.sub{font-size:12.5px;color:var(--ink-2);line-height:1.45;margin-top:3px}
-.opts{display:flex;flex-direction:column;gap:8px;margin-top:4px}
-.opt{display:flex;align-items:center;gap:12px;padding:11px 13px;border-radius:13px;
-  border:1px solid var(--stroke);background:rgba(255,255,255,.04);cursor:pointer;
+.chead .ic.danger{background:rgba(255,69,58,.14);color:#ffb3ad}
+.eyebrow{font-size:9.5px;letter-spacing:.24em;text-transform:uppercase;color:var(--ink-3);font-weight:600;margin-bottom:4px}
+.title{font-family:var(--serif);font-size:20px;font-weight:500;letter-spacing:.005em;line-height:1.16;margin:0}
+.sub{font-size:12.5px;color:var(--ink-2);line-height:1.55;margin-top:6px;font-weight:420}
+.opts{display:flex;flex-direction:column;gap:9px;margin-top:6px}
+.opt{display:flex;align-items:center;gap:13px;padding:12px 14px;border-radius:14px;
+  border:1px solid var(--stroke-2);background:rgba(255,255,255,.03);cursor:pointer;
   transition:background var(--fast),border-color var(--fast),transform var(--fast)}
-.opt:hover{background:var(--accent-soft);border-color:rgba(10,132,255,.4);transform:translateY(-1px)}
-.opt .av{width:32px;height:32px;border-radius:50%;flex:0 0 auto;display:grid;place-items:center;
-  font-weight:700;font-size:13px;color:#fff;background:var(--accent-grad)}
-.opt .ol{font-size:13.5px;font-weight:600}
-.opt .os{font-size:11.5px;color:var(--ink-2)}
-.actions{display:flex;gap:9px;justify-content:flex-end;margin-top:14px}
-.btn{font:600 13px var(--font);padding:9px 16px;border-radius:11px;border:1px solid transparent;cursor:pointer;
+.opt:hover{background:var(--accent-soft);border-color:rgba(10,132,255,.35);transform:translateY(-1px)}
+.opt .av{width:34px;height:34px;border-radius:50%;flex:0 0 auto;display:grid;place-items:center;
+  font-weight:500;font-size:12px;letter-spacing:.03em;color:#fff;background:var(--accent-grad)}
+.opt .ol{font-size:13.5px;font-weight:500;letter-spacing:-.01em}
+.opt .os{font-size:11.5px;color:var(--ink-2);margin-top:1px;letter-spacing:.01em}
+.actions{display:flex;gap:10px;justify-content:flex-end;margin-top:18px}
+.btn{font:500 12.5px var(--font);letter-spacing:.005em;padding:9px 17px;border-radius:11px;border:1px solid transparent;cursor:pointer;
   transition:transform var(--fast),background var(--fast),border-color var(--fast)}
 .btn:active{transform:scale(.96)}
 .btn.ghost{background:rgba(255,255,255,.05);color:var(--ink);border-color:var(--stroke)}
@@ -154,8 +156,8 @@ body{
   background:linear-gradient(135deg,#ff5f6d,#ffc371);box-shadow:0 6px 18px -6px rgba(255,95,109,.6);
   display:grid;place-items:center;font-size:22px}
 .media .meta{flex:1;min-width:0}
-.media .mt{font-size:14px;font-weight:640;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.media .ma{font-size:12px;color:var(--ink-2)}
+.media .mt{font-size:14px;font-weight:500;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.media .ma{font-size:11.5px;color:var(--ink-2);margin-top:1px;letter-spacing:.02em}
 .media .mprog{height:3px;border-radius:2px;background:rgba(255,255,255,.12);margin-top:8px;overflow:hidden}
 .media .mprog>i{display:block;height:100%;width:38%;background:#fff;border-radius:2px}
 .mc{display:flex;gap:6px;align-items:center}
@@ -165,26 +167,46 @@ body{
 .mc .play{width:40px;height:40px;background:#fff;color:#111}
 
 /* reading panel */
-.panel-head{display:flex;align-items:center;justify-content:space-between;padding:16px 20px 12px;border-bottom:1px solid var(--stroke)}
-.panel-head .pt{font-size:15px;font-weight:660;letter-spacing:-.02em}
+.panel-head{display:flex;align-items:center;justify-content:space-between;padding:20px 24px 14px;border-bottom:1px solid var(--stroke-2)}
+.panel-head .pt{font-family:var(--serif);font-size:20px;font-weight:500;letter-spacing:.01em}
 .panel-head .x{width:26px;height:26px;border-radius:50%;border:0;background:rgba(255,255,255,.06);color:var(--ink-2);cursor:pointer}
-.panel-body{padding:16px 20px 18px;max-height:300px;overflow:auto;font-size:13.5px;line-height:1.68;color:#dfe3ec}
-.panel-body h4{font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--accent);margin:16px 0 6px}
-.panel-body p{margin:0 0 12px}
+.panel-body{padding:18px 24px 20px;max-height:300px;overflow:auto;font-size:13.5px;line-height:1.72;color:#d7dbe4;font-weight:420}
+.panel-body p:first-child{font-size:15.5px;line-height:1.6;color:#eef1f6;font-weight:440;margin-bottom:16px}
+.panel-body h4{font-size:9.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--ink-3);font-weight:600;margin:20px 0 7px}
+.panel-body p{margin:0 0 13px}
 .panel-foot{padding:10px 16px;border-top:1px solid var(--stroke);display:flex;justify-content:flex-end}
 .mic-chip{display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border-radius:999px;
   background:rgba(255,255,255,.05);border:1px solid var(--stroke);font-size:12.5px;color:var(--ink-2)}
 
-/* conversation tray */
-.tray{padding:14px 16px;display:flex;flex-direction:column;gap:12px;max-height:340px;overflow:auto}
-.msg{max-width:88%;font-size:13.5px;line-height:1.5}
-.msg .who{font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);margin-bottom:3px}
-.msg.you{align-self:flex-end;text-align:right}
-.msg.you .bub{background:var(--accent);color:#fff;border-radius:14px 14px 4px 14px;padding:9px 13px;display:inline-block;text-align:left}
-.msg.nova .bub{background:rgba(255,255,255,.06);border:1px solid var(--stroke);border-radius:14px 14px 14px 4px;padding:9px 13px;display:inline-block}
-.laptops{display:flex;gap:8px;margin-top:8px}
-.lap{flex:1;border:1px solid var(--stroke);border-radius:12px;padding:10px;background:rgba(255,255,255,.03)}
-.lap .ln{font-size:12px;font-weight:600}.lap .lp{font-size:12px;color:var(--accent-3);margin-top:2px}
+/* ── Task thread (multi‑turn, agentic — NOT a chat log) ───────────
+   The conversation is distilled into a task: a serif goal, the resolved
+   criteria as quiet chips (the dialogue, condensed to facts), a slim
+   timeline of what was settled, and an editorial ranked result list. */
+.thread{padding:22px 24px 16px}
+.thread-head{display:flex;align-items:flex-start;gap:14px}
+.thread-head .tg{width:34px;height:34px;border-radius:10px;flex:0 0 auto;display:grid;place-items:center;
+  font-size:16px;background:var(--accent-soft);color:#cfe0ff}
+.thread-title{font-family:var(--serif);font-size:21px;font-weight:500;letter-spacing:.01em;line-height:1.12}
+.thread-goal{font-size:12px;color:var(--ink-3);margin-top:3px;letter-spacing:.02em}
+.criteria{display:flex;flex-wrap:wrap;gap:7px;margin:15px 0 4px}
+.crit{display:inline-flex;align-items:baseline;gap:6px;padding:5px 11px;border-radius:999px;
+  background:rgba(255,255,255,.04);border:1px solid var(--stroke-2);font-size:11.5px}
+.crit .ck{font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-3)}
+.crit .cv{color:var(--ink);font-weight:500}
+.aside{font-size:11.5px;color:var(--ink-3);font-style:italic;margin:14px 0 2px;padding-left:13px;
+  border-left:2px solid var(--stroke);line-height:1.5}
+.rlabel{font-size:9.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--ink-3);margin:18px 0 2px}
+.results{display:flex;flex-direction:column}
+.result{display:flex;align-items:center;gap:14px;padding:13px 2px;border-bottom:1px solid var(--stroke-2);cursor:pointer;transition:padding var(--fast)}
+.result:last-child{border-bottom:0}
+.result:hover{padding-left:6px}
+.result .rn{font-family:var(--serif);font-size:13px;color:var(--ink-3);width:20px;flex:0 0 auto}
+.result .rmain{flex:1}
+.result .rt{font-size:14px;font-weight:500;letter-spacing:-.01em}
+.result .rmeta{font-size:11px;color:var(--ink-3);margin-top:2px;letter-spacing:.03em}
+.result .rp{font-size:14px;font-weight:500;color:var(--ink);letter-spacing:-.01em;font-variant-numeric:tabular-nums}
+.thread-foot{display:flex;align-items:center;justify-content:space-between;margin-top:16px;padding-top:14px;border-top:1px solid var(--stroke-2)}
+.thread-foot .more{font-size:12px;color:var(--accent-3);cursor:pointer;letter-spacing:.01em}
 
 /* satellites */
 .sats{display:flex;flex-direction:column;gap:8px;padding:12px 14px}
@@ -312,16 +334,19 @@ const states = {
     say('Big text never crams into the island — it lays a floating reading panel over the desktop.');
     attach.innerHTML='<div class="surface wide"><div class="panel-head"><span class="pt">Quantum Entanglement</span><button class="x" data-go="idle">✕</button></div><div class="panel-body"><p>Quantum entanglement is a phenomenon where two particles become correlated so that the state of one instantly reflects the state of the other — however far apart they are.</p><h4>How it works</h4><p>When particles interact and then separate, their quantum states remain linked. Measuring one collapses the shared state, determining the other’s outcome faster than light could travel between them — yet it carries no usable signal.</p><p>Einstein called it “spooky action at a distance.” It underpins quantum computing and cryptography.</p></div><div class="panel-foot"><span class="mic-chip">🎤 Ask Nova…</span></div></div>'; },
 
-  tray(){ set(''); island.style.width='150px'; island.style.height='38px';
-    body('<div class="row center"><span class="dot" style="animation:none"></span><span class="status" style="font-size:12px;color:var(--ink-2)">Nova</span></div>');
-    say('Genuine multi‑turn → a conversation tray that auto‑collapses when done.');
-    attach.innerHTML='<div class="surface"><div class="tray">'+
-      msg('you','Find me a gaming laptop under ₹80k')+
-      msg('nova','What will you use it for — gaming or work?')+
-      msg('you','Gaming')+
-      '<div class="msg nova"><div class="who">Nova</div><div class="bub">Here are 3 strong picks:'+
-        '<div class="laptops"><div class="lap"><div class="ln">ASUS TUF</div><div class="lp">₹74,999</div></div><div class="lap"><div class="ln">Lenovo LOQ</div><div class="lp">₹78,990</div></div><div class="lap"><div class="ln">Acer Nitro</div><div class="lp">₹69,990</div></div></div>'+
-      '</div></div>'+
+  tray(){ set(''); island.style.width='128px'; island.style.height='38px';
+    body('<div class="row center" style="position:relative"><span class="dot" style="animation:none"></span><span class="status" style="font-size:12px">🔍</span></div>');
+    say('Genuine multi‑turn is a TASK, not a chat — the dialogue distills into resolved criteria + results.');
+    attach.innerHTML='<div class="surface"><div class="thread">'+
+      '<div class="thread-head"><span class="tg">💻</span><div><div class="thread-title">Gaming laptop</div><div class="thread-goal">under ₹80,000 · 5 found</div></div></div>'+
+      '<div class="criteria">'+crit('Use','Gaming')+crit('Budget','₹80,000')+crit('Sort','Best value')+'</div>'+
+      '<div class="aside">You: “find me a gaming laptop under 80k” → asked use → “gaming”.</div>'+
+      '<div class="rlabel">Top picks</div><div class="results">'+
+        result('01','ASUS TUF F15','4.5 ★ · RTX 4050','₹74,999')+
+        result('02','Lenovo LOQ','4.4 ★ · RTX 4050','₹78,990')+
+        result('03','Acer Nitro V','4.3 ★ · RTX 3050','₹69,990')+
+      '</div>'+
+      '<div class="thread-foot"><span class="more">Show 2 more</span><span class="mic-chip">🎤 refine…</span></div>'+
       '</div></div>'; },
 
   sats(){ set(''); island.style.width='118px'; island.style.height='38px';
@@ -338,7 +363,8 @@ const states = {
 
 function opt(av,name,mail){ return '<div class="opt" data-go="idle"><span class="av">'+av+'</span><div><div class="ol">'+name+'</div><div class="os">'+mail+'</div></div></div>'; }
 function tr(t){ return '<div class="tr"><span class="tick">✓</span>'+t+'</div>'; }
-function msg(who,t){ return '<div class="msg '+who+'"><div class="who">'+(who==='you'?'You':'Nova')+'</div><div class="bub">'+t+'</div></div>'; }
+function crit(k,v){ return '<span class="crit"><span class="ck">'+k+'</span><span class="cv">'+v+'</span></span>'; }
+function result(n,name,meta,price){ return '<div class="result" data-go="idle"><span class="rn">'+n+'</span><div class="rmain"><div class="rt">'+name+'</div><div class="rmeta">'+meta+'</div></div><span class="rp">'+price+'</span></div>'; }
 function sat(ic,t,p){ return '<div class="sat"><span class="si">'+ic+'</span>'+t+'<span class="sp">'+p+'</span></div>'; }
 
 let current='idle';
