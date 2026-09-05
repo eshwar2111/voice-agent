@@ -1,7 +1,7 @@
 // internal/ui/assets/js/state.test.js
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { resolve, topActivity, PRESENCE_SIZES } from './state.js';
+import { resolve, topActivity, PRESENCE_SIZES, answerTier, answerPresence, choicePresence } from './state.js';
 
 const base = {
   surface: null, activities: [], agentState: 'idle',
@@ -68,10 +68,60 @@ test('topActivity picks highest priority, stable for ties', () => {
 });
 
 test('every presence has a size', () => {
-  for (const p of ['dormant', 'compact', 'peek', 'expanded', 'sheet']) {
+  for (const p of ['dormant', 'compact', 'peek', 'expanded', 'sheet',
+                   'answerSm', 'answerMd', 'answerLg',
+                   'choiceSm', 'choiceMd', 'choiceLg']) {
     assert.ok(PRESENCE_SIZES[p], `${p} has no size`);
     assert.ok(PRESENCE_SIZES[p].w > 0 && PRESENCE_SIZES[p].h > 0);
   }
+});
+
+// ─── Size-to-content: the #1 complaint (a one-line answer opened the 720x520 box)
+test('a one-line answer is a small pill, not the full sheet', () => {
+  assert.equal(answerTier({ text: 'It is 3:42 PM.' }), 'sm');
+  const r = resolve(s({ surface: 'result', payload: { text: 'It is 3:42 PM.' } }));
+  assert.equal(r.presence, 'answerSm');
+  assert.equal(r.contentId, 'result');
+  // strictly smaller than the old fixed sheet, in both dimensions
+  assert.ok(PRESENCE_SIZES.answerSm.w < PRESENCE_SIZES.sheet.w);
+  assert.ok(PRESENCE_SIZES.answerSm.h < PRESENCE_SIZES.sheet.h);
+});
+
+test('a short paragraph is medium, a long/rich answer is large', () => {
+  assert.equal(answerTier({ text: 'This is a short paragraph that explains one thing in a couple of clauses, then adds a second sentence so it clearly exceeds a single-line pill.' }), 'md');
+  const long = Array.from({ length: 40 }, (_, i) => `Line ${i} of a much longer explanation.`).join('\n');
+  assert.equal(answerTier({ text: long }), 'lg');
+  // a Markdown list is never a one-line pill
+  assert.equal(answerTier({ text: '- one\n- two\n- three' }), 'lg');
+});
+
+test('a streamed answer opens at least medium so it has room to grow', () => {
+  assert.equal(answerTier({ text: '', streaming: true }), 'md');
+});
+
+test('structured list payloads get list room', () => {
+  assert.equal(answerTier({ text: '{"type":"gmail_list","data":[]}' }), 'lg');
+});
+
+test('answerPresence maps tiers to the answer presences', () => {
+  assert.equal(answerPresence({ text: 'hi' }), 'answerSm');
+  assert.equal(answerPresence({ text: 'a fairly long paragraph '.repeat(6) }), 'answerMd');
+});
+
+test('the interactive choice surface expands only modestly, sized to option count', () => {
+  const opts2 = { question: 'Which file?', options: [{ id: 'a' }, { id: 'b' }] };
+  const r = resolve(s({ surface: 'askchoice', payload: opts2 }));
+  assert.equal(r.contentId, 'askchoice');
+  assert.equal(r.presence, 'choiceSm');
+  // modest: never as tall as the full sheet
+  assert.ok(PRESENCE_SIZES.choiceSm.h < PRESENCE_SIZES.sheet.h);
+  assert.equal(choicePresence({ options: new Array(4).fill({ id: 'x' }) }), 'choiceMd');
+  assert.equal(choicePresence({ options: new Array(8).fill({ id: 'x' }) }), 'choiceLg');
+});
+
+test('command and approve surfaces still use the full sheet', () => {
+  assert.equal(resolve(s({ surface: 'command' })).presence, 'sheet');
+  assert.equal(resolve(s({ surface: 'approve', payload: { msg: 'x' } })).presence, 'sheet');
 });
 
 import { WAKE_MS } from './state.js';

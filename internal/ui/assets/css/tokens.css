@@ -63,6 +63,12 @@ button,input,textarea,select{font:inherit;color:inherit}
    rather than a panel class, which no longer exists after the surface split. */
 #island[data-presence="sheet"],
 #island[data-presence="expanded"],
+#island[data-presence="answerSm"],
+#island[data-presence="answerMd"],
+#island[data-presence="answerLg"],
+#island[data-presence="choiceSm"],
+#island[data-presence="choiceMd"],
+#island[data-presence="choiceLg"],
 #dashboard.glass{ background:var(--glass-surface) }
 
 #shell{position:fixed;inset:0}
