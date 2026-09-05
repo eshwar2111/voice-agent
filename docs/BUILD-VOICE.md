@@ -142,26 +142,41 @@ Click the pill overlay (or wire a wake word) to start listening. Speech is trans
 by Whisper, then routed through the same tiered dispatch as typed commands (Tier 0 local resolver
 → Tier 1 cloud fallback).
 
-## Wake word (Porcupine)
+## Wake word (KWS) model
 
-The wake word ("Porcupine" built-in keyword) is included in the `-tags whisper` voice build and
-starts automatically when `enable_voice: true` **and** `porcupine_access_key` is set in
-`config.json`. Get a free access key at https://console.picovoice.ai. Without a valid key,
-Porcupine init fails with `ACTIVATION_REFUSED` — this is logged (`wake word stopped: …`) and the
-app keeps running; voice via the pill still works, just not hands-free activation.
+The wake word is a **local, keyless** sherpa-onnx Keyword Spotter — no account, no access key,
+no network. It is included in the `-tags whisper` voice build and starts automatically when
+`enable_voice: true` **and** `wake_word_enabled` is true (the default) and the KWS model is
+present under `kws_model_path` (default `models/kws/`). Missing model → the wake word simply
+disables (logged, `wake word off; pill + typing still work`); the app keeps running.
 
-### pvrecorder patch (already applied)
+1. Download a sherpa-onnx **streaming KWS transducer** model (e.g.
+   `sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01`) and place its
+   `encoder.onnx`, `decoder.onnx`, `joiner.onnx`, and `tokens.txt` under `models/kws/`.
+   These files are gitignored — only the curated `models/kws/keywords.txt` is checked in.
 
-The upstream `pvrecorder` v1.2.4 Go binding has a copy-paste bug: it tries to load
-`libpv_cheetah.dll` (from Picovoice's Cheetah engine) instead of its own `libpv_recorder.dll`,
-and `log.Fatal`s at package init — crashing the app when the wake-word loop starts. This repo
-vendors a corrected copy under `third_party/pvrecorder/` (DLL name fixed) wired via a `go.mod`
-`replace` directive. No action needed; just don't remove the replace.
+   ```bash
+   mkdir -p models/kws
+   # extract encoder.onnx, decoder.onnx, joiner.onnx, tokens.txt into models/kws/
+   ```
 
-### Mic hand-off (pill + wake word)
+2. Copy the sherpa runtime DLLs next to `voice-agent.exe`:
+   `sherpa-onnx-c-api.dll`, `sherpa-onnx-cxx-api.dll`, and `onnxruntime.dll`. They live in the
+   `sherpa-onnx-go-windows` module's `lib/x86_64-pc-windows-gnu` directory in the Go module
+   cache:
 
-The wake-word loop releases the mic only when *it* detects the keyword. A command started by
-clicking the pill (not by the wake word) runs the command recorder while the wake recorder is
-still listening — both hold the mic at once. On Windows shared-mode audio this coexists without
-error, The wake recorder is automatically paused whenever a command is capturing (pill- or
-wake-initiated) and resumes afterward, so the two recorders never contend for the mic.
+   ```bash
+   GP=$(go env GOMODCACHE)
+   LIB="$GP/github.com/k2-fsa/sherpa-onnx-go-windows@v1.13.7/lib/x86_64-pc-windows-gnu"
+   cp "$LIB/sherpa-onnx-c-api.dll" "$LIB/sherpa-onnx-cxx-api.dll" "$LIB/onnxruntime.dll" .
+   ```
+
+   (This `onnxruntime.dll` also serves the BGE semantic file index — one copy covers both.)
+
+3. Set the wake word via `wake_word` in `config.json` — it must be one of the phrases in
+   `models/kws/keywords.txt` (defaults to `hey jarvis`).
+
+> **Tokenizer note:** the checked-in `keywords.txt` is pre-tokenized for the standard gigaspeech
+> BPE model. If the model you download uses a different tokenizer, regenerate `keywords.txt` with
+> sherpa's `text2token.py` (`--tokens ... --tokens-type bpe --bpe-model ...`), keeping the
+> `@label` suffixes so the configured `wake_word` still resolves to a phrase.
