@@ -165,6 +165,12 @@ export function resolve(store) {
 
   // 3. Any other live activity: peek on hover, otherwise compact.
   if (top) {
+    // Now-playing is the one activity with a rich hover face: hovering the
+    // music pill unfolds the full media widget (its 'expanded' renderer). It
+    // stays a quiet `● 🎵` otherwise, so music never occupies the screen.
+    if (top.id === 'spotify.nowplaying' && hover) {
+      return { presence: 'expanded', contentId: top.id, bubbleId, surface: null };
+    }
     // This branch only ever yields 'peek' or 'compact' (never 'dormant'), so
     // the wake check only needs the 'compact' half.
     let presence = hover ? 'peek' : 'compact';

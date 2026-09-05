@@ -652,6 +652,10 @@ func StartOverlay(ctx context.Context, cfg *config.Config) {
 	})
 	// Stop control shown while the agent is speaking — halts TTS immediately.
 	w.Bind("taskStop", func() { invokeProgressCancel() })
+	// Media widget transport → media_control (wired in main). "pause" toggles.
+	w.Bind("spotifyPrev", func() { mediaControl("previous") })
+	w.Bind("spotifyToggle", func() { mediaControl("pause") })
+	w.Bind("spotifyNext", func() { mediaControl("next") })
 	w.Bind("stopSpeaking", func() {
 		if StopSpeakFunc != nil {
 			StopSpeakFunc()

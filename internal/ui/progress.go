@@ -98,6 +98,17 @@ func clearProgressCancel() {
 	progressMu.Unlock()
 }
 
+// MediaControlFunc, when set, runs a media transport action ("previous" /
+// "pause" (toggle) / "next") — wired in main to the media_control tool. The
+// media widget's transport buttons call it via the spotify* bindings.
+var MediaControlFunc func(action string)
+
+func mediaControl(action string) {
+	if MediaControlFunc != nil {
+		MediaControlFunc(action)
+	}
+}
+
 // invokeProgressCancel is called by the island's Stop button (taskStop binding).
 func invokeProgressCancel() {
 	progressMu.Lock()

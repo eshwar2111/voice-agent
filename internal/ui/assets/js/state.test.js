@@ -244,3 +244,13 @@ test('C1: a stale promotion cannot demote a live approval out of the top slot', 
   assert.equal(r.contentId, 'trust.approval');
   assert.equal(r.bubbleId, 'timer.t1');
 });
+
+test('now-playing unfolds to the media widget on hover, stays compact otherwise', () => {
+  const playing = [{ id: 'spotify.nowplaying', priority: 20 }];
+  const hovered = resolve({ activities: playing, hover: true, now: 0, idleSince: 0 });
+  assert.equal(hovered.presence, 'expanded');
+  assert.equal(hovered.contentId, 'spotify.nowplaying');
+  const idle = resolve({ activities: playing, hover: false, now: 0, idleSince: 0 });
+  assert.equal(idle.presence, 'compact');
+  assert.equal(idle.contentId, 'spotify.nowplaying');
+});

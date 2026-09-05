@@ -491,6 +491,14 @@ func main() {
 		Save:          taskStore.Save,
 	})
 	engineApp.Dispatch.TaskRunner = taskRunner
+
+	// Media widget transport (the spotify.nowplaying expanded card) → media_control.
+	ui.MediaControlFunc = func(action string) {
+		if tl, ok := registry.Get("media_control"); ok {
+			params, _ := json.Marshal(map[string]string{"action": action})
+			go func() { _, _ = tl.Execute(context.Background(), params) }()
+		}
+	}
 	// Resume any task interrupted by a previous exit.
 	for _, s := range taskStore.LoadPending() {
 		log.Printf("[task] resuming %s (%s) from step %d", s.ID, s.Goal, s.Cursor)
