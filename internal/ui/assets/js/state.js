@@ -26,6 +26,10 @@ export const PRESENCE_SIZES = {
   choiceSm: { w: 460, h: 240, r: 28, opacity: 1 },
   choiceMd: { w: 480, h: 320, r: 28, opacity: 1 },
   choiceLg: { w: 500, h: 400, r: 30, opacity: 1 },
+
+  // "Active" tasks list (satellites) — opened on demand from the count badge
+  // when several activities run at once. Modest, list-sized.
+  active:   { w: 440, h: 300, r: 28, opacity: 1 },
 };
 
 // ─── Content-driven surface sizing ───────────────────────────────────────────
@@ -151,6 +155,9 @@ export function resolve(store) {
     }
     if (surface === 'askchoice') {
       return { presence: choicePresence(store.payload), contentId: 'askchoice', bubbleId: null, surface: null };
+    }
+    if (surface === 'active') {
+      return { presence: 'active', contentId: 'active', bubbleId: null, surface: null };
     }
     return { presence: 'sheet', contentId: surface, bubbleId: null, surface: null };
   }

@@ -23,6 +23,7 @@ import { render as renderResult, appendDelta as resultAppendDelta } from './surf
 import { render as renderApprove } from './surfaces/approve.js';
 import { render as renderAsk } from './surfaces/ask.js';
 import { render as renderChoice } from './surfaces/askchoice.js';
+import { render as renderActive } from './surfaces/active.js';
 import { loadSettings } from './surfaces/controlcenter.js';
 
 /* ─── logging: everything goes to Go (voice-agent.log) ────────────────────── */
@@ -274,7 +275,7 @@ function slotFor(presence){
 // Content for the command/result/approve surfaces (rendered inline in the
 // island body at presence="sheet") is owned by their own modules, keyed by
 // contentId === the surface id, exactly like state.js's resolve() sets it.
-const surfaceRenderers = { command: renderCommand, result: renderResult, approve: renderApprove, ask: renderAsk, askchoice: renderChoice };
+const surfaceRenderers = { command: renderCommand, result: renderResult, approve: renderApprove, ask: renderAsk, askchoice: renderChoice, active: renderActive };
 
 // Content beyond 'idle' is otherwise owned by whichever activity is on top
 // (see activities.js). Returning an empty div for an id with no renderer
@@ -364,7 +365,15 @@ function updateCaps(id){
     // (not a bare replaceChildren) is what keeps that button clickable
     // across the ticks that follow.
     replaceIfChanged(capLead,  renderForSlot(id,'leading'));
-    replaceIfChanged(capTrail, renderForSlot(id,'trailing'));
+    // Satellites: when several activities run at once, the trailing cap becomes
+    // a count that opens the "Active" list — one agent, many jobs, reachable in
+    // a tap. Falls back to the activity's own trailing slot when only one runs.
+    const n = store.activities ? store.activities.length : 0;
+    if(n >= 2 && id !== 'active'){
+      capTrail.innerHTML = '<button type="button" class="cap-btn sat-count" title="Active tasks" aria-label="Active tasks" onclick="event.stopPropagation();window.openSurface(\'active\')">'+n+'</button>';
+    } else {
+      replaceIfChanged(capTrail, renderForSlot(id,'trailing'));
+    }
   }
 }
 

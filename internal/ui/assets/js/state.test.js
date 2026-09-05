@@ -254,3 +254,10 @@ test('now-playing unfolds to the media widget on hover, stays compact otherwise'
   assert.equal(idle.presence, 'compact');
   assert.equal(idle.contentId, 'spotify.nowplaying');
 });
+
+test('the active-tasks surface opens at a modest list size', () => {
+  const r = resolve({ surface: 'active', activities: [{id:'agent.run',priority:90},{id:'timer.t',priority:10}], now: 0, idleSince: 0 });
+  assert.equal(r.contentId, 'active');
+  assert.equal(r.presence, 'active');
+  assert.ok(PRESENCE_SIZES.active);
+});

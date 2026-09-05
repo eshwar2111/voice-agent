@@ -70,6 +70,21 @@ export function activeActivities() {
   return out;
 }
 
+// liveSummaries returns a flat snapshot of every active activity (push-driven
+// `live` + provider-driven `provided`) with its data, for the "Active" tasks
+// surface (satellites). Read-only; does not affect geometry.
+export function liveSummaries() {
+  const out = [];
+  for (const [id, e] of live) {
+    const def = defs.get(id);
+    out.push({ id, priority: def ? def.priority : 0, data: e.data || {} });
+  }
+  for (const [id, v] of provided) {
+    out.push({ id, kind: v.kind, priority: v.priority | 0, data: v.data || {} });
+  }
+  return out.sort((a, b) => b.priority - a.priority);
+}
+
 // Tracks which provider ids were significant as of the LAST snapshot, so
 // syncProviderActivities can tell a genuinely new significant event (I2,
 // whole-branch review) from the same one being re-announced. The registry
