@@ -680,8 +680,21 @@ function updateUI(state,text){
     updateActivity('agent.run', { phase: state, text: text || defaultLabelFor(state) },
                     syncAndRerender);
   }
+  // The live waveform only means anything while listening; clear it on any
+  // other state so the bars settle back to their idle baseline immediately.
+  if(state !== 'listening') island.style.setProperty('--mic-level', '0');
 }
 window.updateUI = updateUI;
+
+// Live mic level (0..1) from the audio capture thread — drives the listening
+// waveform so the eq bars react to the user's actual voice instead of a fixed
+// loop. Only meaningful while listening; ignored otherwise.
+window.__agent.on('mic:level', d => {
+  if(store.agentState !== 'listening') return;
+  let v = (d && typeof d.level === 'number') ? d.level : 0;
+  v = v < 0 ? 0 : v > 1 ? 1 : v;
+  island.style.setProperty('--mic-level', String(v));
+});
 
 /* ─── proactive nudge (ambient.nudge activity) accept/dismiss ─────────────
    The nudge itself renders inline in the island (activities.js), not in a

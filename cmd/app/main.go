@@ -252,6 +252,9 @@ func main() {
 		executor.BargeWatch = func(ctx context.Context, stop func()) {
 			audio.WatchForBargeIn(ctx, kwHearer, stop)
 		}
+
+		// Drive the live listening waveform from the real mic level.
+		audio.SetLevelSink(ui.PushMicLevel)
 	}
 
 	// Apply whisper paths from config

@@ -286,6 +286,36 @@ func ShowCommandBarInOverlay() {
 	bridge.Push("surface:open", map[string]string{"id": "command"})
 }
 
+// lastLevelPush throttles mic-level pushes to the WebView (the audio callback
+// fires ~10/s, which is already fine, but this guards against a chattier device
+// and against pushing before the bridge exists).
+var lastLevelPush atomic.Int64
+
+// PushMicLevel forwards a captured-frame RMS to the island so the listening
+// waveform reacts to the user's actual voice. Called from the audio capture
+// thread, so it stays cheap and drops frames rather than blocking. RMS for
+// speech sits around 0.05–0.25; it is scaled and clamped to 0..1 for the UI.
+func PushMicLevel(rms float64) {
+	if bridge == nil {
+		return
+	}
+	now := time.Now().UnixMilli()
+	last := lastLevelPush.Load()
+	if now-last < 55 {
+		return
+	}
+	if !lastLevelPush.CompareAndSwap(last, now) {
+		return
+	}
+	lvl := rms * 4.0
+	if lvl > 1 {
+		lvl = 1
+	} else if lvl < 0 {
+		lvl = 0
+	}
+	bridge.Push("mic:level", map[string]any{"level": lvl})
+}
+
 func ShowOutputOverlay(text string) {
 	if w == nil {
 		return
