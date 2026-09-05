@@ -1,4 +1,5 @@
-HH EY1 JH AA1 R V AH0 S @hey_jarvis
-K AH0 M P Y UW1 T ER0 @computer
-HH EY1 N OW1 V AH0 @hey_nova
-HH AH0 L OW1 F R AY1 D IY0 @hello_friday
+▁HE Y ▁JA R VI S @hey_jarvis
+▁COMP U TER @computer
+▁HE Y ▁NO V A @hey_nova
+▁HE LL O ▁F RI DAY @hello_friday
+▁JA R VI S @jarvis
