@@ -48,6 +48,10 @@ require (
 	github.com/googleapis/enterprise-certificate-proxy v0.3.12 // indirect
 	github.com/googleapis/gax-go/v2 v2.17.0 // indirect
 	github.com/jezek/xgb v1.2.0 // indirect
+	github.com/k2-fsa/sherpa-onnx-go v1.13.7 // indirect
+	github.com/k2-fsa/sherpa-onnx-go-linux v1.13.7 // indirect
+	github.com/k2-fsa/sherpa-onnx-go-macos v1.13.7 // indirect
+	github.com/k2-fsa/sherpa-onnx-go-windows v1.13.7 // indirect
 	github.com/lufia/plan9stats v0.0.0-20251013123823-9fd1530e3ec3 // indirect
 	github.com/otiai10/gosseract/v2 v2.4.1 // indirect
 	github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55 // indirect
