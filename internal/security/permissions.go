@@ -66,6 +66,7 @@ func DeveloperProfile() Profile {
 			"wait":               true,
 			"media_control":      true,
 			"window_control":     true,
+			"close_app":          true,
 			"system_control":     true,
 			"run_python":         true,
 			"browser_read_page":  true,

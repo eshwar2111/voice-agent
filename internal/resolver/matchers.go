@@ -291,6 +291,38 @@ func (SystemMatcher) Match(in NormalizedInput) (*Match, bool) {
 	}, true
 }
 
+// CloseAppMatcher handles "close/quit/exit <named app>" (e.g. "close notepad"),
+// routing to close_app which targets that app's window regardless of focus.
+// Generic "close window" / "close this window" is left to WindowMatcher (which
+// runs first), so this only claims a NAMED target.
+type CloseAppMatcher struct{}
+
+func (CloseAppMatcher) Name() string { return "close-app" }
+func (CloseAppMatcher) Match(in NormalizedInput) (*Match, bool) {
+	l := in.Lower
+	var q string
+	for _, v := range []string{"close ", "quit ", "exit "} {
+		if strings.HasPrefix(l, v) {
+			q = strings.TrimSpace(strings.TrimPrefix(l, v))
+			break
+		}
+	}
+	if q == "" {
+		return nil, false
+	}
+	q = strings.TrimSuffix(strings.TrimSuffix(q, " window"), " app")
+	q = strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(q, "the "), "my "))
+	// A bare/generic target is WindowMatcher's job, not a named-app close.
+	switch q {
+	case "", "window", "this", "it", "everything", "all":
+		return nil, false
+	}
+	return &Match{
+		Tasks:      []agent.Task{taskJSON("close_app", map[string]string{"app_name": q})},
+		Confidence: 0.85, Reason: "close named app",
+	}, true
+}
+
 type WindowMatcher struct{}
 
 func (WindowMatcher) Name() string { return "window" }
@@ -337,6 +369,7 @@ func Default() *Resolver {
 		MediaMatcher{},
 		SystemMatcher{},
 		WindowMatcher{},
+		CloseAppMatcher{},
 		WebMatcher{},
 		FileMatcher{Search: fileSearch},
 		AppMatcher{Lookup: appLookup},

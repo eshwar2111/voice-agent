@@ -120,6 +120,7 @@ func DefaultRegistryWithConfig(provider llm.Provider, cfg *config.Config) *Regis
 	r.Register(&WaitTool{})
 	r.Register(&MediaControlTool{})
 	r.Register(&WindowControlTool{})
+	r.Register(&CloseAppTool{})
 
 	// System Control
 	r.Register(&SystemControlTool{})

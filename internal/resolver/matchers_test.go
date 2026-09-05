@@ -306,3 +306,22 @@ func TestNaturalFileMatcher(t *testing.T) {
 		t.Error("bare 'open' must not match")
 	}
 }
+
+func TestCloseAppMatcher(t *testing.T) {
+	m := CloseAppMatcher{}
+	// Named app -> close_app with the app name.
+	match, ok := m.Match(Normalize("close notepad", ""))
+	if !ok || match.Tasks[0].Tool != "close_app" {
+		t.Fatalf("close notepad: ok=%v tool=%v", ok, match)
+	}
+	if !strings.Contains(string(match.Tasks[0].Params), "notepad") {
+		t.Errorf("params missing notepad: %s", match.Tasks[0].Params)
+	}
+	// Generic window close is NOT claimed here (WindowMatcher handles it).
+	if _, ok := m.Match(Normalize("close window", "")); ok {
+		t.Error("'close window' must fall through to WindowMatcher")
+	}
+	if _, ok := m.Match(Normalize("close this window", "")); ok {
+		t.Error("'close this window' must fall through")
+	}
+}
