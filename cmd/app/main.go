@@ -31,6 +31,7 @@ import (
 	"github.com/yourname/voice-agent/internal/memory"
 	"github.com/yourname/voice-agent/internal/search"
 	"github.com/yourname/voice-agent/internal/security"
+	"github.com/yourname/voice-agent/internal/task"
 	"github.com/yourname/voice-agent/internal/tools"
 	"github.com/yourname/voice-agent/internal/trust"
 	"github.com/yourname/voice-agent/internal/ui"
@@ -463,6 +464,38 @@ func main() {
 	// Initialize and run the Event-Driven Engine
 	engineApp := engine.NewEngine(cfg, provider, registry, memStore, memRetriever, rateLimiter, &profile, trustedExec)
 	go engineApp.Start(rootCtx)
+
+	// Durable multi-step TaskSessions (e.g. "compose an email"): a guided,
+	// resumable flow. Steps run tools directly (each task template defines its
+	// own confirm gates), gather decisions via the island, show a progress card,
+	// and persist after every step so a task survives a restart.
+	taskStore := task.NewStore("task_sessions")
+	taskRunner := task.NewRunner(task.Deps{
+		Exec: func(ctx context.Context, toolName string, params json.RawMessage) (string, error) {
+			tl, ok := registry.Get(toolName)
+			if !ok {
+				return "", fmt.Errorf("task: unknown tool %q", toolName)
+			}
+			return tl.Execute(ctx, params)
+		},
+		AskText: ui.AskText,
+		AskChoice: func(prompt string, opts []task.Choice) (string, bool) {
+			uo := make([]ui.Option, len(opts))
+			for i, o := range opts {
+				uo[i] = ui.Option{ID: o.ID, Label: o.Label, Sub: o.Sub}
+			}
+			return ui.AskChoice(prompt, uo)
+		},
+		Confirm:       ui.RequestConfirmation,
+		StartProgress: func(title string, cancel func()) task.ProgressReporter { return ui.StartProgress(title, cancel) },
+		Save:          taskStore.Save,
+	})
+	engineApp.Dispatch.TaskRunner = taskRunner
+	// Resume any task interrupted by a previous exit.
+	for _, s := range taskStore.LoadPending() {
+		log.Printf("[task] resuming %s (%s) from step %d", s.ID, s.Goal, s.Cursor)
+		go taskRunner.Run(rootCtx, s)
+	}
 
 	// Wire the Ctrl+Esc kill switch to halt only the in-flight command rather
 	// than tearing down the root context (which would kill the engine, ambient

@@ -13,6 +13,7 @@ import (
 	"github.com/yourname/voice-agent/internal/llm"
 	"github.com/yourname/voice-agent/internal/resolver"
 	"github.com/yourname/voice-agent/internal/security"
+	"github.com/yourname/voice-agent/internal/task"
 	"github.com/yourname/voice-agent/internal/tools"
 	"github.com/yourname/voice-agent/internal/trust"
 	"github.com/yourname/voice-agent/internal/ui"
@@ -30,6 +31,10 @@ type Deps struct {
 	// session carries compact cross-turn task context (TaskSession v1) into
 	// Tier-1 planning so follow-ups continue the same task. Zero value is ready.
 	session taskSession
+
+	// TaskRunner, when set, runs durable multi-step TaskSessions for recognized
+	// task-launcher phrases (e.g. "compose an email").
+	TaskRunner *task.Runner
 }
 
 // localHits/cloudHits count ROUTING DECISIONS (which tier handled the
@@ -69,6 +74,15 @@ func (d *Deps) Handle(ctx context.Context, input string, cap agentctx.Capture) e
 	// progress card; this makes the decision visible and available to routing.)
 	mode := classifyInteraction(input)
 	log.Printf("[dispatch] mode=%s %q", mode, input)
+
+	// Durable multi-step TaskSession for a recognized bare launcher (before the
+	// tiers): a guided, resumable flow rather than a one-shot plan.
+	if d.TaskRunner != nil {
+		if sess := taskFor(input); sess != nil {
+			log.Printf("[dispatch] TASK %q -> %s (%d steps)", input, sess.Goal, len(sess.Steps))
+			return d.TaskRunner.Run(ctx, sess)
+		}
+	}
 
 	norm := resolver.Normalize(input, cap.AppName)
 	if match, ok := d.Resolver.Resolve(norm); ok {

@@ -68,3 +68,4 @@ models/ # BGE-small ONNX model + vocab (~130 MB), fetched locally per BUILD-VOIC
 # KWS wake-word model (fetched locally; keywords.txt IS tracked)
 models/kws/*.onnx
 models/kws/tokens.txt
+task_sessions/
