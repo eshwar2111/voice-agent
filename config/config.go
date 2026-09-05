@@ -17,9 +17,15 @@ type Config struct {
 	FallbackAPIKey     string `json:"fallback_api_key"`
 	FallbackModel      string `json:"fallback_model"`
 	TimeoutSeconds     int    `json:"timeout_seconds"`
+	// Deprecated: Porcupine is removed; this field is ignored (kept for back-compat).
 	PorcupineAccessKey string `json:"porcupine_access_key"`
-	WhisperPath        string `json:"whisper_path"`
-	WhisperModel       string `json:"whisper_model"`
+
+	WakeWord        string `json:"wake_word"`         // curated phrase label; see models/kws/keywords.txt
+	WakeWordEnabled bool   `json:"wake_word_enabled"` // defaults true when absent
+	KWSModelPath    string `json:"kws_model_path"`    // dir holding the KWS model
+
+	WhisperPath  string `json:"whisper_path"`
+	WhisperModel string `json:"whisper_model"`
 
 	// UX Toggles
 	EnableVoice     bool `json:"enable_voice"`
@@ -90,6 +96,13 @@ const (
 	DefaultBGEVocabPath = "models/bge-small-en-v1.5/vocab.txt"
 )
 
+// DefaultWakeWord / DefaultKWSModelPath are the curated default wake phrase and
+// the on-disk directory holding the local KWS model.
+const (
+	DefaultWakeWord     = "hey jarvis"
+	DefaultKWSModelPath = "models/kws"
+)
+
 // defaults applied when fields are missing or invalid.
 const (
 	DefaultTimeoutSeconds = 30
@@ -140,6 +153,9 @@ func loadFromBytes(data []byte) (*Config, error) {
 		if _, ok := raw["semantic_search"]; !ok {
 			cfg.SemanticSearch = true
 		}
+		if _, ok := raw["wake_word_enabled"]; !ok {
+			cfg.WakeWordEnabled = true
+		}
 	}
 
 	// IndexRoots default to the user's common folders when unspecified.
@@ -151,6 +167,12 @@ func loadFromBytes(data []byte) (*Config, error) {
 	}
 	if cfg.BGEVocabPath == "" {
 		cfg.BGEVocabPath = DefaultBGEVocabPath
+	}
+	if cfg.WakeWord == "" {
+		cfg.WakeWord = DefaultWakeWord
+	}
+	if cfg.KWSModelPath == "" {
+		cfg.KWSModelPath = DefaultKWSModelPath
 	}
 
 	return &cfg, nil

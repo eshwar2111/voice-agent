@@ -64,3 +64,25 @@ func TestSemanticSearchRespectsFalse(t *testing.T) {
 		t.Error("explicit false must be honored")
 	}
 }
+
+func TestWakeWordDefaults(t *testing.T) {
+	// Absent keys: enabled true, default phrase + model dir.
+	cfg, err := loadFromBytes([]byte(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.WakeWordEnabled {
+		t.Error("WakeWordEnabled should default true when absent")
+	}
+	if cfg.WakeWord != DefaultWakeWord {
+		t.Errorf("WakeWord = %q, want %q", cfg.WakeWord, DefaultWakeWord)
+	}
+	if cfg.KWSModelPath != DefaultKWSModelPath {
+		t.Errorf("KWSModelPath = %q, want %q", cfg.KWSModelPath, DefaultKWSModelPath)
+	}
+	// Explicit false is honored.
+	cfg2, _ := loadFromBytes([]byte(`{"wake_word_enabled": false}`))
+	if cfg2.WakeWordEnabled {
+		t.Error("explicit wake_word_enabled=false must be honored")
+	}
+}
