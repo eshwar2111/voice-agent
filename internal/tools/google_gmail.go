@@ -201,6 +201,14 @@ func (t *GoogleGmailSendTool) Execute(ctx context.Context, params json.RawMessag
 		return "", fmt.Errorf("unable to retrieve Gmail client: %w", err)
 	}
 
+	// Contact disambiguation: "send to Rahul" resolves the name to an address
+	// (asking which Rahul when several match) before composing the message.
+	toAddr, err := resolveRecipient(ctx, srv, args.To)
+	if err != nil {
+		return "", err
+	}
+	args.To = toAddr
+
 	rawMessage := fmt.Sprintf("To: %s\r\nSubject: %s\r\n\r\n%s", args.To, args.Subject, args.Body)
 	encoded := base64.URLEncoding.EncodeToString([]byte(rawMessage))
 
