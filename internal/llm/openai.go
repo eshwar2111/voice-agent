@@ -342,3 +342,9 @@ func (p *OpenAICompatibleProvider) Generate(ctx context.Context, prompt string, 
 
 	return result.Choices[0].Message.Content, nil
 }
+
+// StreamGenerate emits the whole answer as one delta (the OpenAI path is not
+// token-streamed for the answer surface yet; it still honors the contract).
+func (p *OpenAICompatibleProvider) StreamGenerate(ctx context.Context, prompt string, images [][]byte, ch chan<- string) (string, error) {
+	return streamViaGenerate(func() (string, error) { return p.Generate(ctx, prompt, images) }, ch)
+}

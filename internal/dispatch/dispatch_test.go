@@ -40,6 +40,17 @@ func (p *recordingProvider) Generate(ctx context.Context, prompt string, images 
 	return "[]", nil
 }
 
+func (p *recordingProvider) StreamGenerate(ctx context.Context, prompt string, images [][]byte, ch chan<- string) (string, error) {
+	p.called = true
+	p.lastPrompt = prompt
+	p.lastImages = images
+	if ch != nil {
+		ch <- "[]"
+		close(ch)
+	}
+	return "[]", nil
+}
+
 // staticMatcher always returns a get_datetime task above threshold.
 type staticMatcher struct{}
 

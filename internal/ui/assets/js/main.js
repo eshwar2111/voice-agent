@@ -19,7 +19,7 @@ import { registerActivity, updateActivity, endActivity, activeActivities, render
   renderProvided, renderForSlot, syncProviderActivities }
   from './activities.js';
 import { render as renderCommand } from './surfaces/command.js';
-import { render as renderResult } from './surfaces/result.js';
+import { render as renderResult, appendDelta as resultAppendDelta } from './surfaces/result.js';
 import { render as renderApprove } from './surfaces/approve.js';
 import { render as renderAsk } from './surfaces/ask.js';
 import { loadSettings } from './surfaces/controlcenter.js';
@@ -87,6 +87,12 @@ window.__agent.on('surface:open', d => {
   // opening a full sheet. surfaces/approve.js stays in place (reachable via
   // openSurface('approve', ...) / window.showConfirmCard) as inert legacy UI
   // rather than risk dropping a code path some other caller still expects.
+});
+// Progressive answer text: append streamed deltas to the open result surface.
+// The authoritative full render arrives as a final surface:open, so a missed
+// delta can never leave stale text.
+window.__agent.on('result:delta', d => {
+  if(store.surface === 'result') resultAppendDelta((d && d.text) || '');
 });
 window.__agent.on('activity:update', d => updateActivity(d.id, d.data, syncAndRerender));
 window.__agent.on('activity:end', d => endActivity(d.id, syncAndRerender));

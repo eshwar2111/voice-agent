@@ -24,6 +24,15 @@ func (p *capturingProvider) Generate(_ context.Context, prompt string, _ [][]byt
 	return "[]", nil // empty decompose -> orchestrator falls back, but prompt is captured
 }
 
+func (p *capturingProvider) StreamGenerate(_ context.Context, prompt string, _ [][]byte, ch chan<- string) (string, error) {
+	p.lastPrompt = prompt
+	if ch != nil {
+		ch <- "[]"
+		close(ch)
+	}
+	return "[]", nil
+}
+
 func TestRunForwardsSysContextToDecompose(t *testing.T) {
 	p := &capturingProvider{}
 	orch := NewOrchestrator(p, NewExecutor(nil))

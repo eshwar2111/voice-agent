@@ -61,3 +61,16 @@ func (p *ProxyProvider) Generate(ctx context.Context, prompt string, images [][]
 	}
 	return p.provider.Generate(ctx, prompt, images)
 }
+
+func (p *ProxyProvider) StreamGenerate(ctx context.Context, prompt string, images [][]byte, ch chan<- string) (string, error) {
+	p.mu.RLock()
+	prov := p.provider
+	p.mu.RUnlock()
+	if prov == nil {
+		if ch != nil {
+			close(ch)
+		}
+		return "", errors.New("LLM not configured. Please complete setup in Settings.")
+	}
+	return prov.StreamGenerate(ctx, prompt, images, ch)
+}

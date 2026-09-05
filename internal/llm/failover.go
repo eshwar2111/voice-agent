@@ -54,3 +54,9 @@ func (f *FallbackProvider) Generate(ctx context.Context, prompt string, images [
 	}
 	return out, nil
 }
+
+// StreamGenerate runs through the existing failover Generate and emits the whole
+// answer as one delta, so a primary outage still yields the fallback's answer.
+func (f *FallbackProvider) StreamGenerate(ctx context.Context, prompt string, images [][]byte, ch chan<- string) (string, error) {
+	return streamViaGenerate(func() (string, error) { return f.Generate(ctx, prompt, images) }, ch)
+}

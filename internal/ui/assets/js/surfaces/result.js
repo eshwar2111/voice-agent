@@ -28,6 +28,16 @@ export function render(payload){
   return root;
 }
 
+// appendDelta grows the answer as streamed chunks arrive. It writes accumulated
+// text via textContent (never innerHTML) so partial, unbalanced Markdown can
+// never inject markup mid-stream; the final full render (a fresh render() with
+// the authoritative text) applies real Markdown formatting.
+export function appendDelta(text){
+  latestOutput += text || '';
+  const inner = document.querySelector('#outputBody .md-inner');
+  if(inner) inner.textContent = latestOutput;
+}
+
 // renderContent keeps the structured JSON renderers (calendar / gmail / system),
 // and otherwise treats the text as Markdown.
 function renderContent(text){

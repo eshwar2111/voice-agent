@@ -321,3 +321,9 @@ func (p *AnthropicProvider) Generate(ctx context.Context, prompt string, images 
 
 	return result.Content[0].Text, nil
 }
+
+// StreamGenerate emits the whole answer as one delta (honors the contract
+// without token-streaming for now).
+func (p *AnthropicProvider) StreamGenerate(ctx context.Context, prompt string, images [][]byte, ch chan<- string) (string, error) {
+	return streamViaGenerate(func() (string, error) { return p.Generate(ctx, prompt, images) }, ch)
+}

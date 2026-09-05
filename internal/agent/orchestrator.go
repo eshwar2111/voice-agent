@@ -113,11 +113,24 @@ func (o *Orchestrator) execSubGoal(ctx gocontext.Context, sg SubGoal) error {
 			prompt += "Context:\n" + sg.Context + "\n\n"
 		}
 		prompt += sg.Goal
-		ans, err := o.Provider.Generate(ctx, prompt, nil)
-		if err != nil {
+		// Stream the answer so text appears as it's generated instead of popping
+		// in after a pause. The final EndStreamedAnswer re-renders the full text
+		// authoritatively, so a partial/failed stream never leaves a broken card.
+		ui.BeginStreamedAnswer()
+		ch := make(chan string, 32)
+		done := make(chan struct{})
+		go func() {
+			for d := range ch {
+				ui.PushAnswerDelta(d)
+			}
+			close(done)
+		}()
+		ans, err := o.Provider.StreamGenerate(ctx, prompt, nil, ch)
+		<-done // all deltas delivered before the authoritative final render
+		if err != nil && strings.TrimSpace(ans) == "" {
 			return err
 		}
-		ui.ShowOutputOverlay(ans)
+		ui.EndStreamedAnswer(ans)
 		return nil
 	}
 

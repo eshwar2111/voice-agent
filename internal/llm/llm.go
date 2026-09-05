@@ -28,4 +28,25 @@ type Provider interface {
 	// need screen context, it returns the full plan in RawJSON directly.
 	ClassifyAndPlan(ctx context.Context, transcript, toolSchemas, systemContext string) (ClassifyResponse, error)
 	Generate(ctx context.Context, prompt string, images [][]byte) (string, error)
+
+	// StreamGenerate is Generate with progressive delivery: it sends text deltas
+	// to ch as they arrive and returns the full accumulated answer. Implementers
+	// that don't token-stream MUST still honor the contract by emitting the whole
+	// answer as one delta. The callee ALWAYS closes ch (including on error), so a
+	// caller can range over it safely. A nil ch means "don't stream" (equivalent
+	// to Generate).
+	StreamGenerate(ctx context.Context, prompt string, images [][]byte, ch chan<- string) (string, error)
+}
+
+// streamViaGenerate adapts a non-streaming Generate into the StreamGenerate
+// contract: run it, emit the whole answer as a single delta, and close ch.
+func streamViaGenerate(gen func() (string, error), ch chan<- string) (string, error) {
+	out, err := gen()
+	if ch != nil {
+		if err == nil && out != "" {
+			ch <- out
+		}
+		close(ch)
+	}
+	return out, err
 }

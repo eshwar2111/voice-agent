@@ -364,6 +364,69 @@ func (g *GeminiProvider) StreamGenerateIntent(ctx context.Context, req IntentReq
 	return IntentResponse{RawJSON: stripMarkdownCodeBlock(accumulatedJSON)}, nil
 }
 
+// StreamGenerate streams a conversational answer for a plain prompt (no
+// JSON/planning system prompt), pushing text deltas to ch as they arrive.
+func (g *GeminiProvider) StreamGenerate(ctx context.Context, prompt string, images [][]byte, ch chan<- string) (string, error) {
+	if ch != nil {
+		defer close(ch)
+	}
+	if g.apiKey == "" {
+		return "", errors.New("gemini API key is missing. Please set it in config.json")
+	}
+
+	parts := []map[string]interface{}{{"text": prompt}}
+	for _, img := range images {
+		parts = append(parts, map[string]interface{}{
+			"inline_data": map[string]string{
+				"mime_type": "image/jpeg",
+				"data":      base64.StdEncoding.EncodeToString(img),
+			},
+		})
+	}
+	payload := map[string]interface{}{
+		"contents":         []map[string]interface{}{{"role": "user", "parts": parts}},
+		"generationConfig": map[string]interface{}{"temperature": 0.7},
+	}
+
+	resp, err := g.makeGeminiRequest(ctx, payload, true)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	reader := bufio.NewReader(resp.Body)
+	var acc string
+	for {
+		line, rerr := reader.ReadBytes('\n')
+		if rerr != nil {
+			if rerr == io.EOF {
+				break
+			}
+			return acc, rerr
+		}
+		lineStr := string(line)
+		if !strings.HasPrefix(lineStr, "data: ") {
+			continue
+		}
+		dataStr := strings.TrimSpace(strings.TrimPrefix(lineStr, "data: "))
+		if dataStr == "" {
+			continue
+		}
+		var chunkResp geminiResponse
+		if err := json.Unmarshal([]byte(dataStr), &chunkResp); err != nil {
+			continue
+		}
+		if len(chunkResp.Candidates) > 0 && len(chunkResp.Candidates[0].Content.Parts) > 0 {
+			t := chunkResp.Candidates[0].Content.Parts[0].Text
+			acc += t
+			if ch != nil && t != "" {
+				ch <- t
+			}
+		}
+	}
+	return acc, nil
+}
+
 // ClassifyAndPlan performs a fast, text-only classification.
 func (g *GeminiProvider) ClassifyAndPlan(ctx context.Context, transcript, toolSchemas, systemContext string) (ClassifyResponse, error) {
 	if g.apiKey == "" {

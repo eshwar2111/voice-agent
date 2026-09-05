@@ -340,6 +340,40 @@ func ShowOutputOverlay(text string) {
 	bridge.Push("surface:open", map[string]any{"id": "result", "text": text})
 }
 
+// BeginStreamedAnswer opens the result surface empty, ready to receive deltas
+// from a streaming answer so text appears as it is generated.
+func BeginStreamedAnswer() {
+	if bridge == nil {
+		return
+	}
+	bridge.Push("surface:open", map[string]any{"id": "result", "text": "", "streaming": true})
+}
+
+// PushAnswerDelta appends one chunk of a streaming answer to the open result
+// surface (rendered as progressive plain text; the final render is authoritative).
+func PushAnswerDelta(chunk string) {
+	if bridge == nil || chunk == "" {
+		return
+	}
+	bridge.Push("result:delta", map[string]any{"text": chunk})
+}
+
+// EndStreamedAnswer finalizes a streamed answer. It re-renders the FULL text via
+// the same known-good path ShowOutputOverlay uses (so any streaming glitch is
+// corrected to the authoritative content), and speaks the gist for voice
+// commands. Safe even if no deltas were delivered.
+func EndStreamedAnswer(full string) {
+	if speakMode.Load() && SpeakFunc != nil {
+		if gist := spokenGist(full); gist != "" {
+			go SpeakFunc(gist)
+		}
+	}
+	if bridge == nil {
+		return
+	}
+	bridge.Push("surface:open", map[string]any{"id": "result", "text": full})
+}
+
 // canDeliverConfirmation reports whether an approve prompt can actually reach
 // the WebView. It is pure (no globals) so it can be unit tested directly: the
 // real bug this guards was a real window (w != nil) with no bridge yet
