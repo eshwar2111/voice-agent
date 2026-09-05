@@ -190,7 +190,7 @@ func resolveFolder(query string) string {
 			dirs = append(dirs, rec.Path)
 		}
 	}
-	return pickBestDir(dirs, q)
+	return pickPathOrAsk(dirs, q) // ask-don't-guess when several folders match
 }
 
 // probeCommonDirs looks for a directory named q in the handful of places a

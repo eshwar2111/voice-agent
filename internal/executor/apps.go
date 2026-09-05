@@ -62,6 +62,29 @@ func FindApp(query string) (StartApp, bool) {
 	return StartApp{}, false
 }
 
+// FindAppCandidates returns the installed apps matching query, for ask-don't-guess.
+// An exact (case-insensitive) name match is unambiguous and returned alone;
+// otherwise every fuzzy substring match is returned so the caller can ask which.
+func FindAppCandidates(query string) []StartApp {
+	apps, err := getAppsList()
+	if err != nil || len(apps) == 0 {
+		return nil
+	}
+	query = strings.ToLower(strings.TrimSpace(query))
+	for _, app := range apps {
+		if strings.ToLower(app.Name) == query {
+			return []StartApp{app}
+		}
+	}
+	var out []StartApp
+	for _, app := range apps {
+		if strings.Contains(strings.ToLower(app.Name), query) {
+			out = append(out, app)
+		}
+	}
+	return out
+}
+
 // FindAppMatches returns the best-matching app display name and how many apps
 // matched the query. An exact (case-insensitive) name match is unambiguous
 // (count 1). Otherwise it counts all fuzzy substring matches so callers can

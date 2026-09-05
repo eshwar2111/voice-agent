@@ -5,11 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/yourname/voice-agent/internal/search"
-	"github.com/yourname/voice-agent/internal/ui"
 )
 
 type OpenFileTool struct{}
@@ -93,91 +91,7 @@ func resolveFile(query string) string {
 			files = append(files, rec.Path)
 		}
 	}
-	return pickFileOrAsk(files, q)
-}
-
-// pickFileOrAsk resolves the file to open. When SEVERAL files genuinely match
-// the spoken name (e.g. two resumes, or the same filename in two folders) it
-// asks the user which one — the "ask, don't guess" principle — via a compact
-// choice on the island. A single clear match opens straight away (no needless
-// question); when nothing strongly matches it falls back to the best guess
-// rather than nagging.
-func pickFileOrAsk(files []string, q string) string {
-	switch len(files) {
-	case 0:
-		return ""
-	case 1:
-		return files[0]
-	}
-	toks := fileQueryTokens(q)
-	var strong []string
-	seen := map[string]bool{}
-	for _, f := range files {
-		if seen[f] {
-			continue
-		}
-		seen[f] = true
-		if nameMatchesAllTokens(filepath.Base(f), toks) {
-			strong = append(strong, f)
-		}
-	}
-	switch {
-	case len(strong) == 1:
-		return strong[0]
-	case len(strong) >= 2:
-		if picked := askWhichFile(strong, q); picked != "" {
-			return picked
-		}
-		return "" // user cancelled — don't open the wrong thing
-	default:
-		return pickBestDir(files, q) // nothing strongly matches; best guess, no nag
-	}
-}
-
-// askWhichFile presents up to 5 candidates as a compact choice and returns the
-// chosen path (or "" on cancel / no UI).
-func askWhichFile(files []string, q string) string {
-	if len(files) > 5 {
-		files = files[:5]
-	}
-	opts := make([]ui.Option, 0, len(files))
-	for _, f := range files {
-		opts = append(opts, ui.Option{ID: f, Label: filepath.Base(f), Sub: filepath.Dir(f)})
-	}
-	id, ok := ui.AskChoice(fmt.Sprintf("Which %q do you mean?", q), opts)
-	if ok {
-		return id
-	}
-	return ""
-}
-
-// fileQueryTokens splits the cleaned query into meaningful lowercase tokens.
-func fileQueryTokens(q string) []string {
-	var out []string
-	for _, t := range strings.FieldsFunc(strings.ToLower(q), func(r rune) bool {
-		return r == ' ' || r == '_' || r == '-' || r == '.'
-	}) {
-		if len(t) > 1 {
-			out = append(out, t)
-		}
-	}
-	return out
-}
-
-// nameMatchesAllTokens reports whether the file's base name (separators
-// normalized) contains every query token — i.e. it's a genuine match, not an
-// incidental index hit.
-func nameMatchesAllTokens(name string, toks []string) bool {
-	if len(toks) == 0 {
-		return false
-	}
-	norm := strings.NewReplacer("_", " ", "-", " ", ".", " ").Replace(strings.ToLower(name))
-	for _, t := range toks {
-		if !strings.Contains(norm, t) {
-			return false
-		}
-	}
-	return true
+	return pickPathOrAsk(files, q) // ask-don't-guess (see ask_helpers.go)
 }
 
 var fileNouns = []string{"file", "document", "doc"}
