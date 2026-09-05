@@ -115,6 +115,12 @@ var (
 	askTextChan  chan askAnswer
 	askTextMutex sync.Mutex
 
+	// askChoiceChan carries the selected option id back from the UI to a blocked
+	// AskChoice call; askChoiceMutex serializes concurrent choice prompts on the
+	// one channel (same reasoning as askTextMutex/confirmMutex).
+	askChoiceChan  chan choiceAnswer
+	askChoiceMutex sync.Mutex
+
 	// OnCommand is declared in command_bar.go
 	OnSettingsSaved func(cfg interface{})
 )
@@ -126,12 +132,30 @@ type askAnswer struct {
 	ok   bool
 }
 
+// Option is one selectable choice on the interactive choice surface. Label is
+// the visible line; Sub is an optional secondary/meta line; ID is what AskChoice
+// returns when this option is picked. The json tags are the field names the
+// askchoice.js surface reads off the pushed payload.
+type Option struct {
+	ID    string `json:"id"`
+	Label string `json:"label"`
+	Sub   string `json:"sub"`
+}
+
+// choiceAnswer is the result of a choice prompt: the selected option id and
+// whether the user actually chose (ok) rather than cancelled.
+type choiceAnswer struct {
+	id string
+	ok bool
+}
+
 func init() {
 	// Force WebView2 background to be transparent (0 alpha)
 	// This must be set before the webview is initialized.
 	os.Setenv("WEBVIEW2_DEFAULT_BACKGROUND_COLOR", "0")
 	confirmChan = make(chan bool)
 	askTextChan = make(chan askAnswer)
+	askChoiceChan = make(chan choiceAnswer)
 }
 
 // SpeakFunc, when non-nil, speaks an answer aloud. It is injected once from
@@ -456,6 +480,26 @@ func AskText(question string) (string, bool) {
 	return ans.text, ans.ok
 }
 
+// AskChoice opens the interactive choice surface on the island — a question and
+// a vertical list of selectable options — and blocks until the user picks one
+// (returns the chosen option's ID, true) or cancels / the UI is unavailable
+// (returns "", false). It is the structured-choice counterpart to AskText: use
+// it when the agent needs the user to CHOOSE among known alternatives (a
+// disambiguation, a clarification with fixed answers, an approve-with-options)
+// rather than type free text. The options are answerable by click, keyboard, or
+// — routing a spoken answer through the same askChoiceSubmit binding — voice.
+// Serialized so two choice prompts can't race on the one channel.
+func AskChoice(question string, options []Option) (string, bool) {
+	if w == nil || bridge == nil {
+		return "", false
+	}
+	askChoiceMutex.Lock()
+	defer askChoiceMutex.Unlock()
+	bridge.Push("surface:open", map[string]any{"id": "askchoice", "question": question, "options": options})
+	ans := <-askChoiceChan
+	return ans.id, ans.ok
+}
+
 // waitForConfirmSlot acquires confirmMutex, logging if the caller actually
 // had to wait — i.e. another plan step's approval was already showing. Silent
 // contention here is exactly what made this bug unfindable before: two
@@ -587,6 +631,22 @@ func StartOverlay(ctx context.Context, cfg *config.Config) {
 	w.Bind("askTextCancel", func() {
 		select {
 		case askTextChan <- askAnswer{ok: false}:
+		default:
+		}
+	})
+	// Choice-surface answers. Same non-blocking contract as askTextSubmit/Cancel:
+	// deliver to a waiting AskChoice, otherwise drop (a submit followed by the
+	// surface's own close-cancel, or a stray click with nothing pending).
+	w.Bind("askChoiceSubmit", func(id string) {
+		select {
+		case askChoiceChan <- choiceAnswer{id: id, ok: true}:
+		default:
+			log.Printf("[ui] askChoiceSubmit had no pending choice — dropped")
+		}
+	})
+	w.Bind("askChoiceCancel", func() {
+		select {
+		case askChoiceChan <- choiceAnswer{ok: false}:
 		default:
 		}
 	})
