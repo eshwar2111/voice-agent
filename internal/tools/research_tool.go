@@ -49,11 +49,17 @@ func (t *ResearchTool) Execute(ctx context.Context, rawParams json.RawMessage) (
 		return "", fmt.Errorf("missing query parameter")
 	}
 
-	ui.ShowNotification(fmt.Sprintf("Researching: %s...", query))
+	// A long task → show a progress card with a working Stop (cancels the child
+	// context feeding the searches + synthesis).
+	rctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	prog := ui.StartProgress(fmt.Sprintf("Researching %q", query), cancel)
 
 	// 1. Search (shared DuckDuckGo scraper also used by web_search)
-	results, err := ddgSearch(ctx, query, 5)
+	prog.Note("Searching the web…")
+	results, err := ddgSearch(rctx, query, 5)
 	if err != nil {
+		prog.Fail("Search failed")
 		return "", fmt.Errorf("search failed: %w", err)
 	}
 
@@ -65,7 +71,7 @@ func (t *ResearchTool) Execute(ctx context.Context, rawParams json.RawMessage) (
 	for _, r := range results {
 		link := r.URL
 
-		ui.ShowNotification(fmt.Sprintf("Reading: %s", link))
+		prog.Update(linksCount, 3, "Reading sources…")
 		content, err := fetchPageText(link)
 		if err == nil && len(content) > 200 {
 			researchContext.WriteString(fmt.Sprintf("--- Source: %s ---\n", link))
@@ -83,11 +89,12 @@ func (t *ResearchTool) Execute(ctx context.Context, rawParams json.RawMessage) (
 	}
 
 	if researchContext.Len() < 100 {
+		prog.Fail("Not enough found")
 		return "I couldn't find enough information on the web to provide a detailed answer.", nil
 	}
 
 	// 4. Synthesize answer using LLM
-	ui.ShowNotification("Synthesizing answer...")
+	prog.Note("Synthesizing answer…")
 	prompt := fmt.Sprintf(`Answer the question directly and CONCISELY from the web results below, like a helpful assistant speaking aloud. Rules:
 - Lead with the direct answer in the first sentence.
 - Keep it to 2–4 short sentences. Do NOT produce a long report, bullet lists of every figure, or a "Sources:" section.
@@ -99,12 +106,13 @@ Question: "%s"
 Web results:
 %s`, query, researchContext.String())
 
-	finalAnswer, err := t.Provider.Generate(ctx, prompt, nil)
+	finalAnswer, err := t.Provider.Generate(rctx, prompt, nil)
 	if err != nil {
+		prog.Fail("Synthesis failed")
 		return "", fmt.Errorf("synthesis failed: %w", err)
 	}
 
-	// Also trigger "Speak" via state change if needed, but usually the engine handles the output
+	prog.Done("Research complete")
 	return finalAnswer, nil
 }
 

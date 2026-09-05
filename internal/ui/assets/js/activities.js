@@ -315,6 +315,49 @@ registerActivity({
   },
 });
 
+// task.progress — a long/bulk task's progress card (ui.StartProgress in Go).
+// Compact: a status line; expanded: title, a determinate bar when counts are
+// known, and a Stop that cancels the task (taskStop binding). phase: running |
+// done | error. Sits above agent.run so an active task is the primary display.
+registerActivity({
+  id: 'task.progress', priority: 95, ttl: 0,
+  leading: (d) => {
+    if (d.phase === 'done') return el('span', 'cap-glyph good', icon('check'));
+    if (d.phase === 'error') return el('span', 'cap-glyph warm', icon('warning'));
+    if ((d.total | 0) > 0) return el('span', 'cap-glyph accent', ringSVG(d.done | 0, d.total | 0));
+    return el('span', 'cap-glyph accent glyph-pulse', icon('sparkle'));
+  },
+  trailing: (d) => {
+    if (d.phase === 'running' && d.cancelable) {
+      const s = el('button', 'iconbtn stop', icon('stop'));
+      s.title = 'Stop';
+      s.onclick = (ev) => { ev.stopPropagation(); window.taskStop && window.taskStop(); };
+      return s;
+    }
+    return el('span');
+  },
+  compact: (d) => el('div', null,
+    `<span class="ttl">${esc(d.note || d.title || 'Working…')}</span>`),
+  expanded: (d) => {
+    const n = el('div', 'task-prog');
+    let html = `<div class="ttl">${esc(d.title || 'Working…')}</div>`;
+    if (d.note) html += `<div class="sub">${esc(d.note)}</div>`;
+    if ((d.total | 0) > 0) {
+      const pct = Math.max(0, Math.min(100, Math.round((d.done | 0) / (d.total | 0) * 100)));
+      html += `<div class="prog-bar"><i style="width:${pct}%"></i></div>` +
+              `<div class="sub">${d.done | 0} of ${d.total | 0}</div>`;
+    }
+    n.innerHTML = html;
+    if (d.phase === 'running' && d.cancelable) {
+      const row = el('div', 'actions right');
+      const stop = el('button', 'btn ghost', 'Stop');
+      stop.onclick = (ev) => { ev.stopPropagation(); window.taskStop && window.taskStop(); };
+      row.appendChild(stop); n.appendChild(row);
+    }
+    return n;
+  },
+});
+
 registerActivity({
   id: 'agent.run', priority: 90, ttl: 0,
   // NOT `.orb` — that is a 9px status DOT with its own gradient and glow,

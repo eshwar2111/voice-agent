@@ -63,6 +63,13 @@ func (d *Deps) Handle(ctx context.Context, input string, cap agentctx.Capture) e
 	taskCtx := d.session.contextIfActive(now)
 	d.session.record(input, now)
 
+	// Interaction-mode classifier: the explicit up-front "simple vs long task"
+	// decision so long/bulk requests are handled with a progress presentation
+	// rather than a one-shot status. (Long tools like research drive their own
+	// progress card; this makes the decision visible and available to routing.)
+	mode := classifyInteraction(input)
+	log.Printf("[dispatch] mode=%s %q", mode, input)
+
 	norm := resolver.Normalize(input, cap.AppName)
 	if match, ok := d.Resolver.Resolve(norm); ok {
 		atomic.AddInt64(&localHits, 1)

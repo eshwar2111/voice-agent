@@ -651,6 +651,7 @@ func StartOverlay(ctx context.Context, cfg *config.Config) {
 		}
 	})
 	// Stop control shown while the agent is speaking — halts TTS immediately.
+	w.Bind("taskStop", func() { invokeProgressCancel() })
 	w.Bind("stopSpeaking", func() {
 		if StopSpeakFunc != nil {
 			StopSpeakFunc()
