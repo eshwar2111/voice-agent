@@ -5,6 +5,7 @@
 // by the 'surface:open' bridge handler in main.js.
 import { esc } from '../activities.js';
 import { toast } from '../main.js';
+import { answerTier } from '../state.js';
 
 let latestOutput = '';
 
@@ -12,6 +13,12 @@ export function render(payload){
   latestOutput = (payload && payload.text) || '';
   const root = document.createElement('div');
   root.className = 'surface-result';
+  // Size class the island geometry was sized to (state.js answerPresence uses
+  // the SAME answerTier). data-tier — not a className token — so the class stays
+  // exactly 'surface-result' (surfaces.test.js asserts that) while CSS trims the
+  // chrome for a compact answer: 'sm' hides the footer and the "Answer" label so
+  // a one-line reply reads as a small pill, not a big dialog.
+  root.dataset.tier = answerTier(payload);
   root.innerHTML =
     '<div class="rhead">' +
       '<div class="rhead-id"><span class="spark"><svg class="ico"><use href="#i-sparkle"/></svg></span><span>Answer</span></div>' +

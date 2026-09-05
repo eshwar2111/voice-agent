@@ -8,7 +8,69 @@ export const PRESENCE_SIZES = {
   peek:     { w: 420, h: 52,  r: 26, opacity: 1 },
   expanded: { w: 560, h: 180, r: 28, opacity: 1 },
   sheet:    { w: 720, h: 520, r: 30, opacity: 1 },
+
+  // Size-to-content answer tiers for the result surface. The #1 complaint was
+  // that a one-line answer opened the full 720x520 sheet ("opening such a big
+  // dialog box for a small thing"). resolve() now picks one of these by
+  // classifying the answer text (answerPresence, below): a single short line
+  // gets a small pill-card, a paragraph a medium card, and only genuinely long
+  // or structured content gets the near-full sheet — which still scrolls, so
+  // nothing is ever clipped.
+  answerSm: { w: 420, h: 112, r: 24, opacity: 1 },
+  answerMd: { w: 540, h: 280, r: 28, opacity: 1 },
+  answerLg: { w: 680, h: 480, r: 30, opacity: 1 },
+
+  // Interactive choice surface: a MODEST expansion (question + a vertical list
+  // of selectable options), not a giant chat window. Height grows with the
+  // number of options; past a handful the list itself scrolls.
+  choiceSm: { w: 460, h: 240, r: 28, opacity: 1 },
+  choiceMd: { w: 480, h: 320, r: 28, opacity: 1 },
+  choiceLg: { w: 500, h: 400, r: 30, opacity: 1 },
 };
+
+// ─── Content-driven surface sizing ───────────────────────────────────────────
+// These are pure (text/array in, presence-or-tier string out) so they can be
+// unit-tested and reasoned about the same way resolve() is, and reused by the
+// surface renderers (result.js sets data-tier from answerTier) so the DOM and
+// the island geometry always agree on the size class.
+
+// looksStructured recognizes the structured JSON list payloads result.js
+// renders specially (calendar/gmail/system) — those always want list room.
+function looksStructured(text) {
+  if (!text || text[0] !== '{') return false;
+  try {
+    const p = JSON.parse(text);
+    return !!(p && (p.type === 'calendar_list' || p.type === 'gmail_list' || p.type === 'system_status'));
+  } catch (e) { return false; }
+}
+
+// answerTier classifies a result payload into 'sm' | 'md' | 'lg'.
+// A streamed answer starts empty and grows, so it opens at least at 'md' to
+// give the incoming text room rather than snapping tiny-then-large.
+export function answerTier(payload) {
+  const text = ((payload && payload.text) || '').trim();
+  const streaming = !!(payload && payload.streaming);
+  if (looksStructured(text)) return 'lg';
+  const len = text.length;
+  const lines = text ? text.split('\n').length : 1;
+  // Any Markdown list / heading / code fence reads as "rich" — never a one-line pill.
+  const rich = /(^|\n)\s*([-*]|\d+\.)\s/.test(text) || /\n\s*#{1,3}\s/.test(text) || text.indexOf('```') !== -1;
+  if (streaming && len < 240) return 'md';
+  if (!rich && lines <= 1 && len <= 88) return 'sm';
+  if (!rich && lines <= 5 && len <= 360) return 'md';
+  return 'lg';
+}
+
+const ANSWER_PRESENCE = { sm: 'answerSm', md: 'answerMd', lg: 'answerLg' };
+export function answerPresence(payload) { return ANSWER_PRESENCE[answerTier(payload)]; }
+
+// choicePresence sizes the interactive choice surface to the option count.
+export function choicePresence(payload) {
+  const n = (payload && Array.isArray(payload.options)) ? payload.options.length : 0;
+  if (n <= 3) return 'choiceSm';
+  if (n <= 5) return 'choiceMd';
+  return 'choiceLg';
+}
 
 export const DORMANT_AFTER_MS = 6000;
 
@@ -81,6 +143,15 @@ export function resolve(store) {
     return { presence: 'compact', contentId: 'idle', bubbleId: null, surface: 'controlcenter' };
   }
   if (surface) {
+    // The result/answer surface sizes to its content (the #1 complaint); the
+    // interactive choice surface expands only modestly. Every other surface
+    // (command, approve) keeps the full sheet.
+    if (surface === 'result') {
+      return { presence: answerPresence(store.payload), contentId: 'result', bubbleId: null, surface: null };
+    }
+    if (surface === 'askchoice') {
+      return { presence: choicePresence(store.payload), contentId: 'askchoice', bubbleId: null, surface: null };
+    }
     return { presence: 'sheet', contentId: surface, bubbleId: null, surface: null };
   }
 

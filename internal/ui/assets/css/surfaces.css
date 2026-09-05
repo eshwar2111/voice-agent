@@ -101,6 +101,45 @@ kbd{font:600 11px var(--font);color:var(--ink-2);background:rgba(255,255,255,.07
 .surface-result .footer::before{content:"";position:absolute;left:20px;right:20px;top:0;height:1px;
   background:linear-gradient(90deg,transparent,var(--stroke) 14%,var(--stroke) 86%,transparent)}
 
+/* ─── Size-to-content answer tiers ────────────────────────────────────────────
+   result.js sets data-tier (sm|md|lg) from the SAME classifier state.js used to
+   size the island (answerTier), so the chrome matches the geometry. A one-line
+   answer (sm) sheds the "Answer" label and the footer so it reads as a small
+   pill; a paragraph (md) keeps the header but drops the now-redundant footer
+   (Close lives in the header); a long/structured answer (lg) keeps everything. */
+.surface-result[data-tier="sm"] .rhead{padding:11px 14px 9px}
+.surface-result[data-tier="sm"] .rhead::after{display:none}
+.surface-result[data-tier="sm"] .rhead-id > span:last-child{display:none}
+.surface-result[data-tier="sm"] .obody{padding:4px 18px 12px;font-size:14px}
+.surface-result[data-tier="sm"] .md-inner{max-width:none}
+.surface-result[data-tier="sm"] .md-inner > p:first-child{font-size:14.5px;line-height:1.5;margin-bottom:0}
+.surface-result[data-tier="sm"] .footer{display:none}
+.surface-result[data-tier="sm"]::before{height:80px}
+.surface-result[data-tier="md"] .footer{display:none}
+
+/* ─── Interactive choice surface (askChoice) ──────────────────────────────────
+   A MODEST expansion: a question and a vertical list of selectable options —
+   click, arrow-key + Enter, or number keys. Reuses .surface-command's flex
+   column and the .phead / .btn / kbd design system. */
+.surface-choice .phead{padding:16px 20px 11px;border-bottom:none}
+.surface-choice .phead h1{font-size:18px;margin-bottom:5px}
+.surface-choice .phead p{font-size:12px}
+.choice-list{flex:1;width:100%;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding:2px 18px 8px}
+.choice-opt{all:unset;box-sizing:border-box;display:flex;flex-direction:column;gap:2px;width:100%;
+  padding:10px 14px;border-radius:13px;border:1px solid var(--stroke);
+  background:rgba(255,255,255,.04);color:var(--ink);cursor:pointer;
+  transition:background .14s var(--ease),border-color .14s var(--ease),transform .1s var(--ease)}
+.choice-opt:hover{background:rgba(255,255,255,.07)}
+.choice-opt.sel{background:var(--accent-soft);
+  border-color:color-mix(in srgb,var(--accent) 55%,var(--stroke));
+  box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 30%,transparent)}
+.choice-opt:active{transform:scale(.985)}
+.choice-label{font-size:13.5px;font-weight:620;letter-spacing:-.01em}
+.choice-sub{font-size:11.5px;color:var(--ink-2);line-height:1.4}
+.surface-choice .footer{position:relative;border-top:none;padding:10px 20px 14px}
+.surface-choice .footer::before{content:"";position:absolute;left:20px;right:20px;top:0;height:1px;
+  background:linear-gradient(90deg,transparent,var(--stroke) 14%,var(--stroke) 86%,transparent)}
+
 /* ─── Buttons ─────────────────────────────────────────────────────────────── */
 .btn{border:1px solid transparent;border-radius:11px;cursor:pointer;font:600 13px var(--font);padding:9px 16px;letter-spacing:-0.01em;transition:transform .1s var(--ease),background .16s,border-color .16s}
 .btn:active{transform:scale(.97)}

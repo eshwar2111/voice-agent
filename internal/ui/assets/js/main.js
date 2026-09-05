@@ -22,6 +22,7 @@ import { render as renderCommand } from './surfaces/command.js';
 import { render as renderResult, appendDelta as resultAppendDelta } from './surfaces/result.js';
 import { render as renderApprove } from './surfaces/approve.js';
 import { render as renderAsk } from './surfaces/ask.js';
+import { render as renderChoice } from './surfaces/askchoice.js';
 import { loadSettings } from './surfaces/controlcenter.js';
 
 /* ─── logging: everything goes to Go (voice-agent.log) ────────────────────── */
@@ -80,7 +81,10 @@ window.__agent.on('notify', d => {
 window.__agent.on('surface:open', d => {
   if(d.id==='command') openSurface('command');
   else if(d.id==='ask') openSurface('ask', { question: d.question });
-  else if(d.id==='result') openSurface('result', { text: d.text });
+  else if(d.id==='askchoice') openSurface('askchoice', { question: d.question, options: d.options || [] });
+  // `streaming` is threaded through so a not-yet-arrived answer opens at the
+  // medium size (state.js answerTier) instead of snapping tiny then large.
+  else if(d.id==='result') openSurface('result', { text: d.text, streaming: d.streaming });
   // 'approve' is no longer sent: RequestConfirmationCard/RequestConfirmation
   // (internal/ui/overlay.go) now drive the trust.approval live activity
   // instead, so the island expands inline with Approve/Cancel rather than
@@ -270,7 +274,7 @@ function slotFor(presence){
 // Content for the command/result/approve surfaces (rendered inline in the
 // island body at presence="sheet") is owned by their own modules, keyed by
 // contentId === the surface id, exactly like state.js's resolve() sets it.
-const surfaceRenderers = { command: renderCommand, result: renderResult, approve: renderApprove, ask: renderAsk };
+const surfaceRenderers = { command: renderCommand, result: renderResult, approve: renderApprove, ask: renderAsk, askchoice: renderChoice };
 
 // Content beyond 'idle' is otherwise owned by whichever activity is on top
 // (see activities.js). Returning an empty div for an id with no renderer
@@ -563,7 +567,10 @@ function setSurface(id){
 export function openSurface(id, payload){
   store.surface = id;
   store.payload = payload || null;
-  if(id === 'command' || id === 'controlcenter'){
+  // The choice surface needs real keyboard focus for arrow/Enter/number-key
+  // navigation, so foreground the (normally no-activate) overlay while it's
+  // open, same as the typed command bar and Control Center.
+  if(id === 'command' || id === 'controlcenter' || id === 'askchoice'){
     window.setInputActive && window.setInputActive(true);
   }
   rerender();
@@ -582,6 +589,8 @@ export function closeSurface(){
   // must cancel the blocked Go AskText, or the command that asked hangs forever.
   // A submit already answered AskText, so this stray cancel is dropped there.
   if(store.surface === 'ask'){ window.askTextCancel && window.askTextCancel(); }
+  // Same contract for the choice surface: an un-chosen close cancels AskChoice.
+  if(store.surface === 'askchoice'){ window.askChoiceCancel && window.askChoiceCancel(); }
   store.surface = null;
   store.payload = null;
   window.setInputActive && window.setInputActive(false);
