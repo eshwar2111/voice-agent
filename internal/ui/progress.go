@@ -58,12 +58,20 @@ func (h *ProgressHandle) Update(done, total int, note string) { h.push("running"
 // Note updates just the status line (indeterminate progress).
 func (h *ProgressHandle) Note(note string) { h.push("running", 0, 0, note) }
 
-// Done marks the task finished — a brief ✓ card, then it dismisses.
-func (h *ProgressHandle) Done(summary string) {
+// Done marks the task finished — a brief ✓ card, then it dismisses. steps, when
+// non-empty, renders the Action Trail (each a completed step label).
+func (h *ProgressHandle) Done(summary string, steps []string) {
 	if h == nil {
 		return
 	}
-	h.push("done", 0, 0, summary)
+	if len(steps) > 0 {
+		UpdateActivity(progressActivityID, map[string]any{
+			"kind": progressActivityID, "title": h.title, "phase": "done",
+			"done": 0, "total": 0, "note": summary, "cancelable": false, "steps": steps,
+		})
+	} else {
+		h.push("done", 0, 0, summary)
+	}
 	clearProgressCancel()
 	go func() {
 		time.Sleep(2500 * time.Millisecond)

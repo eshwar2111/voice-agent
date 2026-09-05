@@ -112,7 +112,7 @@ Web results:
 		return "", fmt.Errorf("synthesis failed: %w", err)
 	}
 
-	prog.Done("Research complete")
+	prog.Done("Research complete", nil)
 	return finalAnswer, nil
 }
 

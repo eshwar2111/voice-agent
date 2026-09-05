@@ -9,7 +9,8 @@ import (
 // ProgressReporter drives a progress card (satisfied by *ui.ProgressHandle).
 type ProgressReporter interface {
 	Update(done, total int, note string)
-	Done(summary string)
+	// Done finishes the card; steps (completed step labels) render the Action Trail.
+	Done(summary string, steps []string)
 	Fail(msg string)
 }
 
@@ -135,7 +136,14 @@ func (r *Runner) Run(ctx context.Context, s *Session) error {
 	s.touch()
 	r.save(s)
 	if prog != nil {
-		prog.Done("Done")
+		// Action Trail: the completed step labels the user's task moved through.
+		var trail []string
+		for _, st := range s.Steps {
+			if st.Label != "" {
+				trail = append(trail, st.Label)
+			}
+		}
+		prog.Done("Done", trail)
 	}
 	return nil
 }
