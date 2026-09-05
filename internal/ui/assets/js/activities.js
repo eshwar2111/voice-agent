@@ -194,10 +194,51 @@ export const kindRenderers = {
     trailing: () => el('span', 'eq', '<i></i><i></i><i></i><i></i><i></i>'),
     compact: (d) => el('div', null,
       `<span class="ttl">${esc(d.track || '')} <span class="sub">· ${esc(d.artist || '')}</span></span>`),
-    expanded: (d) => el('div', null,
-      `<span class="ttl">${esc(d.track || 'Now playing')}</span><span class="sub">${esc(d.artist || '')}</span>`),
+    // Full media widget (island.html mock): an art tile, title + artist, an
+    // optional thin progress bar, and transport controls. Rarely reached today
+    // — resolve() only ever gives a non-approval activity 'compact'/'peek'
+    // presence, so this expanded face needs nowplaying promoted to 'expanded'
+    // (a geometry hook) to be seen.
+    // BACKEND HOOK: the provider (internal/island/nowplaying.go) emits only
+    // track/artist/art — no position/duration or isPlaying, and there are no
+    // spotify transport bindings on window. So the progress bar is shown only
+    // when d.durationMs is present, and transport buttons auto-wire to
+    // window.spotify{Prev,Toggle,Next} if those bindings ever exist, otherwise
+    // they are inert-visual per spec (never faked into looking functional).
+    expanded: (d) => renderMediaWidget(d),
   },
 };
+
+function renderMediaWidget(d){
+  const n = el('div', 'media');
+  const art = el('span', 'media-art', d.art
+    ? `<img src="${esc(d.art)}" alt="" width="52" height="52"/>`
+    : icon('spotify'));
+  const meta = el('span', 'media-meta');
+  let metaHTML =
+    `<span class="media-title">${esc(d.track || 'Now playing')}</span>` +
+    `<span class="media-artist">${esc(d.artist || '')}</span>`;
+  const dur = d.durationMs | 0, pos = d.positionMs | 0;
+  if (dur > 0) {
+    const pct = Math.max(0, Math.min(100, Math.round(pos / dur * 100)));
+    metaHTML += `<span class="media-prog"><i style="width:${pct}%"></i></span>`;
+  }
+  meta.innerHTML = metaHTML;
+  const mc = el('div', 'media-controls');
+  const btn = (ic, cls, fn) => {
+    const b = el('button', cls || null, icon(ic));
+    if (typeof fn === 'function') b.onclick = (ev) => { ev.stopPropagation(); fn(); };
+    return b;
+  };
+  const playGlyph = d.isPlaying === false ? 'play' : (d.isPlaying ? 'pause' : 'play');
+  mc.append(
+    btn('prev', null, window.spotifyPrev),
+    btn(playGlyph, 'play', window.spotifyToggle || window.spotifyPlay),
+    btn('next', null, window.spotifyNext),
+  );
+  n.append(art, meta, mc);
+  return n;
+}
 
 // Album art when the provider gives it, else the Spotify glyph. Shared by the
 // nowplaying leading + bubble slots so the split-island bubble shows the art too.
@@ -287,8 +328,23 @@ registerActivity({
   trailing: () => el('span'),
   compact: (d) => el('div', null, `<span class="ttl">${esc(d.title || 'Approve action?')}</span>`),
   expanded: (d) => {
-    const n = el('div', 'approval');
-    let head = `<div class="ttl">${esc(d.title || 'Approve action?')}</div>`;
+    // Editorial danger approval (island.html mock): a wide-tracked eyebrow +
+    // serif title in a chead, danger tint/icon for a 'danger' risk (the island
+    // itself also tints + shakes once via #island:has(.risk-danger) in CSS),
+    // then the readable steps and Cancel/Approve. resolveConfirm is unchanged.
+    const risk = d.risk || 'risky';
+    const danger = risk === 'danger';
+    const n = el('div', 'approval' + (danger ? ' danger' : ''));
+    const glyph = danger ? 'warning' : 'shield';
+    const eyebrow = danger ? 'Before I continue' : 'Approve action';
+    let head =
+      '<div class="approval-head">' +
+        `<span class="approval-ic${danger ? ' danger' : ''}"><svg class="ico"><use href="#i-${glyph}"/></svg></span>` +
+        '<span class="approval-headtext">' +
+          `<span class="eyebrow${danger ? ' danger' : ''}">${esc(eyebrow)}</span>` +
+          `<span class="approval-title">${esc(d.title || 'Approve action?')}</span>` +
+        '</span>' +
+      '</div>';
     if(d.goal) head += `<div class="sub">${esc(d.goal)}</div>`;
     n.innerHTML = head;
     // The steps the user is actually authorising — plain-English label + detail,
@@ -307,7 +363,7 @@ registerActivity({
     }
     const row = el('div', 'actions right');
     const no = el('button', 'btn ghost', 'Cancel');
-    const yes = el('button', 'btn primary', 'Approve');
+    const yes = el('button', 'btn ' + (danger ? 'danger' : 'primary'), 'Approve');
     no.onclick = () => window.resolveConfirm(false);
     yes.onclick = () => window.resolveConfirm(true);
     row.append(no, yes); n.appendChild(row);
@@ -338,25 +394,66 @@ registerActivity({
   },
   compact: (d) => el('div', null,
     `<span class="ttl">${esc(d.note || d.title || 'Working…')}</span>`),
+  // Editorial progress card (island.html mock): an icon + serif title chead with
+  // an inline Stop, a determinate bar + "done / percent" figure row, and — on a
+  // 'done' phase carrying steps — the Action Trail (✓ steps). See renderTaskTrail.
   expanded: (d) => {
     const n = el('div', 'task-prog');
-    let html = `<div class="ttl">${esc(d.title || 'Working…')}</div>`;
-    if (d.note) html += `<div class="sub">${esc(d.note)}</div>`;
+    const done = d.phase === 'done', error = d.phase === 'error';
+    const headGlyph = done ? 'check' : error ? 'warning' : 'sparkle';
+    const headClass = done ? 'good' : error ? 'warm' : 'accent';
+    const head = el('div', 'tp-head');
+    head.innerHTML =
+      `<span class="tp-ic ${headClass}"><svg class="ico"><use href="#i-${headGlyph}"/></svg></span>` +
+      '<span class="tp-headtext">' +
+        `<span class="tp-title">${esc(d.title || 'Working…')}</span>` +
+        (d.note ? `<span class="sub">${esc(d.note)}</span>` : '') +
+      '</span>';
+    // Stop lives in the head (mock), running + cancelable only. Same taskStop binding.
+    if (d.phase === 'running' && d.cancelable) {
+      const stop = el('button', 'btn ghost sm', 'Stop');
+      stop.style.marginLeft = 'auto';
+      stop.onclick = (ev) => { ev.stopPropagation(); window.taskStop && window.taskStop(); };
+      head.appendChild(stop);
+    }
+    n.appendChild(head);
+
+    // Action Trail on completion — rendered only when the payload carries steps.
+    // BACKEND HOOK: ProgressHandle.Done (internal/ui/progress.go) does not yet
+    // emit a `steps` array, so this stays dormant until a `steps` field (each an
+    // entry string or {label, now}) is added to the done push. No faking here.
+    if (done && Array.isArray(d.steps) && d.steps.length) {
+      n.appendChild(renderTaskTrail(d.steps));
+      return n;
+    }
+
     if ((d.total | 0) > 0) {
       const pct = Math.max(0, Math.min(100, Math.round((d.done | 0) / (d.total | 0) * 100)));
-      html += `<div class="prog-bar"><i style="width:${pct}%"></i></div>` +
-              `<div class="sub">${d.done | 0} of ${d.total | 0}</div>`;
-    }
-    n.innerHTML = html;
-    if (d.phase === 'running' && d.cancelable) {
-      const row = el('div', 'actions right');
-      const stop = el('button', 'btn ghost', 'Stop');
-      stop.onclick = (ev) => { ev.stopPropagation(); window.taskStop && window.taskStop(); };
-      row.appendChild(stop); n.appendChild(row);
+      const bar = el('div', 'tp-prog');
+      bar.innerHTML =
+        `<div class="prog-bar"><i style="width:${pct}%"></i></div>` +
+        `<div class="pstat"><span>${d.done | 0} of ${d.total | 0}</span><span>${pct}%</span></div>`;
+      n.appendChild(bar);
     }
     return n;
   },
 });
+
+// renderTaskTrail builds the mock's Action Trail: a column of ✓ steps. Each
+// step is a plain string or { label, now } (now => the in-progress step, tinted
+// accent rather than done-green).
+function renderTaskTrail(steps) {
+  const trail = el('div', 'trail');
+  steps.forEach((s) => {
+    const label = typeof s === 'string' ? s : (s && (s.label || s.value)) || '';
+    const now = !!(s && typeof s === 'object' && s.now);
+    const item = el('div', 'tr' + (now ? ' now' : ''));
+    item.innerHTML = `<span class="tick"><svg class="ico"><use href="#i-check"/></svg></span>` +
+      `<span>${esc(label)}</span>`;
+    trail.appendChild(item);
+  });
+  return trail;
+}
 
 registerActivity({
   id: 'agent.run', priority: 90, ttl: 0,

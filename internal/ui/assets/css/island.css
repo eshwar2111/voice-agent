@@ -92,10 +92,55 @@
 #island[data-presence="choiceLg"] .cap{display:none}
 #island .ttl{font-size:13px;font-weight:560;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #island .sub{font-size:11.5px;color:var(--ink-2)}
-/* task.progress card: title + status + a determinate bar + Stop */
-#island .task-prog{display:flex;flex-direction:column;gap:6px;width:100%}
-#island .prog-bar{height:5px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden}
-#island .prog-bar > i{display:block;height:100%;border-radius:999px;background:var(--accent);transition:width .3s var(--ease)}
+/* task.progress card: editorial head (icon + serif title + inline Stop), a
+   determinate bar with a tabular figure row, and the Action Trail on done. */
+#island .task-prog{display:flex;flex-direction:column;gap:12px;width:100%}
+#island .tp-head{display:flex;align-items:center;gap:13px}
+#island .tp-ic{width:30px;height:30px;flex:0 0 auto;border-radius:9px;display:grid;place-items:center;
+  background:var(--accent-soft);color:#cfe0ff}
+#island .tp-ic .ico{width:17px;height:17px}
+#island .tp-ic.good{background:rgba(48,209,88,.16);color:#b6f7c6}
+#island .tp-ic.warm{background:rgba(255,159,10,.16);color:#ffd79a}
+#island .tp-headtext{display:flex;flex-direction:column;gap:2px;min-width:0}
+#island .tp-title{font-family:var(--serif);font-size:18px;font-weight:500;letter-spacing:.005em;line-height:1.16;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#island .tp-prog{display:flex;flex-direction:column;gap:8px}
+#island .prog-bar{height:6px;border-radius:999px;background:rgba(255,255,255,.09);overflow:hidden}
+#island .prog-bar > i{display:block;height:100%;border-radius:999px;
+  background:linear-gradient(135deg,#0a84ff 0%,#5e5cff 55%,#46e0ff 100%);transition:width .4s var(--ease)}
+#island .pstat{display:flex;justify-content:space-between;font-size:11.5px;color:var(--ink-2);
+  font-variant-numeric:tabular-nums}
+/* Action Trail — a column of ✓ steps (mock). */
+#island .trail{display:flex;flex-direction:column;gap:8px}
+#island .trail .tr{display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--ink-2)}
+#island .trail .tick{width:17px;height:17px;flex:0 0 auto;border-radius:50%;display:grid;place-items:center;
+  background:rgba(48,209,88,.18);color:var(--good)}
+#island .trail .tick .ico{width:11px;height:11px;stroke-width:2.4}
+#island .trail .tr.now .tick{background:var(--accent-soft);color:var(--accent)}
+/* spotify.nowplaying media widget (mock): art tile, title/artist, thin
+   progress, transport. Shown at the expanded face (see renderMediaWidget). */
+#island .media{display:flex;align-items:center;gap:14px;width:100%}
+#island .media-art{width:52px;height:52px;flex:0 0 auto;border-radius:12px;overflow:hidden;
+  display:grid;place-items:center;color:#cfe0ff;
+  background:linear-gradient(135deg,#1db954 0%,#0a84ff 120%);
+  box-shadow:0 6px 18px -6px rgba(29,185,84,.5)}
+#island .media-art img{width:100%;height:100%;object-fit:cover}
+#island .media-art .ico{width:24px;height:24px}
+#island .media-meta{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+#island .media-title{font-size:14.5px;font-weight:500;letter-spacing:-.01em;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#island .media-artist{font-size:11.5px;color:var(--ink-2);letter-spacing:.02em;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#island .media-prog{height:3px;border-radius:2px;background:rgba(255,255,255,.12);overflow:hidden;margin-top:7px}
+#island .media-prog > i{display:block;height:100%;background:#fff;border-radius:2px}
+#island .media-controls{display:flex;align-items:center;gap:6px;flex:0 0 auto}
+#island .media-controls button{width:34px;height:34px;border-radius:50%;border:0;cursor:pointer;
+  background:rgba(255,255,255,.07);color:var(--ink);display:grid;place-items:center;transition:background .16s}
+#island .media-controls button:hover{background:rgba(255,255,255,.14)}
+#island .media-controls button .ico{width:17px;height:17px}
+#island .media-controls .play{width:40px;height:40px;background:#fff;color:#111}
+#island .media-controls .play .ico{width:19px;height:19px}
+
 .ico{width:20px;height:20px;stroke:currentColor;stroke-width:1.75;fill:none;
   stroke-linecap:round;stroke-linejoin:round}
 /* trust.approval's leading risk glyph (activities.js: 'risk-' + d.risk). */
