@@ -15,16 +15,23 @@ export function render(payload){
   root.innerHTML =
     '<div class="rhead">' +
       '<div class="rhead-id"><span class="spark"><svg class="ico"><use href="#i-sparkle"/></svg></span><span>Answer</span></div>' +
-      '<button class="btn ghost sm" type="button" id="resultCopyBtn">Copy</button>' +
+      '<div class="rhead-actions">' +
+        '<button class="btn ghost sm" type="button" id="resultCopyBtn">Copy</button>' +
+        '<button class="iconbtn" type="button" id="resultCloseBtn" aria-label="Close" title="Close (Esc)">✕</button>' +
+      '</div>' +
     '</div>' +
     '<div class="obody md" id="outputBody"><div class="md-inner"></div></div>' +
     '<div class="footer"><div class="actions">' +
       '<button class="btn ghost" type="button" id="resultAskBtn">Ask another</button>' +
+      '<button class="btn" type="button" id="resultCloseBtn2">Close</button>' +
     '</div></div>';
 
   root.querySelector('#outputBody .md-inner').innerHTML = renderContent(latestOutput);
   root.querySelector('#resultCopyBtn').onclick = copyOutput;
   root.querySelector('#resultAskBtn').onclick = () => window.openSurface && window.openSurface('command');
+  const close = () => window.closeSurface && window.closeSurface();
+  root.querySelector('#resultCloseBtn').onclick = close;
+  root.querySelector('#resultCloseBtn2').onclick = close;
   return root;
 }
 
