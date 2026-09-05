@@ -28,10 +28,13 @@
 .iconbtn.stop:hover{background:rgba(255,69,58,.22)}
 
 /* ─── Command / result / approve sheet content ────────────────────────────── */
-.phead{padding:20px 22px 15px;display:flex;align-items:flex-start;justify-content:space-between;gap:16px;border-bottom:1px solid var(--stroke);width:100%}
-.eyebrow{font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);font-weight:700;margin:0 0 7px}
-.phead h1{font-size:21px;font-weight:640;letter-spacing:-0.03em;line-height:1.12;margin:0 0 6px}
-.phead p{font-size:12.5px;line-height:1.5;color:var(--ink-2);margin:0;max-width:46ch}
+/* Editorial type system (island.html mock): serif for DISPLAY titles only,
+   sans for everything else; eyebrows are wide-tracked small-caps; titles carry
+   lighter weight (500) and more air than the old 640/-0.03em treatment. */
+.phead{padding:22px 24px 16px;display:flex;align-items:flex-start;justify-content:space-between;gap:16px;border-bottom:1px solid var(--stroke);width:100%}
+.eyebrow{font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--accent);font-weight:600;margin:0 0 8px}
+.phead h1{font-family:var(--serif);font-size:23px;font-weight:500;letter-spacing:.005em;line-height:1.16;margin:0 0 8px}
+.phead p{font-size:12.5px;line-height:1.55;color:var(--ink-2);margin:0;max-width:46ch;font-weight:420}
 .chip{padding:6px 11px;border-radius:999px;border:1px solid var(--stroke);background:rgba(255,255,255,.05);color:var(--ink-2);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;white-space:nowrap;flex:0 0 auto}
 #commandInput{flex:1;width:100%;min-height:0;border:none;outline:none;background:transparent;color:var(--ink);resize:none;padding:18px 22px;font-size:21px;font-weight:600;line-height:1.3;letter-spacing:-0.02em}
 #commandInput::placeholder{color:var(--ink-3)}
@@ -56,7 +59,7 @@ kbd{font:600 11px var(--font);color:var(--ink-2);background:rgba(255,255,255,.07
 .rhead::after{content:"";position:absolute;left:20px;right:20px;bottom:0;height:1px;
   background:linear-gradient(90deg,transparent,var(--stroke) 14%,var(--stroke) 86%,transparent)}
 .rhead-actions{display:flex;align-items:center;gap:8px;flex:0 0 auto}
-.rhead-id{display:flex;align-items:center;gap:10px;font-size:11.5px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-2)}
+.rhead-id{display:flex;align-items:center;gap:10px;font-size:11px;font-weight:600;letter-spacing:.2em;text-transform:uppercase;color:var(--ink-2)}
 .rhead-id .spark{display:grid;place-items:center;width:26px;height:26px;border-radius:9px;color:var(--accent);
   background:color-mix(in srgb,var(--accent) 16%,transparent);
   box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 24%,transparent), 0 0 18px -5px var(--accent)}
@@ -87,8 +90,31 @@ kbd{font:600 11px var(--font);color:var(--ink-2);background:rgba(255,255,255,.07
 .item-snippet{margin-top:8px;color:var(--ink-2);font-size:12px;line-height:1.5}
 
 /* ─── Approval card (trust.approval): readable steps, not raw JSON ─────────── */
-.approval{display:flex;flex-direction:column;gap:7px;width:100%}
-.approval .sub{color:var(--ink-2);font-size:12px;line-height:1.4}
+.approval{display:flex;flex-direction:column;gap:9px;width:100%}
+.approval .sub{color:var(--ink-2);font-size:12.5px;line-height:1.45}
+/* Editorial chead: wide-tracked eyebrow + serif title alongside a risk icon. */
+.approval-head{display:flex;align-items:center;gap:13px}
+.approval-ic{width:30px;height:30px;flex:0 0 auto;border-radius:9px;display:grid;place-items:center;
+  background:var(--accent-soft);color:#cfe0ff}
+.approval-ic .ico{width:17px;height:17px}
+.approval-ic.danger{background:rgba(255,69,58,.14);color:#ffb3ad}
+.approval-headtext{display:flex;flex-direction:column;gap:3px;min-width:0}
+.approval-headtext .eyebrow{margin:0}
+.approval-headtext .eyebrow.danger{color:var(--danger)}
+.approval-title{font-family:var(--serif);font-size:19px;font-weight:500;letter-spacing:.005em;line-height:1.16}
+/* The island itself adopts the danger language for a 'danger' risk: a red-tinted
+   shell that shakes once on appear. Keyed off the risk glyph the leading cap
+   renders (activities.js: 'risk-danger'), so it never fires for safe/risky. The
+   shake is a transform, independent of the JS-driven left/size morph. */
+#island[data-content="trust.approval"]:has(.risk-danger){
+  background:rgba(40,20,20,.9);
+  border-color:rgba(255,69,58,.4);
+  animation:islandShake .5s var(--ease);
+}
+@keyframes islandShake{10%,90%{transform:translateX(-2px)}30%,70%{transform:translateX(3px)}50%{transform:translateX(-4px)}}
+@media (prefers-reduced-motion:reduce){
+  #island[data-content="trust.approval"]:has(.risk-danger){animation:none}
+}
 .approval-steps{display:flex;flex-direction:column;gap:5px;max-height:84px;overflow-y:auto;padding-right:2px}
 .approval-step{display:flex;flex-direction:column;gap:1px;padding:6px 9px;border-radius:9px;background:rgba(255,255,255,.05);border:1px solid var(--stroke)}
 .approval-step.risky{border-color:color-mix(in srgb,var(--warn,#e0a94a) 45%,var(--stroke));background:color-mix(in srgb,var(--warn,#e0a94a) 10%,transparent)}
@@ -117,24 +143,56 @@ kbd{font:600 11px var(--font);color:var(--ink-2);background:rgba(255,255,255,.07
 .surface-result[data-tier="sm"]::before{height:80px}
 .surface-result[data-tier="md"] .footer{display:none}
 
+/* ─── Reading panel (lg tier): editorial framing ──────────────────────────────
+   A long/structured answer reads as a framed reading panel: the "ANSWER" head
+   becomes a serif panel title, the first paragraph is a lighter/larger lead,
+   section headings become wide-tracked eyebrows separated by hairline rules,
+   and the foot carries the "🎤 Ask…" chip (result.js). */
+.surface-result[data-tier="lg"] .rhead{padding:22px 26px 15px}
+.surface-result[data-tier="lg"] .rhead-label{font-family:var(--serif);font-size:20px;font-weight:500;
+  letter-spacing:.01em;text-transform:none;color:var(--ink)}
+.surface-result[data-tier="lg"] .rhead-id{gap:12px}
+.surface-result[data-tier="lg"] .obody{padding:20px 26px 22px}
+.surface-result[data-tier="lg"] .md-inner{max-width:66ch}
+.surface-result[data-tier="lg"] .md-inner > p:first-child{font-size:16px;line-height:1.62;font-weight:440;margin-bottom:16px}
+.surface-result[data-tier="lg"] .md h4{font-size:10px;letter-spacing:.22em;font-weight:600;color:var(--ink-3);
+  margin:22px 0 9px;padding-top:16px;border-top:1px solid var(--stroke-2)}
+.surface-result[data-tier="lg"] .md h4:first-child{padding-top:0;border-top:none;margin-top:0}
+
+/* mic-chip: the reading-panel foot affordance (also usable wherever a soft,
+   pill-shaped "speak to continue" cue is wanted). Reuses the #i-mic glyph. */
+.mic-chip{display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border-radius:999px;
+  background:rgba(255,255,255,.05);border:1px solid var(--stroke);font-size:12.5px;color:var(--ink-2);
+  cursor:pointer;transition:background .16s,color .16s,border-color .16s}
+.mic-chip:hover{background:var(--accent-soft);color:#cfe0ff;border-color:rgba(10,132,255,.35)}
+.mic-chip .ico{width:15px;height:15px}
+/* Result foot: mic-chip left, Close right. */
+.surface-result .footer .actions{margin-top:0;width:100%;justify-content:space-between;align-items:center}
+
 /* ─── Interactive choice surface (askChoice) ──────────────────────────────────
    A MODEST expansion: a question and a vertical list of selectable options —
    click, arrow-key + Enter, or number keys. Reuses .surface-command's flex
    column and the .phead / .btn / kbd design system. */
-.surface-choice .phead{padding:16px 20px 11px;border-bottom:none}
-.surface-choice .phead h1{font-size:18px;margin-bottom:5px}
+.surface-choice .phead{padding:18px 22px 12px;border-bottom:none}
+.surface-choice .phead h1{font-size:20px;margin-bottom:5px}
 .surface-choice .phead p{font-size:12px}
-.choice-list{flex:1;width:100%;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding:2px 18px 8px}
-.choice-opt{all:unset;box-sizing:border-box;display:flex;flex-direction:column;gap:2px;width:100%;
-  padding:10px 14px;border-radius:13px;border:1px solid var(--stroke);
-  background:rgba(255,255,255,.04);color:var(--ink);cursor:pointer;
-  transition:background .14s var(--ease),border-color .14s var(--ease),transform .1s var(--ease)}
-.choice-opt:hover{background:rgba(255,255,255,.07)}
+.choice-list{flex:1;width:100%;overflow-y:auto;display:flex;flex-direction:column;gap:9px;padding:2px 18px 8px}
+/* Avatar-chip option rows (island.html mock): gradient avatar + label/sub, with
+   a gentle upward nudge on hover so a hovered row reads as physically lifting. */
+.choice-opt{all:unset;box-sizing:border-box;display:flex;align-items:center;gap:13px;width:100%;
+  padding:12px 14px;border-radius:14px;border:1px solid var(--stroke-2);
+  background:rgba(255,255,255,.03);color:var(--ink);cursor:pointer;
+  transition:background .14s var(--ease),border-color .14s var(--ease),transform .14s var(--ease)}
+.choice-opt:hover{background:var(--accent-soft);border-color:rgba(10,132,255,.35);transform:translateY(-1px)}
 .choice-opt.sel{background:var(--accent-soft);
   border-color:color-mix(in srgb,var(--accent) 55%,var(--stroke));
   box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 30%,transparent)}
 .choice-opt:active{transform:scale(.985)}
-.choice-label{font-size:13.5px;font-weight:620;letter-spacing:-.01em}
+.choice-av{flex:0 0 auto;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;
+  font-weight:500;font-size:12px;letter-spacing:.03em;color:#fff;
+  background:linear-gradient(135deg,#0a84ff 0%,#5e5cff 55%,#46e0ff 100%)}
+.choice-text{display:flex;flex-direction:column;gap:2px;min-width:0}
+.choice-label{font-size:13.5px;font-weight:500;letter-spacing:-.01em}
 .choice-sub{font-size:11.5px;color:var(--ink-2);line-height:1.4}
 .surface-choice .footer{position:relative;border-top:none;padding:10px 20px 14px}
 .surface-choice .footer::before{content:"";position:absolute;left:20px;right:20px;top:0;height:1px;

@@ -22,6 +22,7 @@
   --hi: rgba(255,255,255,0.16);      /* crisp lit top edge (inner highlight) */
   --hi-soft: rgba(255,255,255,0.05); /* faint interior top glow */
   --stroke: rgba(255,255,255,0.14);  /* hairline edge, reads as lit from above */
+  --stroke-2: rgba(255,255,255,0.06);/* fainter hairline for editorial section rules */
   --ink:#f2f3f7; --ink-2:#a6abb8; --ink-3:#6b7180;
   --accent:#0a84ff;                  /* macOS system blue */
   --accent-soft: rgba(10,132,255,.16);
@@ -43,7 +44,13 @@
     inset 0 -16px 26px -18px rgba(0,0,0,.55),
     inset 0 10px 22px -18px var(--hi-soft);
   --font:-apple-system,"SF Pro Text","SF Pro Display",system-ui,"Segoe UI",Roboto,sans-serif;
+  /* Editorial serif for DISPLAY moments only (surface/card/panel titles) —
+     Vogue restraint: sans stays for all UI/body copy. Lighter weights and more
+     air are what read as "editorial"; the serif is reserved for titles. */
+  --serif:"Hoefler Text","Didot","Playfair Display","Bodoni 72",Georgia,Constantia,serif;
   --ease:cubic-bezier(.22,.7,.3,1);
+  /* Gentle overshoot on arrival — used by display-title/appear animations. */
+  --ease-out:cubic-bezier(.22,1.28,.36,1);
 }
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{width:100%;height:100%;overflow:hidden;background:transparent;color:var(--ink);

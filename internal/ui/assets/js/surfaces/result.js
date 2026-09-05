@@ -19,9 +19,15 @@ export function render(payload){
   // chrome for a compact answer: 'sm' hides the footer and the "Answer" label so
   // a one-line reply reads as a small pill, not a big dialog.
   root.dataset.tier = answerTier(payload);
+  // Editorial reading panel (island.html mock): a wide-tracked "ANSWER" eyebrow
+  // that CSS promotes to a serif panel title at the lg tier, an editorial body
+  // (lead paragraph + hairline-ruled section eyebrows), and a right-aligned
+  // "🎤 Ask…" foot chip (the mock's reading-panel foot) that reuses the existing
+  // Ask-another behavior. sm/md tiers shed the footer via CSS, so the chip is a
+  // lg-tier affordance only.
   root.innerHTML =
     '<div class="rhead">' +
-      '<div class="rhead-id"><span class="spark"><svg class="ico"><use href="#i-sparkle"/></svg></span><span>Answer</span></div>' +
+      '<div class="rhead-id"><span class="spark"><svg class="ico"><use href="#i-sparkle"/></svg></span><span class="rhead-label">Answer</span></div>' +
       '<div class="rhead-actions">' +
         '<button class="btn ghost sm" type="button" id="resultCopyBtn">Copy</button>' +
         '<button class="iconbtn" type="button" id="resultCloseBtn" aria-label="Close" title="Close (Esc)">✕</button>' +
@@ -29,7 +35,7 @@ export function render(payload){
     '</div>' +
     '<div class="obody md" id="outputBody"><div class="md-inner"></div></div>' +
     '<div class="footer"><div class="actions">' +
-      '<button class="btn ghost" type="button" id="resultAskBtn">Ask another</button>' +
+      '<button class="mic-chip" type="button" id="resultAskBtn"><svg class="ico"><use href="#i-mic"/></svg><span>Ask…</span></button>' +
       '<button class="btn primary" type="button" id="resultCloseBtn2">Close</button>' +
     '</div></div>';
 
