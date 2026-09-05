@@ -23,6 +23,7 @@ import (
 	"github.com/yourname/voice-agent/internal/command"
 	agentctx "github.com/yourname/voice-agent/internal/context"
 	"github.com/yourname/voice-agent/internal/engine"
+	"github.com/yourname/voice-agent/internal/audio"
 	"github.com/yourname/voice-agent/internal/executor"
 	"github.com/yourname/voice-agent/internal/fileindex"
 	"github.com/yourname/voice-agent/internal/island"
@@ -230,6 +231,27 @@ func main() {
 			ui.SetState(ui.StateIdle)
 		}
 		log.Println("[config] speak_responses=true — voice answers will be spoken aloud")
+	}
+
+	// Barge-in: let the user interrupt the agent mid-sentence. Open-mic
+	// echo-adaptive energy detection is always on (great on headphones, and
+	// catches a clear talk-over on speakers); the "Porcupine" wake word is added
+	// as the GUARANTEED interrupt on speakers when a Porcupine key is configured.
+	// Wired only when voice is enabled (otherwise there's no mic to open).
+	if cfg.EnableVoice {
+		var kwHearer audio.KeywordHearer
+		if cfg.PorcupineAccessKey != "" {
+			if h, closeH, err := wakeword.NewKeywordHearer(cfg.PorcupineAccessKey); err == nil && h != nil {
+				kwHearer = h
+				defer closeH()
+				log.Println("[barge-in] open-mic + 'Porcupine' keyword interrupt active")
+			} else if err != nil {
+				log.Printf("[barge-in] keyword interrupt unavailable: %v (open-mic only)", err)
+			}
+		}
+		executor.BargeWatch = func(ctx context.Context, stop func()) {
+			audio.WatchForBargeIn(ctx, kwHearer, stop)
+		}
 	}
 
 	// Apply whisper paths from config
@@ -459,7 +481,12 @@ func main() {
 	if cfg.EnableVoice && cfg.PorcupineAccessKey != "" {
 		go func() {
 			onDetect := func() { engineApp.TriggerAndWait(60 * time.Second) }
-			if err := wakeword.StartWakeWordLoop(rootCtx, cfg.PorcupineAccessKey, onDetect, engineApp.IsBusy); err != nil {
+			// Treat "speaking" as busy too: while the agent talks (which can outlast
+			// the command that started it), the barge-in watcher owns the mic, so the
+			// wake loop must release it to avoid two recorders contending for one
+			// device — and the wake word during speech is the barge watcher's job.
+			busy := func() bool { return engineApp.IsBusy() || executor.IsSpeaking() }
+			if err := wakeword.StartWakeWordLoop(rootCtx, cfg.PorcupineAccessKey, onDetect, busy); err != nil {
 				log.Printf("wake word stopped: %v", err)
 			}
 		}()

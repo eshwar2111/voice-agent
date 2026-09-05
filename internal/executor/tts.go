@@ -1,6 +1,7 @@
 package executor
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
 	"os/exec"
@@ -14,6 +15,14 @@ var (
 	isSpeaking  atomic.Bool // true while TTS process is running
 	AbortStream atomic.Bool // set true to stop streaming sentences
 )
+
+// BargeWatch, when set, enables barge-in: while the agent speaks, it is run in a
+// goroutine and must BLOCK until ctx is cancelled (speech finished normally) or
+// it detects the user interrupting — at which point it calls the stop func it is
+// given (StopSpeaking). main wires this to audio.WatchForBargeIn with the
+// configured keyword detector; nil leaves speech uninterruptible (unchanged
+// legacy behavior). It runs async, so it never delays the start of speech.
+var BargeWatch func(ctx context.Context, stop func())
 
 // IsSpeaking returns true if TTS is currently active.
 // Used by the listen loop to avoid recording our own voice output.
@@ -62,8 +71,22 @@ $synth.Speak($decoded);
 	ttsMu.Unlock()
 
 	isSpeaking.Store(true)
+
+	// Barge-in: watch the mic for the user interrupting while this utterance
+	// plays. The watcher is cancelled the instant speech ends, so it never
+	// lingers into the next listen. Started async — no added speech latency.
+	var stopWatch context.CancelFunc
+	if BargeWatch != nil {
+		var wctx context.Context
+		wctx, stopWatch = context.WithCancel(context.Background())
+		go BargeWatch(wctx, StopSpeaking)
+	}
+
 	err := cmd.Run()
 	isSpeaking.Store(false)
+	if stopWatch != nil {
+		stopWatch()
+	}
 
 	ttsMu.Lock()
 	ttsCmd = nil

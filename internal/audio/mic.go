@@ -5,10 +5,34 @@ import (
 	"fmt"
 	"math"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gen2brain/malgo"
 )
+
+// levelSink, when set, receives the RMS (0..~1) of every captured frame so the
+// UI can draw a live listening waveform that reacts to the user's actual voice
+// instead of a fixed pulse. It is invoked from miniaudio's capture thread, so it
+// MUST be cheap and non-blocking (the UI wiring just pushes a throttled value).
+var levelSink atomic.Value // func(float64)
+
+// SetLevelSink installs (or clears, with nil) the per-frame RMS callback.
+func SetLevelSink(fn func(float64)) {
+	if fn == nil {
+		levelSink.Store((func(float64))(nil))
+		return
+	}
+	levelSink.Store(fn)
+}
+
+func emitLevel(rms float64) {
+	if v := levelSink.Load(); v != nil {
+		if fn, _ := v.(func(float64)); fn != nil {
+			fn(rms)
+		}
+	}
+}
 
 const (
 	sampleRate = 16000
@@ -65,6 +89,7 @@ func RecordDynamic(maxDuration time.Duration, silenceThreshold float64, silenceF
 			sumSquares += float64(sample * sample)
 		}
 		rms := math.Sqrt(sumSquares / float64(len(samples)))
+		emitLevel(rms) // drive the live listening waveform (non-blocking)
 
 		mu.Lock()
 		pcmFloat32 = append(pcmFloat32, samples...)
