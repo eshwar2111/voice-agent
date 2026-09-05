@@ -13,6 +13,17 @@
 // voice, once the backend routes a spoken answer to it.
 import { esc } from '../activities.js';
 
+// initials derives a 1-2 char avatar label from an option's display name — the
+// first letters of the first two words, else the first two characters. Purely
+// presentational (the mock's avatar-chip), never part of the option contract.
+function initials(name){
+  const s = String(name == null ? '' : name).trim();
+  if (!s) return '•';
+  const words = s.split(/\s+/).filter(Boolean);
+  if (words.length >= 2) return (words[0][0] + words[1][0]).toUpperCase();
+  return s.slice(0, 2).toUpperCase();
+}
+
 let opts = [];
 let sel = 0;
 let rootEl = null;
@@ -34,11 +45,18 @@ export function render(payload){
   root.className = 'surface-command surface-choice';
   rootEl = root;
 
+  // Each option renders as an avatar-chip row (island.html mock): a gradient
+  // avatar with initials, a label, and an optional sub. The avatar is purely
+  // presentational (derived from the label) — the option contract stays
+  // { id, label, sub }.
   const items = opts.map((o, i) =>
     '<button class="choice-opt' + (i === 0 ? ' sel' : '') + '" type="button" data-idx="' + i + '"' +
       ' role="option" aria-selected="' + (i === 0 ? 'true' : 'false') + '">' +
-      '<span class="choice-label">' + esc(o.label || o.id || ('Option ' + (i + 1))) + '</span>' +
-      (o.sub ? '<span class="choice-sub">' + esc(o.sub) + '</span>' : '') +
+      '<span class="choice-av" aria-hidden="true">' + esc(initials(o.label || o.id || (i + 1))) + '</span>' +
+      '<span class="choice-text">' +
+        '<span class="choice-label">' + esc(o.label || o.id || ('Option ' + (i + 1))) + '</span>' +
+        (o.sub ? '<span class="choice-sub">' + esc(o.sub) + '</span>' : '') +
+      '</span>' +
     '</button>').join('');
 
   root.innerHTML =
