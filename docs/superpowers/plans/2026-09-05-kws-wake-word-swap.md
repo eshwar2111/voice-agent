@@ -664,11 +664,21 @@ type WakeEngine interface {
 
 - [ ] **Step 4: Add the whisper implementation** (delete `sherpa_dep.go` first)
 
-Create `internal/wakeword/kws.go`:
+Create `internal/wakeword/kws.go`. NOTE the `#cgo ... -Wl,-Bdynamic` block: it is
+MANDATORY and inherited from Task 0's `sherpa_dep.go` (which this task deletes).
+`webview_go` declares a static-only LDFLAGS directive that puts GNU ld in static
+mode; sherpa ships DLLs only, so without re-enabling dynamic linking the build
+fails with `cannot find -lsherpa-onnx-c-api`. This file is the whisper-tagged file
+that imports sherpa, so the directive lives here now:
 ```go
 //go:build whisper
 
 package wakeword
+
+/*
+#cgo windows LDFLAGS: -Wl,-Bdynamic
+*/
+import "C"
 
 import (
 	"context"
@@ -802,7 +812,9 @@ func NewKWS(modelDir, wakeWord string) (WakeEngine, error) {
 }
 ```
 
-Delete the anchor: `git rm internal/wakeword/sherpa_dep.go`.
+Delete the anchor: `git rm internal/wakeword/sherpa_dep.go`. (Its `-Wl,-Bdynamic`
+cgo directive is now carried by `kws.go` above — do not lose it, or the whisper
+build regresses to `cannot find -lsherpa-onnx-c-api`.)
 
 - [ ] **Step 6: Run tests (both tags) to verify they pass**
 
