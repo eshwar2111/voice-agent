@@ -70,6 +70,12 @@ const (
 // nothing to close.
 type Trigger struct {
 	Done chan struct{}
+
+	// FollowUp marks a capture the agent re-armed on its own right after
+	// speaking, so "actually, make it tomorrow" works without a wake word or a
+	// click. It uses a shorter no-speech window and, hearing nothing, returns to
+	// idle silently instead of surfacing an "audio too short" error.
+	FollowUp bool
 }
 
 // Finish closes t.Done if there is one. Safe to call on a zero Trigger.

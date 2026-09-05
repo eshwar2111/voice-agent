@@ -45,7 +45,24 @@ const (
 	noSpeechTimeout = 4 * time.Second
 )
 
+// RecordDynamic records one utterance, stopping on trailing silence, with the
+// default no-speech timeout (how long to wait for the user to START talking).
 func RecordDynamic(maxDuration time.Duration, silenceThreshold float64, silenceFramesNeeded int) ([]float32, error) {
+	return recordDynamic(maxDuration, silenceThreshold, silenceFramesNeeded, noSpeechTimeout)
+}
+
+// followUpNoSpeech is the shorter grace window for an auto-re-armed follow-up
+// turn: long enough to begin a natural "actually, ..." reply, short enough that
+// the mic doesn't sit open after the conversation has clearly ended.
+const followUpNoSpeech = 3500 * time.Millisecond
+
+// RecordFollowUp is RecordDynamic tuned for the mic-hot follow-up: the same
+// capture, but it gives up quickly when the user has nothing more to say.
+func RecordFollowUp(maxDuration time.Duration, silenceThreshold float64, silenceFramesNeeded int) ([]float32, error) {
+	return recordDynamic(maxDuration, silenceThreshold, silenceFramesNeeded, followUpNoSpeech)
+}
+
+func recordDynamic(maxDuration time.Duration, silenceThreshold float64, silenceFramesNeeded int, noSpeech time.Duration) ([]float32, error) {
 	fmt.Printf("\n🔴 RECORDING (Speak now, will stop automatically upon silence)...\n")
 
 	ctx, err := malgo.InitContext(nil, malgo.ContextConfig{}, func(message string) {
@@ -145,7 +162,7 @@ func RecordDynamic(maxDuration time.Duration, silenceThreshold float64, silenceF
 		// open for the full maxDuration — the user triggered by accident, or the
 		// wrong capture device is selected. Bail out early with what we have so
 		// the caller's "audio too short" path fires promptly instead of after 10s.
-		if !heardSpeech && time.Since(startTime) > noSpeechTimeout {
+		if !heardSpeech && time.Since(startTime) > noSpeech {
 			fmt.Println("\n🤐 No speech detected. Stopping recording...")
 			break
 		}

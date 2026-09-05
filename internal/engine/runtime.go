@@ -152,13 +152,34 @@ func (e *Engine) handleEvent(ctx context.Context, ev Event) {
 
 		go func() {
 			cap := agentctx.CaptureAmbient(true) // app still focused (pill never steals focus)
-			audioData, err := audio.RecordDynamic(10*time.Second, 0.01, 32000)
+
+			// A follow-up (the mic re-armed right after the agent spoke) uses a
+			// shorter grace window, and hearing nothing simply ends the
+			// conversation quietly rather than raising an error.
+			var audioData []float32
+			var err error
+			if trig.FollowUp {
+				audioData, err = audio.RecordFollowUp(8*time.Second, 0.01, 32000)
+			} else {
+				audioData, err = audio.RecordDynamic(10*time.Second, 0.01, 32000)
+			}
 			if err != nil {
+				if trig.FollowUp {
+					ui.SetState(ui.StateIdle)
+					e.finishCommand()
+					return
+				}
 				e.emit(ctx, Event{Type: EventError, Err: fmt.Errorf("record missing: %w", err)})
 				return
 			}
 
 			if len(audioData) < 1600 {
+				if trig.FollowUp {
+					// No follow-up came — end the turn silently.
+					ui.SetState(ui.StateIdle)
+					e.finishCommand()
+					return
+				}
 				e.emit(ctx, Event{Type: EventError, Err: fmt.Errorf("audio too short")})
 				return
 			}
@@ -238,6 +259,17 @@ func (e *Engine) handleEvent(ctx context.Context, ev Event) {
 					time.Sleep(150 * time.Millisecond)
 				}
 				ui.SetState(ui.StateIdle)
+				// Mic-hot continuity: the agent just SPOKE to the user, so keep the
+				// mic open for a natural follow-up ("actually, make it tomorrow")
+				// without a wake word or a click. Re-arm only after a spoken reply,
+				// and only briefly — RecordFollowUp gives up quickly on silence, so
+				// the conversation ends on its own the moment the user stops. Guard
+				// on ctx so it never re-arms during shutdown.
+				select {
+				case <-ctx.Done():
+				default:
+					e.emit(ctx, Event{Type: EventVoiceInput, Payload: ui.Trigger{FollowUp: true}})
+				}
 			}()
 		} else {
 			ui.SetState(ui.StateIdle)
