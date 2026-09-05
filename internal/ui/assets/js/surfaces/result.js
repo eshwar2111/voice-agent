@@ -23,7 +23,7 @@ export function render(payload){
     '<div class="obody md" id="outputBody"><div class="md-inner"></div></div>' +
     '<div class="footer"><div class="actions">' +
       '<button class="btn ghost" type="button" id="resultAskBtn">Ask another</button>' +
-      '<button class="btn" type="button" id="resultCloseBtn2">Close</button>' +
+      '<button class="btn primary" type="button" id="resultCloseBtn2">Close</button>' +
     '</div></div>';
 
   root.querySelector('#outputBody .md-inner').innerHTML = renderContent(latestOutput);

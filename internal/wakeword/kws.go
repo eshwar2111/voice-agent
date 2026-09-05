@@ -58,12 +58,12 @@ func NewKWS(modelDir, wakeWord string) (WakeEngine, error) {
 			Provider:   "cpu",
 		},
 		KeywordsFile: kwFile,
-		// Boost + a lower trigger threshold than the 0.25 default: real-mic
-		// detection of a single short wake phrase (with room noise) needs more
-		// sensitivity than clean test audio. Raise the threshold later if it
-		// false-triggers.
-		KeywordsScore:     2.0,
-		KeywordsThreshold: 0.15,
+		// Tuned for RECALL (reliable triggering) over false-alarm caution: a
+		// single short wake phrase off a real mic needs a strong boost and a low
+		// trigger threshold vs the 0.25 default. Raise the threshold if it starts
+		// false-triggering on ambient speech.
+		KeywordsScore:     3.0,
+		KeywordsThreshold: 0.10,
 		MaxActivePaths:    4,
 	}
 	spotter := sherpa.NewKeywordSpotter(&cfg)

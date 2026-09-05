@@ -7,9 +7,10 @@ import (
 )
 
 // KWSFrameLen is the capture chunk (samples @16 kHz) fed to KWS per Read. The
-// sherpa transducer accepts arbitrary chunk sizes; 1600 = 100 ms keeps latency
-// low without spinning. Exported because main.go passes it to audio.NewMicSource.
-const KWSFrameLen = 1600
+// sherpa transducer accepts arbitrary chunk sizes; 480 = 30 ms feeds the decoder
+// often (better recall + lower wake latency than 100 ms chunks) without spinning
+// the loop on tiny buffers. Exported because main.go passes it to NewMicSource.
+const KWSFrameLen = 480
 
 // WakeEngine is the tag-independent handle main.go holds. The whisper build backs
 // it with sherpa KWS; the non-whisper build has no implementation (NewKWS errors).
