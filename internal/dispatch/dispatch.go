@@ -6,6 +6,7 @@ import (
 	"log"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/yourname/voice-agent/internal/agent"
 	agentctx "github.com/yourname/voice-agent/internal/context"
@@ -25,6 +26,10 @@ type Deps struct {
 	Resolver *resolver.Resolver
 	// Trusted, when non-nil, wraps every executed plan with the trust layer.
 	Trusted *trust.TrustedExecutor
+
+	// session carries compact cross-turn task context (TaskSession v1) into
+	// Tier-1 planning so follow-ups continue the same task. Zero value is ready.
+	session taskSession
 }
 
 // localHits/cloudHits count ROUTING DECISIONS (which tier handled the
@@ -51,6 +56,13 @@ func (d *Deps) Handle(ctx context.Context, input string, cap agentctx.Capture) e
 		log.Printf("[dispatch] ignoring non-speech transcript %q", input)
 		return nil
 	}
+	// TaskSession v1: capture the ongoing-task context (from prior turns) BEFORE
+	// recording this turn, then record this turn for the next one. Context is
+	// only injected into Tier-1 planning below; Tier-0 stays deterministic.
+	now := time.Now()
+	taskCtx := d.session.contextIfActive(now)
+	d.session.record(input, now)
+
 	norm := resolver.Normalize(input, cap.AppName)
 	if match, ok := d.Resolver.Resolve(norm); ok {
 		atomic.AddInt64(&localHits, 1)
@@ -89,7 +101,11 @@ func (d *Deps) Handle(ctx context.Context, input string, cap agentctx.Capture) e
 		exec.Allow = d.Profile.IsAllowed
 	}
 	orch := agent.NewOrchestrator(d.Provider, exec)
-	return orch.Run(ctx, input, cap.String())
+	sysCtx := cap.String()
+	if taskCtx != "" {
+		sysCtx = taskCtx + "\n\n" + sysCtx
+	}
+	return orch.Run(ctx, input, sysCtx)
 }
 
 // enforceSecurity applies the profile allow-list and per-tool confirmation once.
