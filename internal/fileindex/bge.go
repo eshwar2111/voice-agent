@@ -67,6 +67,13 @@ func NewBGEEmbedder(modelPath, vocabPath string) (*BGEEmbedder, error) {
 	}
 
 	ortEnvOnce.Do(func() {
+		// The onnxruntime environment is process-global and shared with the
+		// openWakeWord wake-word engine (internal/wakeword). Whichever initializes
+		// it first wins; skip re-initializing or InitializeEnvironment returns
+		// "already initialized" and semantic search would wrongly disable itself.
+		if ort.IsInitialized() {
+			return
+		}
 		// SetSharedLibraryPath honors an explicit override; otherwise the
 		// binding's platform default is used. InitializeEnvironment fails
 		// cleanly if the native library is absent.

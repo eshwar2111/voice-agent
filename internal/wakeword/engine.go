@@ -6,11 +6,10 @@ import (
 	"github.com/yourname/voice-agent/internal/audio"
 )
 
-// KWSFrameLen is the capture chunk (samples @16 kHz) fed to KWS per Read. The
-// sherpa transducer accepts arbitrary chunk sizes; 480 = 30 ms feeds the decoder
-// often (better recall + lower wake latency than 100 ms chunks) without spinning
-// the loop on tiny buffers. Exported because main.go passes it to NewMicSource.
-const KWSFrameLen = 480
+// KWSFrameLen is the capture chunk (samples @16 kHz) fed to the wake detector
+// per Read. 1280 = 80 ms is openWakeWord's native processing unit (one chunk =
+// one classifier prediction). Exported because main.go passes it to NewMicSource.
+const KWSFrameLen = 1280
 
 // WakeEngine is the tag-independent handle main.go holds. The whisper build backs
 // it with sherpa KWS; the non-whisper build has no implementation (NewKWS errors).

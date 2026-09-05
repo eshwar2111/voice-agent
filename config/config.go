@@ -100,7 +100,7 @@ const (
 // the on-disk directory holding the local KWS model.
 const (
 	DefaultWakeWord     = "hey jarvis"
-	DefaultKWSModelPath = "models/kws"
+	DefaultKWSModelPath = "models/wakeword" // openWakeWord models (melspec/embedding/<wakeword>.onnx)
 )
 
 // defaults applied when fields are missing or invalid.

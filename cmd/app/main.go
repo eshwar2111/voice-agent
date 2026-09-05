@@ -246,9 +246,9 @@ func main() {
 		if w, err := wakeword.NewKWS(cfg.KWSModelPath, cfg.WakeWord); err == nil {
 			wake = w
 			defer wake.Close()
-			log.Printf("[wake] KWS active — say %q", cfg.WakeWord)
+			log.Printf("[wake] openWakeWord active — say %q", cfg.WakeWord)
 		} else {
-			log.Printf("[wake] KWS unavailable: %v (wake word off; pill + typing still work)", err)
+			log.Printf("[wake] wake word unavailable: %v (wake word off; pill + typing still work)", err)
 		}
 	}
 	if cfg.PorcupineAccessKey != "" {
