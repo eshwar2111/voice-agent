@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nova — Island UI Mock</title>
+<style>
+:root{
+  /* ── Jarvis × Apple design tokens ───────────────────────────────── */
+  --accent:#0a84ff; --accent-2:#5e9bff; --accent-3:#46e0ff;
+  --accent-grad:linear-gradient(135deg,#0a84ff 0%,#5e5cff 55%,#46e0ff 100%);
+  --danger:#ff453a; --good:#30d158; --warn:#ff9f0a;
+  --ink:#f4f6fb; --ink-2:#a7afbe; --ink-3:#6d7686;
+  --glass:rgba(20,21,27,.72);
+  --glass-solid:rgba(23,24,31,.94);
+  --stroke:rgba(255,255,255,.09);
+  --stroke-2:rgba(255,255,255,.06);
+  --accent-soft:rgba(10,132,255,.16);
+  --r-pill:999px; --r-card:22px; --r-panel:26px;
+  --ease:cubic-bezier(.22,1,.36,1);
+  --ease-out:cubic-bezier(.22,1.28,.36,1);   /* gentle overshoot on arrival */
+  --fast:180ms; --slow:440ms;
+  --shadow:0 24px 70px -18px rgba(0,0,0,.7), 0 4px 14px -6px rgba(0,0,0,.5);
+  --glow:0 0 0 1px var(--stroke), var(--shadow);
+  --font:-apple-system,"SF Pro Display","SF Pro Text","Segoe UI Variable","Segoe UI",system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;font-family:var(--font);color:var(--ink);overflow:hidden;
+  -webkit-font-smoothing:antialiased;
+  background:
+    radial-gradient(1200px 800px at 78% -10%, #1b2740 0%, transparent 55%),
+    radial-gradient(1000px 700px at 10% 110%, #241a33 0%, transparent 55%),
+    linear-gradient(160deg,#0a0b10 0%,#0d0f16 48%,#090a0f 100%);
+}
+/* faux desktop chrome so the island reads as "living on the desktop" */
+.menubar{position:fixed;top:0;left:0;right:0;height:26px;display:flex;align-items:center;
+  gap:18px;padding:0 16px;font-size:12px;color:rgba(255,255,255,.35);
+  background:linear-gradient(180deg,rgba(255,255,255,.04),transparent);z-index:1}
+.menubar b{color:rgba(255,255,255,.55);font-weight:600}
+.menubar .right{margin-left:auto;display:flex;gap:16px}
+.wallpaper-note{position:fixed;left:50%;bottom:118px;transform:translateX(-50%);
+  color:rgba(255,255,255,.16);font-size:13px;letter-spacing:.02em;text-align:center;user-select:none}
+
+/* ── The Island ─────────────────────────────────────────────────── */
+.stage{position:fixed;top:40px;left:50%;transform:translateX(-50%);z-index:5;
+  display:flex;flex-direction:column;align-items:center;gap:12px;width:min(560px,92vw)}
+.island{
+  background:var(--glass);backdrop-filter:blur(30px) saturate(180%);
+  -webkit-backdrop-filter:blur(30px) saturate(180%);
+  border:1px solid var(--stroke);border-radius:var(--r-pill);
+  box-shadow:var(--shadow);color:var(--ink);overflow:hidden;
+  transition:width var(--slow) var(--ease-out), height var(--slow) var(--ease-out),
+             border-radius var(--slow) var(--ease-out), background var(--fast) linear;
+  display:flex;align-items:center;justify-content:center;
+  width:132px;height:36px;position:relative;
+}
+.island.card{border-radius:var(--r-card)}
+.island.danger{background:rgba(40,20,20,.8);border-color:rgba(255,69,58,.4)}
+.island.shake{animation:shake .5s var(--ease)}
+@keyframes shake{10%,90%{transform:translateX(-2px)}30%,70%{transform:translateX(3px)}50%{transform:translateX(-4px)}}
+/* content fades fast; the shell morphs slow → reads as one object reconfiguring */
+.body{width:100%;height:100%;display:flex;align-items:center;justify-content:center;
+  animation:fadein var(--fast) var(--ease)}
+@keyframes fadein{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}
+
+/* idle dot */
+.dot{width:9px;height:9px;border-radius:50%;background:radial-gradient(circle at 34% 30%,#cfe0ff,var(--accent));
+  box-shadow:0 0 0 4px var(--accent-soft),0 0 16px 2px rgba(10,132,255,.55);animation:breathe 3.4s var(--ease) infinite}
+@keyframes breathe{0%,100%{transform:scale(.82);opacity:.65}50%{transform:scale(1);opacity:1}}
+.dot.idle-only{}
+
+/* status pill row */
+.row{display:flex;align-items:center;gap:11px;padding:0 18px;width:100%;height:100%}
+.row.center{justify-content:center}
+.glyph{width:22px;height:22px;flex:0 0 auto;display:grid;place-items:center;border-radius:50%}
+.glyph.accent{color:#cfe0ff}
+.status{font-size:13.5px;font-weight:560;letter-spacing:-.01em;white-space:nowrap}
+.status .muted{color:var(--ink-2);font-weight:500}
+
+/* listening waveform */
+.wave{display:inline-flex;align-items:center;gap:3px;height:18px}
+.wave i{width:3px;height:6px;border-radius:2px;background:var(--accent-3);animation:eq 1s var(--ease) infinite}
+.wave i:nth-child(2){animation-delay:.12s}.wave i:nth-child(3){animation-delay:.24s}
+.wave i:nth-child(4){animation-delay:.36s}.wave i:nth-child(5){animation-delay:.08s}
+.wave i:nth-child(6){animation-delay:.30s}.wave i:nth-child(7){animation-delay:.18s}
+@keyframes eq{0%,100%{height:5px;opacity:.55}50%{height:17px;opacity:1}}
+
+/* thinking dots */
+.think{display:inline-flex;gap:5px}
+.think i{width:5px;height:5px;border-radius:50%;background:var(--ink-2);animation:tk 1.1s var(--ease) infinite}
+.think i:nth-child(2){animation-delay:.15s}.think i:nth-child(3){animation-delay:.3s}
+@keyframes tk{0%,100%{opacity:.25;transform:translateY(0)}40%{opacity:1;transform:translateY(-3px)}}
+
+/* progress ring (small) */
+.ring{--p:0;width:20px;height:20px;border-radius:50%;
+  background:conic-gradient(var(--accent) calc(var(--p)*1%), rgba(255,255,255,.12) 0);
+  -webkit-mask:radial-gradient(farthest-side,transparent 62%,#000 64%);mask:radial-gradient(farthest-side,transparent 62%,#000 64%)}
+
+/* ── Card interior (expanded island) ───────────────────────────── */
+.card-body{padding:16px 18px 15px;width:100%;text-align:left;animation:fadein var(--fast) var(--ease)}
+.chead{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.chead .ic{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;
+  background:var(--accent-soft);color:#cfe0ff;flex:0 0 auto}
+.chead .ic.danger{background:rgba(255,69,58,.16);color:#ffb3ad}
+.eyebrow{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);font-weight:700}
+.title{font-size:16px;font-weight:640;letter-spacing:-.02em;line-height:1.2;margin:1px 0 0}
+.sub{font-size:12.5px;color:var(--ink-2);line-height:1.45;margin-top:3px}
+.opts{display:flex;flex-direction:column;gap:8px;margin-top:4px}
+.opt{display:flex;align-items:center;gap:12px;padding:11px 13px;border-radius:13px;
+  border:1px solid var(--stroke);background:rgba(255,255,255,.04);cursor:pointer;
+  transition:background var(--fast),border-color var(--fast),transform var(--fast)}
+.opt:hover{background:var(--accent-soft);border-color:rgba(10,132,255,.4);transform:translateY(-1px)}
+.opt .av{width:32px;height:32px;border-radius:50%;flex:0 0 auto;display:grid;place-items:center;
+  font-weight:700;font-size:13px;color:#fff;background:var(--accent-grad)}
+.opt .ol{font-size:13.5px;font-weight:600}
+.opt .os{font-size:11.5px;color:var(--ink-2)}
+.actions{display:flex;gap:9px;justify-content:flex-end;margin-top:14px}
+.btn{font:600 13px var(--font);padding:9px 16px;border-radius:11px;border:1px solid transparent;cursor:pointer;
+  transition:transform var(--fast),background var(--fast),border-color var(--fast)}
+.btn:active{transform:scale(.96)}
+.btn.ghost{background:rgba(255,255,255,.05);color:var(--ink);border-color:var(--stroke)}
+.btn.ghost:hover{background:rgba(255,255,255,.1)}
+.btn.primary{background:var(--accent);color:#fff}
+.btn.primary:hover{background:#2b97ff}
+.btn.danger{background:var(--danger);color:#fff}
+.btn.danger:hover{background:#ff655b}
+.btn.sm{padding:6px 12px;font-size:12px;border-radius:9px}
+
+/* progress bar */
+.pbar{height:6px;border-radius:999px;background:rgba(255,255,255,.09);overflow:hidden;margin:12px 0 8px}
+.pbar>i{display:block;height:100%;border-radius:999px;background:var(--accent-grad);transition:width .4s var(--ease)}
+.pstat{display:flex;justify-content:space-between;font-size:11.5px;color:var(--ink-2)}
+
+/* trail (action trail) */
+.trail{display:flex;flex-direction:column;gap:7px;margin-top:6px}
+.tr{display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--ink-2)}
+.tr .tick{width:16px;height:16px;border-radius:50%;background:rgba(48,209,88,.18);color:var(--good);
+  display:grid;place-items:center;font-size:10px;flex:0 0 auto}
+.tr.now .tick{background:var(--accent-soft);color:var(--accent-3)}
+
+/* ── Attached surfaces (widget / panel / tray) ─────────────────── */
+.surface{width:min(440px,92vw);background:var(--glass);backdrop-filter:blur(30px) saturate(180%);
+  -webkit-backdrop-filter:blur(30px) saturate(180%);border:1px solid var(--stroke);
+  border-radius:var(--r-panel);box-shadow:var(--shadow);overflow:hidden;
+  animation:rise var(--slow) var(--ease-out)}
+@keyframes rise{from{opacity:0;transform:translateY(-14px) scale(.96)}to{opacity:1;transform:none}}
+.surface.wide{width:min(560px,94vw)}
+
+/* media widget */
+.media{display:flex;align-items:center;gap:14px;padding:14px 16px}
+.media .art{width:52px;height:52px;border-radius:12px;flex:0 0 auto;
+  background:linear-gradient(135deg,#ff5f6d,#ffc371);box-shadow:0 6px 18px -6px rgba(255,95,109,.6);
+  display:grid;place-items:center;font-size:22px}
+.media .meta{flex:1;min-width:0}
+.media .mt{font-size:14px;font-weight:640;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.media .ma{font-size:12px;color:var(--ink-2)}
+.media .mprog{height:3px;border-radius:2px;background:rgba(255,255,255,.12);margin-top:8px;overflow:hidden}
+.media .mprog>i{display:block;height:100%;width:38%;background:#fff;border-radius:2px}
+.mc{display:flex;gap:6px;align-items:center}
+.mc button{width:34px;height:34px;border-radius:50%;border:0;cursor:pointer;background:rgba(255,255,255,.07);
+  color:var(--ink);display:grid;place-items:center;font-size:14px;transition:background var(--fast)}
+.mc button:hover{background:rgba(255,255,255,.14)}
+.mc .play{width:40px;height:40px;background:#fff;color:#111}
+
+/* reading panel */
+.panel-head{display:flex;align-items:center;justify-content:space-between;padding:16px 20px 12px;border-bottom:1px solid var(--stroke)}
+.panel-head .pt{font-size:15px;font-weight:660;letter-spacing:-.02em}
+.panel-head .x{width:26px;height:26px;border-radius:50%;border:0;background:rgba(255,255,255,.06);color:var(--ink-2);cursor:pointer}
+.panel-body{padding:16px 20px 18px;max-height:300px;overflow:auto;font-size:13.5px;line-height:1.68;color:#dfe3ec}
+.panel-body h4{font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--accent);margin:16px 0 6px}
+.panel-body p{margin:0 0 12px}
+.panel-foot{padding:10px 16px;border-top:1px solid var(--stroke);display:flex;justify-content:flex-end}
+.mic-chip{display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border-radius:999px;
+  background:rgba(255,255,255,.05);border:1px solid var(--stroke);font-size:12.5px;color:var(--ink-2)}
+
+/* conversation tray */
+.tray{padding:14px 16px;display:flex;flex-direction:column;gap:12px;max-height:340px;overflow:auto}
+.msg{max-width:88%;font-size:13.5px;line-height:1.5}
+.msg .who{font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);margin-bottom:3px}
+.msg.you{align-self:flex-end;text-align:right}
+.msg.you .bub{background:var(--accent);color:#fff;border-radius:14px 14px 4px 14px;padding:9px 13px;display:inline-block;text-align:left}
+.msg.nova .bub{background:rgba(255,255,255,.06);border:1px solid var(--stroke);border-radius:14px 14px 14px 4px;padding:9px 13px;display:inline-block}
+.laptops{display:flex;gap:8px;margin-top:8px}
+.lap{flex:1;border:1px solid var(--stroke);border-radius:12px;padding:10px;background:rgba(255,255,255,.03)}
+.lap .ln{font-size:12px;font-weight:600}.lap .lp{font-size:12px;color:var(--accent-3);margin-top:2px}
+
+/* satellites */
+.sats{display:flex;flex-direction:column;gap:8px;padding:12px 14px}
+.sat{display:flex;align-items:center;gap:11px;font-size:13px;padding:8px 10px;border-radius:11px;background:rgba(255,255,255,.04);border:1px solid var(--stroke-2)}
+.sat .si{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;background:var(--accent-soft);flex:0 0 auto}
+.sat .sp{margin-left:auto;font-size:11.5px;color:var(--ink-2)}
+.badge{position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;border-radius:9px;background:var(--accent);
+  color:#fff;font-size:10.5px;font-weight:700;display:grid;place-items:center;padding:0 5px;border:2px solid #0c0d12}
+
+/* ── Demo dock ──────────────────────────────────────────────────── */
+.dock{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:8;
+  display:flex;gap:6px;flex-wrap:wrap;justify-content:center;max-width:94vw;
+  background:var(--glass);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);
+  border:1px solid var(--stroke);border-radius:18px;padding:9px;box-shadow:var(--shadow)}
+.dock .lbl{width:100%;text-align:center;font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--ink-3);margin:0 0 3px}
+.chip{font:600 12px var(--font);padding:7px 12px;border-radius:10px;border:1px solid var(--stroke);
+  background:rgba(255,255,255,.04);color:var(--ink-2);cursor:pointer;transition:all var(--fast);white-space:nowrap}
+.chip:hover{background:rgba(255,255,255,.09);color:var(--ink)}
+.chip.on{background:var(--accent-soft);border-color:rgba(10,132,255,.5);color:#cfe0ff}
+.chip.play{background:var(--accent-grad);color:#fff;border-color:transparent}
+.caption{position:fixed;left:50%;bottom:96px;transform:translateX(-50%);z-index:7;
+  font-size:12.5px;color:var(--ink-3);text-align:center;max-width:520px;transition:opacity var(--fast);
+  font-style:italic}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<div class="menubar"><b>Nova</b><span>Desktop</span><span>Focus</span>
+  <div class="right"><span>Wi‑Fi</span><span>100%</span><span>9:41</span></div></div>
+<div class="wallpaper-note">your desktop · the agent lives here</div>
+
+<div class="stage">
+  <div id="island" class="island"><div class="body"><span class="dot"></span></div></div>
+  <div id="attach"></div>
+</div>
+
+<div id="caption" class="caption"></div>
+
+<div class="dock">
+  <span class="lbl">the island expands only as much as the moment needs — tap a state</span>
+  <button class="chip on" data-s="idle">Idle</button>
+  <button class="chip" data-s="listening">Listening</button>
+  <button class="chip" data-s="searching">Searching</button>
+  <button class="chip" data-s="simple">Simple ✓</button>
+  <button class="chip" data-s="file">File card</button>
+  <button class="chip" data-s="choice">Which Rahul?</button>
+  <button class="chip" data-s="approval">Approval ⚠</button>
+  <button class="chip" data-s="progress">Progress</button>
+  <button class="chip" data-s="media">Media</button>
+  <button class="chip" data-s="reading">Reading panel</button>
+  <button class="chip" data-s="tray">Conversation</button>
+  <button class="chip" data-s="sats">Multi‑task</button>
+  <button class="chip" data-s="proactive">Proactive</button>
+  <button class="chip play" data-s="auto">▶ Auto‑play story</button>
+</div>
+
+<script>
+const island = document.getElementById('island');
+const attach = document.getElementById('attach');
+const caption = document.getElementById('caption');
+const dock = document.querySelector('.dock');
+
+function set(cls){ island.className = 'island' + (cls?(' '+cls):''); }
+function body(html){ island.innerHTML = '<div class="body">'+html+'</div>'; }
+function shell(html){ island.innerHTML = html; } // full-bleed card interior
+function say(t){ caption.textContent = t; }
+function clearAttach(){ attach.innerHTML = ''; }
+function shake(){ island.classList.add('shake'); setTimeout(()=>island.classList.remove('shake'),520); }
+
+const WAVE = '<span class="wave"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>';
+
+const states = {
+  idle(){ set(''); island.style.width='132px'; island.style.height='36px';
+    body('<span class="dot"></span>'); clearAttach(); say('Level 0 — presence. Almost invisible, a slow breath.'); },
+
+  listening(){ set(''); island.style.width='230px'; island.style.height='42px';
+    body('<div class="row center"><span class="glyph accent">◉</span><span class="status">Listening</span>'+WAVE+'</div>');
+    clearAttach(); say('It’s waiting for you — a subtle waveform, never “🔴 RECORDING”.'); },
+
+  searching(){ set(''); island.style.width='250px'; island.style.height='42px';
+    body('<div class="row center"><span class="think"><i></i><i></i><i></i></span><span class="status"><span class="muted">Searching your files…</span></span></div>');
+    clearAttach(); say('Status is semantic: “Searching your files”, not “Thinking…”.'); },
+
+  simple(){ set(''); island.style.width='176px'; island.style.height='40px';
+    body('<div class="row center"><span class="glyph" style="color:var(--good)">✓</span><span class="status">Notepad</span></div>');
+    clearAttach(); say('Simple action → a 2‑second confirmation, then it collapses to ●.');
+    setTimeout(()=>{ if(current==='simple') states.idle(); }, 2200); },
+
+  file(){ set('card'); island.style.width='360px'; island.style.height='auto';
+    shell('<div class="card-body"><div class="chead"><span class="ic">📄</span><div><div class="title">Resume_2026.pdf</div><div class="sub">Updated 2 hours ago · Documents / Career</div></div></div><div class="actions"><button class="btn ghost sm">⋯</button><button class="btn primary sm">Open</button></div></div>');
+    clearAttach(); say('Medium result → a compact card. Click Open, or just say “open it.”'); },
+
+  choice(){ set('card'); island.style.width='380px'; island.style.height='auto';
+    shell('<div class="card-body"><div class="chead"><span class="ic">✉</span><div><div class="eyebrow">Send resume</div><div class="title">Which Rahul?</div></div></div><div class="opts">'+
+      opt('RS','Rahul Sharma','rahul@company.com')+opt('RK','Rahul Kumar','rahul@gmail.com')+
+      '</div><div class="actions"><button class="btn ghost sm" data-go="idle">Cancel</button></div></div>');
+    clearAttach(); say('It only becomes big when it must. Answer by click or voice.'); },
+
+  approval(){ set('card danger'); island.style.width='372px'; island.style.height='auto'; shake();
+    shell('<div class="card-body"><div class="chead"><span class="ic danger">⚠</span><div><div class="eyebrow" style="color:var(--danger)">Before I continue</div><div class="title">Delete 143 files?</div></div></div><div class="sub">This cannot be easily undone.</div><div class="actions"><button class="btn ghost" data-go="idle">Cancel</button><button class="btn danger">Approve</button></div></div>');
+    clearAttach(); say('Dangerous actions change the visual language and stop for approval.'); },
+
+  progress(){ set('card'); island.style.width='372px'; island.style.height='auto';
+    shell('<div class="card-body"><div class="chead"><span class="ic">📁</span><div><div class="title">Organizing Downloads</div></div><button class="btn ghost sm" style="margin-left:auto" data-go="idle">Stop</button></div><div class="pbar"><i id="pb" style="width:12%"></i></div><div class="pstat"><span id="pn">18 files processed</span><span id="pp">12%</span></div></div>');
+    clearAttach(); say('Long task → a mini command center. It stays put; you keep working.');
+    let p=12; clearInterval(window._pt); window._pt=setInterval(()=>{ if(current!=='progress'){clearInterval(window._pt);return;}
+      p=Math.min(100,p+7); const pb=document.getElementById('pb'); if(!pb)return;
+      pb.style.width=p+'%'; document.getElementById('pp').textContent=p+'%';
+      document.getElementById('pn').textContent=Math.round(p*1.7)+' files processed';
+      if(p>=100){ clearInterval(window._pt); states.done(); } },520); },
+
+  done(){ set('card'); island.style.width='340px'; island.style.height='auto';
+    shell('<div class="card-body"><div class="chead"><span class="ic" style="background:rgba(48,209,88,.16);color:var(--good)">✓</span><div><div class="title">Task completed</div><div class="sub">Send resume to Rahul</div></div></div><div class="trail">'+
+      tr('Found resume')+tr('Found Rahul')+tr('Prepared email')+tr('You approved')+tr('Sent')+'</div></div>');
+    clearAttach(); say('The Action Trail: exactly what happened — trust by transparency.');
+    setTimeout(()=>{ if(current==='done') states.idle(); }, 3600); },
+
+  media(){ set(''); island.style.width='150px'; island.style.height='38px';
+    body('<div class="row center"><span class="dot" style="animation:none"></span><span class="status">🎵</span></div>');
+    say('Media becomes an agent‑owned widget; the island shrinks back to ● 🎵.');
+    attach.innerHTML='<div class="surface"><div class="media"><div class="art">🎵</div><div class="meta"><div class="mt">Blinding Lights</div><div class="ma">The Weeknd</div><div class="mprog"><i></i></div></div><div class="mc"><button>◀</button><button class="play">❚❚</button><button>▶</button></div></div></div>'; },
+
+  reading(){ states.idle();
+    say('Big text never crams into the island — it lays a floating reading panel over the desktop.');
+    attach.innerHTML='<div class="surface wide"><div class="panel-head"><span class="pt">Quantum Entanglement</span><button class="x" data-go="idle">✕</button></div><div class="panel-body"><p>Quantum entanglement is a phenomenon where two particles become correlated so that the state of one instantly reflects the state of the other — however far apart they are.</p><h4>How it works</h4><p>When particles interact and then separate, their quantum states remain linked. Measuring one collapses the shared state, determining the other’s outcome faster than light could travel between them — yet it carries no usable signal.</p><p>Einstein called it “spooky action at a distance.” It underpins quantum computing and cryptography.</p></div><div class="panel-foot"><span class="mic-chip">🎤 Ask Nova…</span></div></div>'; },
+
+  tray(){ set(''); island.style.width='150px'; island.style.height='38px';
+    body('<div class="row center"><span class="dot" style="animation:none"></span><span class="status" style="font-size:12px;color:var(--ink-2)">Nova</span></div>');
+    say('Genuine multi‑turn → a conversation tray that auto‑collapses when done.');
+    attach.innerHTML='<div class="surface"><div class="tray">'+
+      msg('you','Find me a gaming laptop under ₹80k')+
+      msg('nova','What will you use it for — gaming or work?')+
+      msg('you','Gaming')+
+      '<div class="msg nova"><div class="who">Nova</div><div class="bub">Here are 3 strong picks:'+
+        '<div class="laptops"><div class="lap"><div class="ln">ASUS TUF</div><div class="lp">₹74,999</div></div><div class="lap"><div class="ln">Lenovo LOQ</div><div class="lp">₹78,990</div></div><div class="lap"><div class="ln">Acer Nitro</div><div class="lp">₹69,990</div></div></div>'+
+      '</div></div>'+
+      '</div></div>'; },
+
+  sats(){ set(''); island.style.width='118px'; island.style.height='38px';
+    body('<div class="row center" style="position:relative"><span class="dot" style="animation:none"></span><span class="badge">3</span></div>');
+    say('Multiple jobs → one agent, tiny satellites. Click to see all active tasks.');
+    attach.innerHTML='<div class="surface"><div class="sats">'+
+      sat('📄','Downloading report','72%')+sat('🧠','Summarizing','…')+sat('⏰','Reminder','6:00 PM')+
+      '</div></div>'; },
+
+  proactive(){ set('card'); island.style.width='360px'; island.style.height='auto';
+    shell('<div class="card-body"><div class="chead"><span class="ic">📅</span><div><div class="eyebrow">In 2 minutes</div><div class="title">Product Review</div></div></div><div class="actions"><button class="btn ghost sm" data-go="idle">Dismiss</button><button class="btn primary sm">Join</button></div></div>');
+    clearAttach(); say('Proactive — but extremely restrained, so it never becomes Clippy.'); },
+};
+
+function opt(av,name,mail){ return '<div class="opt" data-go="idle"><span class="av">'+av+'</span><div><div class="ol">'+name+'</div><div class="os">'+mail+'</div></div></div>'; }
+function tr(t){ return '<div class="tr"><span class="tick">✓</span>'+t+'</div>'; }
+function msg(who,t){ return '<div class="msg '+who+'"><div class="who">'+(who==='you'?'You':'Nova')+'</div><div class="bub">'+t+'</div></div>'; }
+function sat(ic,t,p){ return '<div class="sat"><span class="si">'+ic+'</span>'+t+'<span class="sp">'+p+'</span></div>'; }
+
+let current='idle';
+function go(s){ current=s; clearInterval(window._pt);
+  [...dock.querySelectorAll('.chip')].forEach(c=>c.classList.toggle('on', c.dataset.s===s && s!=='auto'));
+  (states[s]||states.idle)(); }
+
+dock.addEventListener('click', e=>{ const c=e.target.closest('.chip'); if(!c)return;
+  if(c.dataset.s==='auto') return autoplay(); go(c.dataset.s); });
+// inline "Cancel/Dismiss/option" buttons return to idle
+document.addEventListener('click', e=>{ const g=e.target.closest('[data-go]'); if(g){ go(g.dataset.go); }});
+
+/* Auto‑play: the flagship "send my resume to Rahul" story, one continuous object */
+async function autoplay(){
+  const wait=ms=>new Promise(r=>setTimeout(r,ms));
+  go('idle'); await wait(900);
+  current='auto'; states.listening(); body('<div class="row center"><span class="glyph accent">◉</span><span class="status">“Send my resume to Rahul”</span>'+WAVE+'</div>'); await wait(1900);
+  current='auto'; set(''); island.style.width='250px'; island.style.height='42px';
+  body('<div class="row center"><span class="think"><i></i><i></i><i></i></span><span class="status"><span class="muted">Preparing email…</span></span></div>'); await wait(1600);
+  current='choice'; states.choice(); await wait(2400);
+  current='auto'; set('card'); island.style.width='340px'; island.style.height='auto';
+  shell('<div class="card-body"><div class="chead"><span class="ic">✉</span><div><div class="title">Send to Rahul Sharma?</div><div class="sub">Resume_2026.pdf · rahul@company.com</div></div></div><div class="actions"><button class="btn ghost sm">Cancel</button><button class="btn primary sm">Send</button></div></div>');
+  say('Confirm the outbound action — one tap, or “yes.”'); await wait(2200);
+  current='done'; states.done();
+}
+
+go('idle');
+</script>
+</body>
+</html>
